@@ -1,0 +1,23 @@
+name: release-main
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      version: ${{ steps.rp.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@c2a5a2bd6a758a0937f1ddb1e8950609867ed15c # v4.3.0
+        id: rp
+        with:
+          release-type: simple
+          target-branch: main
