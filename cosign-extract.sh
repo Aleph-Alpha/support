@@ -118,27 +118,27 @@ pretty_name() {
 verify_attestation() {
   local pred_type="$1"
   local image="$2"
-  
+
   if ! $VERIFY; then
     return 0
   fi
-  
+
   echo "🔐 Verifying attestation with cosign..."
   echo "   ↳ Type: $pred_type"
   echo "   ↳ OIDC Issuer: $CERTIFICATE_OIDC_ISSUER"
   echo "   ↳ Identity Regexp: $CERTIFICATE_IDENTITY_REGEXP"
-  
+
   # Check if cosign is available
   if ! command -v cosign >/dev/null 2>&1; then
     echo "❌ cosign command not found. Please install cosign to use --verify option."
     echo "   Installation: https://docs.sigstore.dev/cosign/installation/"
     exit 1
   fi
-  
+
   # Perform verification
   local temp_output
   temp_output=$(mktemp)
-  
+
   if cosign verify-attestation \
     --type "$pred_type" \
     --new-bundle-format \
@@ -238,13 +238,13 @@ if [[ -z "$TYPE" && "$CHOICE" == "all" ]]; then
       raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
       ptype=$(echo "$raw" | jq -r '.predicateType')
       rm -f "$bundle"
-      
+
       # Add to array if not already present
       if [[ ! " ${PRED_TYPES[@]} " =~ " ${ptype} " ]]; then
         PRED_TYPES+=("$ptype")
       fi
     done
-    
+
     # Verify each unique predicate type
     for ptype in "${PRED_TYPES[@]}"; do
       verify_attestation "$ptype" "$IMAGE@$DIGEST"
@@ -253,7 +253,7 @@ if [[ -z "$TYPE" && "$CHOICE" == "all" ]]; then
         exit 1
       fi
     done
-    
+
     # If we only need verification and no extraction, we're done
     if $NO_EXTRACTION; then
       echo "✅ Verification complete. All ${#PRED_TYPES[@]} attestation types are valid."
@@ -293,7 +293,7 @@ if $VERIFY; then
     echo "❌ Verification failed, aborting extraction"
     exit 1
   fi
-  
+
   # If we only need verification and no extraction, we're done
   if $NO_EXTRACTION; then
     echo "✅ Verification complete. Attestation exists and is valid."
