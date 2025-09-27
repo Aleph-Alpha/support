@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.0](https://github.com/Aleph-Alpha/support/compare/v1.0.0...v1.1.0) (2025-09-27)
+
+
+### Features
+
+* add --verify option to cosign-extract.sh ([#3](https://github.com/Aleph-Alpha/support/issues/3)) ([a184297](https://github.com/Aleph-Alpha/support/commit/a184297bd0054fd927ecbbe763dbd9d37865a76a))
+* image verification script ([#5](https://github.com/Aleph-Alpha/support/issues/5)) ([a015779](https://github.com/Aleph-Alpha/support/commit/a01577999364423cf8206bb7bfc119187931293e))
+
 ## 1.0.0 (2025-09-23)
 
 
