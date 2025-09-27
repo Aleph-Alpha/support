@@ -4,20 +4,29 @@ set -euo pipefail
 show_help() {
   cat <<EOF
 Usage:
-  $0 --type TYPE --image IMAGE[:TAG] [--choice index|all] [--output FILE]
+  $0 --type TYPE --image IMAGE[:TAG] [--choice index|all] [--output FILE] [--verify] [--no-extraction]
   $0 --image IMAGE[:TAG] --choice all --output DIR      # extract ALL types
   $0 --image IMAGE[:TAG] --list [--show-null]
   $0 --image IMAGE[:TAG] --inspect-null
+  $0 --type TYPE --image IMAGE[:TAG] --verify --no-extraction  # verify only, no extraction
 
 Options:
-  --type TYPE     Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
-  --image IMAGE   Fully qualified image reference (required)
-  --choice        Which attestation to fetch: index, all
-  --output PATH   Output file (single type) or directory (all types)
-  --list          List available predicateTypes and counts
-  --show-null     Show entries missing predicateType in --list
-  --inspect-null  Inspect referrers missing predicateType
-  -h, --help      Show this help
+  --type TYPE               Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
+  --image IMAGE             Fully qualified image reference (required)
+  --choice                  Which attestation to fetch: index, all
+  --output PATH             Output file (single type) or directory (all types)
+  --list                    List available predicateTypes and counts
+  --show-null               Show entries missing predicateType in --list
+  --inspect-null            Inspect referrers missing predicateType
+  --verify                  Verify attestations using cosign before extraction
+  --no-extraction           Skip extraction and content output (useful with --verify for verification-only)
+  --certificate-oidc-issuer ISSUER    OIDC issuer for verification (default: https://token.actions.githubusercontent.com)
+  --certificate-identity-regexp REGEX Identity regexp for verification (default: Aleph Alpha workflows)
+  -h, --help                Show this help
+
+Verification:
+  When --verify is used, attestations are verified using cosign verify-attestation before extraction.
+  Default verification uses GitHub Actions OIDC issuer and Aleph Alpha workflow identity patterns.
 EOF
 }
 
@@ -28,6 +37,10 @@ OUTPUT_FILE=""
 LIST_ONLY=false
 SHOW_NULL=false
 INSPECT_NULL=false
+VERIFY=false
+NO_EXTRACTION=false
+CERTIFICATE_OIDC_ISSUER="https://token.actions.githubusercontent.com"
+CERTIFICATE_IDENTITY_REGEXP="https://github.com/Aleph-Alpha/shared-workflows/.github/workflows/(build-and-push|scan-and-attest).yaml@.*"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -38,6 +51,10 @@ while [[ $# -gt 0 ]]; do
     --list) LIST_ONLY=true; shift ;;
     --show-null) SHOW_NULL=true; shift ;;
     --inspect-null) INSPECT_NULL=true; shift ;;
+    --verify) VERIFY=true; shift ;;
+    --no-extraction) NO_EXTRACTION=true; shift ;;
+    --certificate-oidc-issuer) CERTIFICATE_OIDC_ISSUER="$2"; shift 2 ;;
+    --certificate-identity-regexp) CERTIFICATE_IDENTITY_REGEXP="$2"; shift 2 ;;
     -h|--help) show_help; exit 0 ;;
     *) echo "❌ Unknown option: $1"; show_help; exit 1 ;;
   esac
@@ -46,6 +63,22 @@ done
 if [[ -z "$IMAGE" ]]; then
   echo "❌ Missing required --image"
   show_help
+  exit 1
+fi
+
+# Validate option combinations
+if $NO_EXTRACTION && [ -n "$OUTPUT_FILE" ]; then
+  echo "❌ --no-extraction and --output cannot be used together"
+  exit 1
+fi
+
+if $NO_EXTRACTION && "$LIST_ONLY"; then
+  echo "❌ --no-extraction and --list cannot be used together"
+  exit 1
+fi
+
+if $NO_EXTRACTION && "$INSPECT_NULL"; then
+  echo "❌ --no-extraction and --inspect-null cannot be used together"
   exit 1
 fi
 
@@ -79,6 +112,48 @@ pretty_name() {
     "https://aleph-alpha.com/attestations/triage/v1") echo "triage" ;;
     *) echo "$(echo "$1" | sed 's|https\?://||; s|[^A-Za-z0-9._-]|_|g')" ;;
   esac
+}
+
+# Verify attestation using cosign
+verify_attestation() {
+  local pred_type="$1"
+  local image="$2"
+
+  if ! $VERIFY; then
+    return 0
+  fi
+
+  echo "🔐 Verifying attestation with cosign..."
+  echo "   ↳ Type: $pred_type"
+  echo "   ↳ OIDC Issuer: $CERTIFICATE_OIDC_ISSUER"
+  echo "   ↳ Identity Regexp: $CERTIFICATE_IDENTITY_REGEXP"
+
+  # Check if cosign is available
+  if ! command -v cosign >/dev/null 2>&1; then
+    echo "❌ cosign command not found. Please install cosign to use --verify option."
+    echo "   Installation: https://docs.sigstore.dev/cosign/installation/"
+    exit 1
+  fi
+
+  # Perform verification
+  local temp_output
+  temp_output=$(mktemp)
+
+  if cosign verify-attestation \
+    --type "$pred_type" \
+    --new-bundle-format \
+    --certificate-oidc-issuer="$CERTIFICATE_OIDC_ISSUER" \
+    --certificate-identity-regexp="$CERTIFICATE_IDENTITY_REGEXP" \
+    "$image" > "$temp_output" 2>&1; then
+    echo "✅ Attestation verification successful"
+    rm -f "$temp_output"
+    return 0
+  else
+    echo "❌ Attestation verification failed:"
+    cat "$temp_output"
+    rm -f "$temp_output"
+    return 1
+  fi
 }
 
 # Resolve tag -> digest
@@ -152,6 +227,40 @@ if [[ -z "$TYPE" && "$CHOICE" == "all" ]]; then
   REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
     | jq -r '.referrers[] | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json") | .digest')
 
+  # If verification is requested, collect all predicate types first
+  if $VERIFY; then
+    echo "🔐 Collecting predicate types for verification..."
+    PRED_TYPES=()
+    for d in $REFERRERS; do
+      layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
+      bundle=$(mktemp)
+      oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
+      raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
+      ptype=$(echo "$raw" | jq -r '.predicateType')
+      rm -f "$bundle"
+
+      # Add to array if not already present
+      if [[ ! " ${PRED_TYPES[@]} " =~ " ${ptype} " ]]; then
+        PRED_TYPES+=("$ptype")
+      fi
+    done
+
+    # Verify each unique predicate type
+    for ptype in "${PRED_TYPES[@]}"; do
+      verify_attestation "$ptype" "$IMAGE@$DIGEST"
+      if [ $? -ne 0 ]; then
+        echo "❌ Verification failed for type $ptype, aborting extraction"
+        exit 1
+      fi
+    done
+
+    # If we only need verification and no extraction, we're done
+    if $NO_EXTRACTION; then
+      echo "✅ Verification complete. All ${#PRED_TYPES[@]} attestation types are valid."
+      exit 0
+    fi
+  fi
+
   idx=1
   for d in $REFERRERS; do
     layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
@@ -162,9 +271,13 @@ if [[ -z "$TYPE" && "$CHOICE" == "all" ]]; then
     ptype=$(echo "$raw" | jq -r '.predicateType')
     base=$(pretty_name "$ptype")
 
-    file="$OUTPUT_FILE/${base}-${idx}.json"
-    echo "$raw" | jq . > "$file"
-    echo "💾 Attestation $idx ($ptype) written to $file"
+    if $NO_EXTRACTION; then
+      echo "✅ Attestation $idx ($ptype) found and verified (content extraction skipped)"
+    else
+      file="$OUTPUT_FILE/${base}-${idx}.json"
+      echo "$raw" | jq . > "$file"
+      echo "💾 Attestation $idx ($ptype) written to $file"
+    fi
 
     rm -f "$bundle"
     idx=$((idx+1))
@@ -173,6 +286,21 @@ if [[ -z "$TYPE" && "$CHOICE" == "all" ]]; then
 fi
 
 # Otherwise: extract a specific type
+# First verify the attestation if requested
+if $VERIFY; then
+  verify_attestation "$PRED_TYPE" "$IMAGE@$DIGEST"
+  if [ $? -ne 0 ]; then
+    echo "❌ Verification failed, aborting extraction"
+    exit 1
+  fi
+
+  # If we only need verification and no extraction, we're done
+  if $NO_EXTRACTION; then
+    echo "✅ Verification complete. Attestation exists and is valid."
+    exit 0
+  fi
+fi
+
 DIGESTS=()
 REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
   | jq -r --arg pt "$PRED_TYPE" '
@@ -225,6 +353,13 @@ fetch_attestation() {
   oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
 
   raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
+
+  # Skip extraction if --no-extraction is used
+  if $NO_EXTRACTION; then
+    echo "✅ Attestation found and verified (content extraction skipped)"
+    rm -f "$bundle"
+    return 0
+  fi
 
   local output=""
   if echo "$raw" | jq -e '.predicate.Data' >/dev/null 2>&1; then
