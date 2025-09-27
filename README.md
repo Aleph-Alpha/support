@@ -7,6 +7,7 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
 - [Overview](#overview)
 - [Scripts](#scripts)
   - [cosign-extract.sh](#cosign-extractsh)
+  - [cosign-verify-image.sh](#cosign-verify-imagesh)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Contributing](#contributing)
@@ -186,6 +187,87 @@ When `--verify --no-extraction` is used together, the script optimizes performan
 ./cosign-extract.sh --image myapp:latest --choice all --verify --no-extraction
 ```
 
+### cosign-verify-image.sh
+
+A dedicated script for verifying container image signatures using Cosign. This tool focuses specifically on image signature verification (not attestations) and supports both keyless and key-based verification methods.
+
+#### Features
+
+- **Multiple Verification Modes**: Keyless verification (default), key-based verification, or custom OIDC configurations
+- **Flexible Identity Matching**: Support for exact identity matching or regex patterns
+- **Signature Extraction**: Save signatures and certificates to files for further analysis
+- **Verbose Output**: Detailed verification information when needed
+- **Digest Resolution**: Automatically resolves tags to digests for secure verification
+- **Pre-configured Defaults**: Ready-to-use settings for Aleph Alpha workflows
+
+#### Verification Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Keyless** (default) | Uses OIDC identity and transparency log | GitHub Actions, automated workflows |
+| **Key-based** | Uses provided public key file | Traditional key-pair signing |
+| **Custom Keyless** | Custom OIDC issuer and identity patterns | Other CI/CD systems, custom workflows |
+
+#### Usage Examples
+
+**Verify with default Aleph Alpha settings:**
+```bash
+./cosign-verify-image.sh --image registry.example.com/myapp:latest
+```
+
+**Verify with custom GitHub organization:**
+```bash
+./cosign-verify-image.sh --image registry.example.com/myapp:latest \
+  --certificate-identity-regexp "https://github.com/myorg/.*/.github/workflows/.*"
+```
+
+**Verify with specific workflow identity:**
+```bash
+./cosign-verify-image.sh --image registry.example.com/myapp:latest \
+  --certificate-identity "https://github.com/myorg/myrepo/.github/workflows/build.yaml@refs/heads/main"
+```
+
+**Verify with public key file:**
+```bash
+./cosign-verify-image.sh --image registry.example.com/myapp:latest --key cosign.pub
+```
+
+**Verbose verification with signature extraction:**
+```bash
+./cosign-verify-image.sh --image registry.example.com/myapp:latest --verbose \
+  --output-signature signature.sig --output-certificate cert.pem
+```
+
+#### Command Line Options
+
+```
+Usage:
+  ./cosign-verify-image.sh --image IMAGE[:TAG] [--verify-options]
+  ./cosign-verify-image.sh --image IMAGE[:TAG] --certificate-oidc-issuer ISSUER --certificate-identity-regexp REGEX
+  ./cosign-verify-image.sh --image IMAGE[:TAG] --key KEY_FILE
+  ./cosign-verify-image.sh --image IMAGE[:TAG] --keyless
+
+Options:
+  --image IMAGE                         Fully qualified image reference (required)
+  --certificate-oidc-issuer ISSUER      OIDC issuer for keyless verification (default: https://token.actions.githubusercontent.com)
+  --certificate-identity-regexp REGEX   Identity regexp for keyless verification (default: Aleph Alpha workflows)
+  --certificate-identity IDENTITY       Exact certificate identity for keyless verification
+  --key KEY_FILE                        Path to public key file for key-based verification
+  --keyless                             Use keyless verification (default mode)
+  --rekor-url URL                       Rekor transparency log URL (default: https://rekor.sigstore.dev)
+  --output-signature FILE               Save signature to file
+  --output-certificate FILE             Save certificate to file
+  --verbose                             Show detailed verification output
+  -h, --help                            Show this help
+```
+
+#### Security Features
+
+- **Digest-based Verification**: Automatically resolves tags to digests when `crane` is available
+- **Transparency Log Integration**: Uses Rekor transparency log for keyless verification
+- **Identity Validation**: Strict OIDC identity matching to prevent impersonation
+- **Comprehensive Error Reporting**: Clear feedback on verification failures with troubleshooting hints
+
 ## 📋 Prerequisites
 
 Before using these scripts, ensure you have the following tools installed:
@@ -233,7 +315,7 @@ sudo chmod +x /usr/local/bin/cosign
 
 2. Make the scripts executable:
    ```bash
-   chmod +x cosign-extract.sh
+   chmod +x cosign-extract.sh cosign-verify-image.sh
    ```
 
 3. Optionally, add the scripts to your PATH or create symlinks in `/usr/local/bin/` for system-wide access.
