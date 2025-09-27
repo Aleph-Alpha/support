@@ -29,6 +29,8 @@ A powerful bash script for extracting and inspecting Cosign attestations from co
 - **Discovery Mode**: List available attestation types for any container image
 - **Inspection Tools**: Inspect referrers with missing predicate types
 - **Output Options**: Save to files or output to stdout with proper JSON formatting
+- **Cryptographic Verification**: Verify attestations using Cosign before extraction with configurable OIDC issuer and identity patterns
+- **Verification-Only Mode**: Skip content extraction with `--no-extraction` for verification-only workflows
 
 #### Supported Attestation Types
 
@@ -69,24 +71,57 @@ A powerful bash script for extracting and inspecting Cosign attestations from co
 ./cosign-extract.sh --image registry.example.com/myapp:latest --inspect-null
 ```
 
+**Extract and verify an SPDX SBOM with cryptographic verification:**
+```bash
+./cosign-extract.sh --type spdx --image registry.example.com/myapp:latest --verify --output sbom.spdx.json
+```
+
+**Extract with custom verification parameters:**
+```bash
+./cosign-extract.sh --type slsa --image registry.example.com/myapp:latest --verify \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp "https://github.com/myorg/myrepo/.github/workflows/.*" \
+  --output provenance.json
+```
+
+**Verify attestations without extracting content:**
+```bash
+./cosign-extract.sh --type spdx --image registry.example.com/myapp:latest --verify --no-extraction
+```
+
+**Verify all attestation types without extraction:**
+```bash
+./cosign-extract.sh --image registry.example.com/myapp:latest --choice all --verify --no-extraction
+```
+
 #### Command Line Options
 
 ```
 Usage:
-  ./cosign-extract.sh --type TYPE --image IMAGE[:TAG] [--choice index|all] [--output FILE]
+  ./cosign-extract.sh --type TYPE --image IMAGE[:TAG] [--choice index|all] [--output FILE] [--verify] [--no-extraction]
   ./cosign-extract.sh --image IMAGE[:TAG] --choice all --output DIR
   ./cosign-extract.sh --image IMAGE[:TAG] --list [--show-null]
   ./cosign-extract.sh --image IMAGE[:TAG] --inspect-null
+  ./cosign-extract.sh --type TYPE --image IMAGE[:TAG] --verify --no-extraction  # verify only, no extraction
 
 Options:
-  --type TYPE     Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
-  --image IMAGE   Fully qualified image reference (required)
-  --choice        Which attestation to fetch: index, all
-  --output PATH   Output file (single type) or directory (all types)
-  --list          List available predicateTypes and counts
-  --show-null     Show entries missing predicateType in --list
-  --inspect-null  Inspect referrers missing predicateType
-  -h, --help      Show this help
+  --type TYPE               Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
+  --image IMAGE             Fully qualified image reference (required)
+  --choice                  Which attestation to fetch: index, all
+  --output PATH             Output file (single type) or directory (all types)
+  --list                    List available predicateTypes and counts
+  --show-null               Show entries missing predicateType in --list
+  --inspect-null            Inspect referrers missing predicateType
+  --verify                  Verify attestations using cosign before extraction
+  --no-extraction           Skip extraction and content output (useful with --verify for verification-only)
+  --certificate-oidc-issuer ISSUER    OIDC issuer for verification (default: https://token.actions.githubusercontent.com)
+  --certificate-identity-regexp REGEX Identity regexp for verification (default: Aleph Alpha workflows)
+  -h, --help                Show this help
+
+Verification:
+  When --verify is used, attestations are verified using cosign verify-attestation before extraction.
+  Default verification uses GitHub Actions OIDC issuer and Aleph Alpha workflow identity patterns.
+  Use --no-extraction to skip content output and only perform verification.
 ```
 
 #### Interactive Mode
@@ -102,6 +137,55 @@ When multiple attestations of the same type are found, the script will prompt yo
 # Select attestation [1-2]: 1
 ```
 
+#### Cryptographic Verification
+
+The script supports cryptographic verification of attestations using Cosign before extraction. This ensures that:
+
+- **Authenticity**: Attestations are signed by trusted entities
+- **Integrity**: Attestations haven't been tampered with
+- **Identity Verification**: Signatures come from expected workflows/identities
+
+**Default Verification Settings:**
+- **OIDC Issuer**: `https://token.actions.githubusercontent.com` (GitHub Actions)
+- **Identity Pattern**: Aleph Alpha shared workflows (`https://github.com/Aleph-Alpha/shared-workflows/.github/workflows/(build-and-push|scan-and-attest).yaml@.*`)
+
+**Custom Verification:**
+You can override the default verification parameters:
+
+```bash
+# Verify with custom GitHub organization workflows
+./cosign-extract.sh --type spdx --image myregistry.com/app:latest --verify \
+  --certificate-identity-regexp "https://github.com/myorg/.*/.github/workflows/.*"
+
+# Verify with different OIDC issuer
+./cosign-extract.sh --type slsa --image myregistry.com/app:latest --verify \
+  --certificate-oidc-issuer https://accounts.google.com \
+  --certificate-identity-regexp ".*@mycompany.com"
+```
+
+**Verification Process:**
+1. Script checks if `cosign` is installed
+2. Runs `cosign verify-attestation` with specified parameters
+3. Only proceeds with extraction if verification succeeds
+4. Displays verification status and details
+
+**Verification-Only Mode:**
+Use `--no-extraction` to perform verification without extracting content. This is useful for:
+- **CI/CD pipelines** that only need to verify attestation authenticity
+- **Security audits** where you only need to confirm signatures are valid
+- **Compliance checks** without exposing sensitive attestation content
+- **Quick verification** without the overhead of content processing
+
+When `--verify --no-extraction` is used together, the script optimizes performance by exiting immediately after successful verification, skipping the ORAS discovery and download phases entirely.
+
+```bash
+# Just verify that SLSA provenance exists and is valid
+./cosign-extract.sh --type slsa --image myapp:latest --verify --no-extraction
+
+# Verify all attestations are properly signed
+./cosign-extract.sh --image myapp:latest --choice all --verify --no-extraction
+```
+
 ## 📋 Prerequisites
 
 Before using these scripts, ensure you have the following tools installed:
@@ -110,12 +194,13 @@ Before using these scripts, ensure you have the following tools installed:
 - **jq** - JSON processor for parsing and formatting JSON data
 - **crane** - Tool for interacting with container registries
 - **oras** - OCI Registry As Storage client for working with OCI artifacts
+- **cosign** - Container signing and verification tool (required only for `--verify` option)
 
 ### Installation of Prerequisites
 
 **macOS (using Homebrew):**
 ```bash
-brew install jq crane oras
+brew install jq crane oras cosign
 ```
 
 **Ubuntu/Debian:**
@@ -131,6 +216,11 @@ sudo mv crane /usr/local/bin/
 curl -LO "https://github.com/oras-project/oras/releases/latest/download/oras_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz"
 tar -xzf oras_*.tar.gz
 sudo mv oras /usr/local/bin/
+
+# Install cosign
+curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
+sudo mv cosign-linux-amd64 /usr/local/bin/cosign
+sudo chmod +x /usr/local/bin/cosign
 ```
 
 ## 🚀 Installation
