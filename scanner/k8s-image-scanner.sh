@@ -56,9 +56,7 @@ Prerequisites:
   - kubectl (configured with access to target cluster)
   - trivy (for vulnerability scanning)
   - jq (for JSON processing)
-  - crane (for container registry operations)
-  - oras (for OCI artifact operations)
-  - cosign (for attestation verification, optional)
+  - cosign (for attestation verification)
 
 EOF
 }
@@ -346,7 +344,7 @@ check_prerequisites() {
 
     local missing_tools=()
 
-    for tool in kubectl trivy jq crane oras; do
+    for tool in kubectl trivy jq cosign; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
@@ -358,10 +356,6 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Check cosign availability (optional)
-    if ! command -v cosign >/dev/null 2>&1; then
-        log_warn "cosign not found - attestation verification will be skipped"
-    fi
 
     log_result "All required tools available"
 }
