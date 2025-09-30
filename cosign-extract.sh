@@ -14,6 +14,7 @@ Options:
   --type TYPE               Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
   --image IMAGE             Fully qualified image reference (required)
   --choice                  Which attestation to fetch: index, all
+  --last                    Automatically select the most recent attestation if multiple exist
   --output PATH             Output file (single type) or directory (all types)
   --list                    List available predicateTypes and counts
   --show-null               Show entries missing predicateType in --list
@@ -39,14 +40,16 @@ SHOW_NULL=false
 INSPECT_NULL=false
 VERIFY=false
 NO_EXTRACTION=false
+USE_LAST=false
 CERTIFICATE_OIDC_ISSUER="https://token.actions.githubusercontent.com"
-CERTIFICATE_IDENTITY_REGEXP="https://github.com/Aleph-Alpha/shared-workflows/.github/workflows/(build-and-push|scan-and-attest).yaml@.*"
+CERTIFICATE_IDENTITY_REGEXP="https://github.com/Aleph-Alpha/shared-workflows/.github/workflows/(build-and-push|scan-and-reattest).yaml@.*"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --type) TYPE="$2"; shift 2 ;;
     --image) IMAGE="$2"; shift 2 ;;
     --choice) CHOICE="$2"; shift 2 ;;
+    --last) USE_LAST=true; shift ;;
     --output) OUTPUT_FILE="$2"; shift 2 ;;
     --list) LIST_ONLY=true; shift ;;
     --show-null) SHOW_NULL=true; shift ;;
@@ -403,8 +406,14 @@ else
     fetch_attestation "${DIGESTS[0]}"
   else
     if [ -z "$CHOICE" ]; then
-      echo -n "Select attestation [1-${#DIGESTS[@]}]: "
-      read -r CHOICE
+      if $USE_LAST; then
+        # Automatically select the last (most recent) attestation
+        CHOICE=${#DIGESTS[@]}
+        echo "ℹ️  Automatically selecting most recent attestation [$CHOICE/${#DIGESTS[@]}]"
+      else
+        echo -n "Select attestation [1-${#DIGESTS[@]}]: "
+        read -r CHOICE
+      fi
     fi
     INDEX=$((CHOICE-1))
     if [ $INDEX -lt 0 ] || [ $INDEX -ge ${#DIGESTS[@]} ]; then

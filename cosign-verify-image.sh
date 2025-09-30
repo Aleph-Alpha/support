@@ -50,7 +50,7 @@ EOF
 
 IMAGE=""
 CERTIFICATE_OIDC_ISSUER="https://token.actions.githubusercontent.com"
-CERTIFICATE_IDENTITY_REGEXP="https://github.com/Aleph-Alpha/shared-workflows/.github/workflows/(build-and-push|scan-and-attest).yaml@.*"
+CERTIFICATE_IDENTITY_REGEXP="https://github.com/Aleph-Alpha/shared-workflows/.github/workflows/build-and-push.yaml@.*"
 CERTIFICATE_IDENTITY=""
 KEY_FILE=""
 KEYLESS=true

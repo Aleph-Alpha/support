@@ -1,0 +1,21 @@
+# Sample ignore file for k8s-image-scanner.sh
+# Lines starting with # are comments and will be ignored
+# Add one image pattern per line
+
+# System images that don't need scanning
+k8s.gcr.io/pause
+registry.k8s.io/pause
+
+# Base images without vulnerabilities
+alpine:latest
+scratch
+
+# Internal registry images to skip
+internal-registry.company.com/base/
+
+# Specific images by tag
+nginx:1.20-alpine
+redis:6-alpine
+
+# Images with known false positives
+problematic-image:v1.0.0
