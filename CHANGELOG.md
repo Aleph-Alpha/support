@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/Aleph-Alpha/support/compare/v1.2.0...v1.2.1) (2025-09-30)
+
+
+### Bug Fixes
+
+* fix requirements for k8s-image-scanner ([63dd65d](https://github.com/Aleph-Alpha/support/commit/63dd65d03a46bd86801d46f6ed59fa9678cb2681))
+
 ## [1.2.0](https://github.com/Aleph-Alpha/support/compare/v1.1.0...v1.2.0) (2025-09-30)
 
 
