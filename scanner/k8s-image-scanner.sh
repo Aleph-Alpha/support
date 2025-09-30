@@ -125,15 +125,15 @@ log_verbose() {
 convert_triage_to_trivyignore() {
     local triage_file="$1"
     local output_file="$2"
-    
+
     log_verbose "Converting cosign triage attestation to Trivy ignore format: $triage_file -> $output_file"
-    
+
     # Check if jq is available
     if ! command -v jq >/dev/null 2>&1; then
         log_error "jq is required for triage file conversion but not found"
         return 1
     fi
-    
+
     # Extract CVE IDs from the cosign triage attestation
     if jq -r '.predicate.trivy | keys[]' "$triage_file" > "$output_file" 2>/dev/null; then
         log_verbose "Successfully converted triage file with $(wc -l < "$output_file") CVEs"
@@ -154,33 +154,33 @@ analyze_cves() {
     local image="$1"
     local scan_dir="$2"
     local triage_file="$3"
-    
+
     # Initialize counters
     local unaddressed_cves=0
     local addressed_cves=0
     local irrelevant_cves=0
     local has_triage_file="No"
-    
+
     # Check if triage file exists
     if [[ -n "$triage_file" && -f "$triage_file" ]]; then
         has_triage_file="Yes"
     fi
-    
+
     # Run Trivy scan to get JSON output for analysis
     local json_report="$scan_dir/trivy-analysis.json"
     local stderr_file=$(mktemp)
-    
+
     log_verbose "Running Trivy analysis scan for CVE categorization: $image"
-    
+
     # Run Trivy without ignore file to get all vulnerabilities
     if trivy image --format json --severity LOW,MEDIUM,HIGH,CRITICAL --output "$json_report" "$image" 2>"$stderr_file"; then
         log_verbose "Trivy analysis completed for: $image"
-        
+
         # Get list of addressed CVEs from cosign triage file
         local addressed_cve_list=()
         local unaddressed_cve_list=()
         local irrelevant_cve_list=()
-        
+
         if [[ "$has_triage_file" == "Yes" ]]; then
             # Cosign JSON format only - check if predicate.trivy exists
             if jq -e '.predicate.trivy' "$triage_file" >/dev/null 2>&1; then
@@ -193,7 +193,7 @@ analyze_cves() {
                 log_verbose "Triage file exists but contains no CVEs to ignore (clean image)"
             fi
         fi
-        
+
         # Analyze all CVEs from the JSON report
         if [[ -f "$json_report" ]]; then
             # Get severity level hierarchy for comparison
@@ -204,13 +204,13 @@ analyze_cves() {
                 HIGH) min_level_num=3 ;;
                 CRITICAL) min_level_num=4 ;;
             esac
-            
+
             # Count CVEs by category
             while IFS= read -r line; do
                 local cve_id severity
                 cve_id=$(echo "$line" | jq -r '.VulnerabilityID // empty')
                 severity=$(echo "$line" | jq -r '.Severity // empty')
-                
+
                 if [[ -n "$cve_id" && -n "$severity" ]]; then
                     # Convert severity to number for comparison
                     local severity_num
@@ -221,7 +221,7 @@ analyze_cves() {
                         CRITICAL) severity_num=4 ;;
                         *) severity_num=0 ;;
                     esac
-                    
+
                     # Check if CVE is in addressed list
                     local is_addressed=false
                     if [[ ${#addressed_cve_list[@]} -gt 0 ]]; then
@@ -232,7 +232,7 @@ analyze_cves() {
                             fi
                         done
                     fi
-                    
+
                     # Categorize CVE
                     if [[ $severity_num -ge $min_level_num ]]; then
                         if [[ "$is_addressed" == "true" ]]; then
@@ -249,7 +249,7 @@ analyze_cves() {
                 fi
             done < <(jq -c '.Results[]?.Vulnerabilities[]? // empty' "$json_report" 2>/dev/null || true)
         fi
-        
+
         # Clean up temporary files
         rm -f "$json_report" "$stderr_file"
     else
@@ -259,37 +259,37 @@ analyze_cves() {
         fi
         rm -f "$stderr_file"
     fi
-    
+
     # Store results in scan directory for summary table
     local image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
     local results_file="$OUTPUT_DIR/$image_safe_name/cve_analysis.txt"
     local cve_details_file="$OUTPUT_DIR/$image_safe_name/cve_details.json"
-    
+
     # Save basic counts for backward compatibility
     if echo "$unaddressed_cves|$addressed_cves|$irrelevant_cves|$has_triage_file" > "$results_file"; then
         log_verbose "CVE analysis results saved to: $results_file"
     else
         log_error "Failed to save CVE analysis results to: $results_file"
     fi
-    
+
     # Save detailed CVE information as JSON
     # Handle empty arrays safely
     local unaddressed_json="[]"
     local addressed_json="[]"
     local irrelevant_json="[]"
-    
+
     if [[ ${#unaddressed_cve_list[@]} -gt 0 ]]; then
         unaddressed_json="[$(printf '"%s",' "${unaddressed_cve_list[@]}" | sed 's/,$//')]"
     fi
-    
+
     if [[ ${#addressed_cve_list[@]} -gt 0 ]]; then
         addressed_json="[$(printf '"%s",' "${addressed_cve_list[@]}" | sed 's/,$//')]"
     fi
-    
+
     if [[ ${#irrelevant_cve_list[@]} -gt 0 ]]; then
         irrelevant_json="[$(printf '"%s",' "${irrelevant_cve_list[@]}" | sed 's/,$//')]"
     fi
-    
+
     cat > "$cve_details_file" <<EOF
 {
   "image": "$image",
@@ -343,26 +343,26 @@ esac
 # Check prerequisites
 check_prerequisites() {
     echo "🔧 Checking prerequisites" >&2
-    
+
     local missing_tools=()
-    
+
     for tool in kubectl trivy jq crane oras; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
     done
-    
+
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         log_error "Missing required tools: ${missing_tools[*]}"
         log_error "Please install the missing tools and try again."
         exit 1
     fi
-    
+
     # Check cosign availability (optional)
     if ! command -v cosign >/dev/null 2>&1; then
         log_warn "cosign not found - attestation verification will be skipped"
     fi
-    
+
     log_result "All required tools available"
 }
 
@@ -370,7 +370,7 @@ check_prerequisites() {
 setup_temp_dir() {
     TEMP_DIR=$(mktemp -d)
     log_verbose "Created temporary directory: $TEMP_DIR"
-    
+
     # Cleanup on exit
     trap cleanup_temp_dir EXIT
 }
@@ -386,14 +386,14 @@ cleanup_temp_dir() {
 load_ignore_list() {
     if [[ -n "$IGNORE_FILE" && -f "$IGNORE_FILE" ]]; then
         echo "📄 Loading ignore patterns from: $IGNORE_FILE" >&2
-        
+
         while IFS= read -r line || [[ -n "$line" ]]; do
             # Skip empty lines and comments
             if [[ -n "$line" && ! "$line" =~ ^[[:space:]]*# ]]; then
                 IGNORE_LIST+=("$line")
             fi
         done < "$IGNORE_FILE"
-        
+
         log_result "Loaded ${#IGNORE_LIST[@]} ignore patterns"
         if $VERBOSE; then
             for img in "${IGNORE_LIST[@]}"; do
@@ -406,37 +406,37 @@ load_ignore_list() {
 # Check if image should be ignored
 should_ignore_image() {
     local image="$1"
-    
+
     # Return false if IGNORE_LIST is empty
     if [[ ${#IGNORE_LIST[@]} -eq 0 ]]; then
         return 1
     fi
-    
+
     for ignore_pattern in "${IGNORE_LIST[@]}"; do
         if [[ "$image" == *"$ignore_pattern"* ]]; then
             return 0
         fi
     done
-    
+
     return 1
 }
 
 # Setup kubectl context
 setup_kubectl() {
     local kubectl_args=()
-    
+
     if [[ -n "$KUBECONFIG" ]]; then
         kubectl_args+=(--kubeconfig="$KUBECONFIG")
     fi
-    
+
     if [[ -n "$CONTEXT" ]]; then
         kubectl_args+=(--context="$CONTEXT")
     fi
-    
+
     # Test kubectl connectivity with timeout
     echo "🔗 Testing Kubernetes connectivity (30s timeout)" >&2
     local connectivity_test_output
-    
+
     # Try to use timeout command if available, otherwise use a simpler approach
     if command -v timeout >/dev/null 2>&1; then
         # Linux/GNU timeout
@@ -485,9 +485,9 @@ setup_kubectl() {
         fi
         log_verbose "Kubernetes connectivity test successful"
     fi
-    
+
     log_result "Connected to cluster, namespace: $NAMESPACE"
-    
+
     # Store kubectl args for later use
     echo ${kubectl_args[@]+"${kubectl_args[@]}"} > "$TEMP_DIR/kubectl_args"
 }
@@ -496,33 +496,33 @@ setup_kubectl() {
 extract_k8s_images() {
     local kubectl_args
     kubectl_args=$(cat "$TEMP_DIR/kubectl_args")
-    
+
     echo "🔍 Discovering images in namespace: $NAMESPACE" >&2
-    
+
     # Get all images from pods, deployments, daemonsets, statefulsets, jobs, cronjobs
     local images_file="$TEMP_DIR/all_images.txt"
-    
+
     {
         # From running pods
         kubectl $kubectl_args get pods -n "$NAMESPACE" -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{range .spec.initContainers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null || true
-        
+
         # From deployments
         kubectl $kubectl_args get deployments -n "$NAMESPACE" -o jsonpath='{range .items[*]}{range .spec.template.spec.containers[*]}{.image}{"\n"}{end}{range .spec.template.spec.initContainers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null || true
-        
+
         # From daemonsets
         kubectl $kubectl_args get daemonsets -n "$NAMESPACE" -o jsonpath='{range .items[*]}{range .spec.template.spec.containers[*]}{.image}{"\n"}{end}{range .spec.template.spec.initContainers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null || true
-        
+
         # From statefulsets
         kubectl $kubectl_args get statefulsets -n "$NAMESPACE" -o jsonpath='{range .items[*]}{range .spec.template.spec.containers[*]}{.image}{"\n"}{end}{range .spec.template.spec.initContainers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null || true
-        
+
         # From jobs
         kubectl $kubectl_args get jobs -n "$NAMESPACE" -o jsonpath='{range .items[*]}{range .spec.template.spec.containers[*]}{.image}{"\n"}{end}{range .spec.template.spec.initContainers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null || true
-        
+
         # From cronjobs
         kubectl $kubectl_args get cronjobs -n "$NAMESPACE" -o jsonpath='{range .items[*]}{range .spec.jobTemplate.spec.template.spec.containers[*]}{.image}{"\n"}{end}{range .spec.jobTemplate.spec.template.spec.initContainers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null || true
-        
+
     } | grep -v '^$' | sort -u > "$images_file"
-    
+
     # Filter out ignored images
     local filtered_images=()
     while IFS= read -r image; do
@@ -533,22 +533,22 @@ extract_k8s_images() {
             filtered_images+=("$image")
         fi
     done < "$images_file"
-    
+
     TOTAL_IMAGES=${#filtered_images[@]}
-    
+
     if [[ $TOTAL_IMAGES -eq 0 ]]; then
         log_warn "No images found to scan in namespace: $NAMESPACE"
         exit 0
     fi
-    
+
     log_result "Found $TOTAL_IMAGES unique images to scan"
     if [[ $SKIPPED_IMAGES -gt 0 ]]; then
         log_result "Skipped $SKIPPED_IMAGES ignored images"
     fi
-    
+
     # Save filtered images list
     printf '%s\n' "${filtered_images[@]}" > "$TEMP_DIR/images_to_scan.txt"
-    
+
     if $VERBOSE; then
         log_verbose "Images to scan:"
         for img in "${filtered_images[@]}"; do
@@ -560,16 +560,16 @@ extract_k8s_images() {
 # Check if image is Cosign-signed and has triage attestations
 detect_attestation_type() {
     local image="$1"
-    
+
     log_verbose "Checking if image is Cosign-signed: $image"
-    
+
     # Check if the image is Cosign-signed (as per Aleph Alpha Security Disclosure v2)
     if cosign verify "$image" \
         --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
         --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" >/dev/null 2>&1; then
-        
+
         log_verbose "Image is Cosign-signed, checking for triage attestations"
-        
+
         # Image is signed, check if triage attestations exist (without verification for now)
         # We'll do the verification during download
         if "$SCRIPT_DIR/../cosign-extract.sh" --image "$image" --list 2>/dev/null | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
@@ -589,21 +589,21 @@ detect_attestation_type() {
 download_cosign_triage() {
     local image="$1"
     local output_file="$2"
-    
+
     log_verbose "Downloading cosign triage attestation for: $image"
-    
+
     # Use the existing cosign-extract.sh script
     local extract_script="$SCRIPT_DIR/../cosign-extract.sh"
     if [[ ! -f "$extract_script" ]]; then
         log_error "cosign-extract.sh not found at: $extract_script"
         return 1
     fi
-    
+
     # Extract triage attestation (automatically select latest if multiple)
     if "$extract_script" --type triage --image "$image" --output "$output_file" --last --verify \
         --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
         --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" >/dev/null 2>&1; then
-        
+
         log_verbose "Successfully downloaded cosign triage for: $image"
         return 0
     else
@@ -617,16 +617,16 @@ run_trivy_scan() {
     local image="$1"
     local triage_file="$2"
     local output_file="$3"
-    
+
     log_verbose "Running Trivy scan for: $image"
-    
+
     local trivy_args=(
         "image"
         "--format" "$FORMAT"
         "--severity" "$SEVERITY"
         "--output" "$output_file"
     )
-    
+
     # Add triage file if available
     if [[ -n "$triage_file" && -f "$triage_file" ]]; then
         # Convert triage attestation to Trivy ignore format
@@ -638,24 +638,24 @@ run_trivy_scan() {
             log_verbose "No CVEs to ignore in triage file, scanning all vulnerabilities"
         fi
     fi
-    
+
     # Add custom config if specified
     if [[ -n "$TRIVY_CONFIG" && -f "$TRIVY_CONFIG" ]]; then
         trivy_args+=("--config" "$TRIVY_CONFIG")
     fi
-    
+
     # Add timeout
     trivy_args+=("--timeout" "${TIMEOUT}s")
-    
+
     # Add the image
     trivy_args+=("$image")
-    
+
     # Run Trivy scan
     log_verbose "Running: trivy ${trivy_args[*]}"
-    
+
     # Create a temporary file for stderr
     local stderr_file=$(mktemp)
-    
+
     if trivy "${trivy_args[@]}" 2>"$stderr_file"; then
         log_verbose "Trivy scan completed for: $image"
         rm -f "$stderr_file"
@@ -677,19 +677,19 @@ process_image() {
     local image="$1"
     local image_safe_name
     image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
-    
+
     local image_dir="$OUTPUT_DIR/$image_safe_name"
     mkdir -p "$image_dir"
-    
+
     log_verbose "Processing: $image"
-    
+
     # Detect attestation type
     local attestation_type
     attestation_type=$(detect_attestation_type "$image")
-    
+
     local triage_file=""
     local triage_downloaded=false
-    
+
     # Handle image based on signature status
     case "$attestation_type" in
         "cosign")
@@ -715,7 +715,7 @@ process_image() {
             return 0
             ;;
     esac
-    
+
     # Run Trivy scan
     local scan_output="$image_dir/trivy-report.$FORMAT"
     if run_trivy_scan "$image" "$triage_file" "$scan_output"; then
@@ -741,12 +741,12 @@ EOF
 # Process all images
 process_all_images() {
     echo "⚙️  Processing images" >&2
-    
+
     local images=()
     while IFS= read -r image; do
         images+=("$image")
     done < "$TEMP_DIR/images_to_scan.txt"
-    
+
     if $DRY_RUN; then
         log_result "DRY RUN - Would process ${#images[@]} images:"
         for img in "${images[@]}"; do
@@ -754,11 +754,11 @@ process_all_images() {
         done
         return 0
     fi
-    
+
     # Process images in parallel
     local pids=()
     local count=0
-    
+
     for image in "${images[@]}"; do
         # Wait if we've reached the parallel limit
         while [[ ${#pids[@]} -ge $PARALLEL_SCANS ]]; do
@@ -776,56 +776,56 @@ process_all_images() {
             fi
             sleep 1
         done
-        
+
         # Start processing in background
         process_image "$image" &
         pids+=($!)
-        
+
         ((count++))
         log_result "Processing $count/${#images[@]}: $(basename "$image")"
     done
-    
+
     # Wait for all remaining processes
     if [[ ${#pids[@]} -gt 0 ]]; then
         for pid in "${pids[@]}"; do
             wait "$pid" || true
         done
     fi
-    
+
     # Collect results by checking what was actually created
     collect_scan_results
-    
+
     # Show final results
     if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
         log_result "✅ ${#SUCCESSFUL_SCANS[@]} successful scans"
     fi
-    
+
     if [[ ${#FAILED_SCANS[@]} -gt 0 ]]; then
         log_result "❌ ${#FAILED_SCANS[@]} failed scans"
     fi
-    
+
     if [[ ${#SKIPPED_SCANS[@]} -gt 0 ]]; then
         log_result "⏭️  ${#SKIPPED_SCANS[@]} skipped scans (unsigned images)"
     fi
-    
+
     log_result "Completed processing all images"
 }
 
 # Collect scan results from output directories
 collect_scan_results() {
     log_verbose "Collecting scan results..."
-    
+
     # Reset arrays
     SUCCESSFUL_SCANS=()
     FAILED_SCANS=()
     SKIPPED_SCANS=()
-    
+
     # Read the list of images that were supposed to be scanned
     while IFS= read -r image; do
         local image_safe_name
         image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
         local image_dir="$OUTPUT_DIR/$image_safe_name"
-        
+
         # Check if image was skipped (unsigned)
         if [[ -f "$image_dir/skipped.txt" ]]; then
             SKIPPED_SCANS+=("$image")
@@ -839,35 +839,35 @@ collect_scan_results() {
             log_verbose "❌ Failed: $(basename "$image")"
         fi
     done < "$TEMP_DIR/images_to_scan.txt"
-    
+
     log_verbose "Collected ${#SUCCESSFUL_SCANS[@]} successful, ${#FAILED_SCANS[@]} failed, and ${#SKIPPED_SCANS[@]} skipped scans"
 }
 
 # Generate final report
 generate_final_report() {
     local report_file="$OUTPUT_DIR/scan-summary.json"
-    
+
     echo "📊 Generating final report" >&2
-    
+
     local successful_count=0
     local failed_count=0
     local skipped_count=0
-    
+
     # Safe array length calculation
     if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
         successful_count=${#SUCCESSFUL_SCANS[@]}
     fi
-    
+
     if [[ ${#FAILED_SCANS[@]} -gt 0 ]]; then
         failed_count=${#FAILED_SCANS[@]}
     fi
-    
+
     if [[ ${#SKIPPED_SCANS[@]} -gt 0 ]]; then
         skipped_count=${#SKIPPED_SCANS[@]}
     fi
-    
+
     local total_processed=$((successful_count + failed_count + skipped_count))
-    
+
     # Create summary report
     cat > "$report_file" <<EOF
 {
@@ -884,7 +884,7 @@ generate_final_report() {
     "severity_filter": "$SEVERITY"
   },
   "successful_scans": [
-$(if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then 
+$(if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
     for i in "${!SUCCESSFUL_SCANS[@]}"; do
         if [[ $i -eq $((${#SUCCESSFUL_SCANS[@]} - 1)) ]]; then
             printf '    "%s"\n' "${SUCCESSFUL_SCANS[$i]}"
@@ -895,7 +895,7 @@ $(if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
 fi)
   ],
   "failed_scans": [
-$(if [[ ${#FAILED_SCANS[@]} -gt 0 ]]; then 
+$(if [[ ${#FAILED_SCANS[@]} -gt 0 ]]; then
     for i in "${!FAILED_SCANS[@]}"; do
         if [[ $i -eq $((${#FAILED_SCANS[@]} - 1)) ]]; then
             printf '    "%s"\n' "${FAILED_SCANS[$i]}"
@@ -906,7 +906,7 @@ $(if [[ ${#FAILED_SCANS[@]} -gt 0 ]]; then
 fi)
   ],
   "skipped_scans": [
-$(if [[ ${#SKIPPED_SCANS[@]} -gt 0 ]]; then 
+$(if [[ ${#SKIPPED_SCANS[@]} -gt 0 ]]; then
     for i in "${!SKIPPED_SCANS[@]}"; do
         if [[ $i -eq $((${#SKIPPED_SCANS[@]} - 1)) ]]; then
             printf '    "%s"\n' "${SKIPPED_SCANS[$i]}"
@@ -935,9 +935,9 @@ fi)
   ]
 }
 EOF
-    
+
     log_result "Report saved: $report_file"
-    
+
     # Print summary to console
     echo ""
     echo "📊 SCAN SUMMARY"
@@ -951,7 +951,7 @@ EOF
     echo "Skipped scans: $skipped_count (unsigned images)"
     echo ""
     echo "📁 Reports saved to: $OUTPUT_DIR"
-    
+
     if [[ $failed_count -gt 0 && ${#FAILED_SCANS[@]} -gt 0 ]]; then
         echo ""
         echo "❌ Failed scans:"
@@ -966,29 +966,29 @@ generate_cve_summary_table() {
     echo ""
     echo "🔍 CVE ANALYSIS SUMMARY"
     echo "======================="
-    
+
     # Read data from the JSON report instead of recalculating
     local json_file="$OUTPUT_DIR/scan-summary.json"
     if [[ ! -f "$json_file" ]]; then
         echo "No scan summary available."
         return
     fi
-    
+
     # Extract minimum CVE level and display it
     local min_cve_level=$(jq -r '.cve_analysis[0].min_cve_level // "HIGH"' "$json_file")
     echo "Minimum CVE Level: $min_cve_level (levels below this are considered irrelevant)"
     echo ""
-    
+
     # Check if we have CVE analysis data
     local cve_count=$(jq '.cve_analysis | length' "$json_file")
     if [[ "$cve_count" == "0" ]]; then
         echo "No CVE analysis data available."
         return
     fi
-    
+
     # Create table data using column utility
     local table_data="Image|Unaddressed CVEs|Addressed CVEs|Irrelevant CVEs|Triage File\n"
-    
+
     # Read data from JSON and build table
     while IFS= read -r line; do
         local image=$(echo "$line" | jq -r '.image')
@@ -996,10 +996,10 @@ generate_cve_summary_table() {
         local addressed=$(echo "$line" | jq -r '.addressed_cves')
         local irrelevant=$(echo "$line" | jq -r '.irrelevant_cves')
         local has_triage=$(echo "$line" | jq -r '.has_triage_file')
-        
+
         # Extract just image name and version (last component)
         local image_name=$(echo "$image" | sed 's|.*/||')
-        
+
         # Add color coding for unaddressed CVEs
         local unaddressed_display="$unaddressed"
         if [[ $unaddressed -gt 0 ]]; then
@@ -1007,28 +1007,28 @@ generate_cve_summary_table() {
         else
             unaddressed_display="✅ $unaddressed"
         fi
-        
+
         # Add color coding for triage file status
         local triage_display="➖ No"
         if [[ "$has_triage" == "true" ]]; then
             triage_display="✅ Yes"
         fi
-        
+
         # Add row to table data
         table_data+="$image_name|$unaddressed_display|$addressed|$irrelevant|$triage_display\n"
-        
+
     done < <(jq -c '.cve_analysis[]' "$json_file")
-    
+
     # Print table using column utility
     echo -e "$table_data" | column -t -s '|'
-    
+
     # Print summary statistics (calculated from JSON)
     local total_unaddressed=$(jq '[.cve_analysis[].unaddressed_cves] | add' "$json_file")
     local total_addressed=$(jq '[.cve_analysis[].addressed_cves] | add' "$json_file")
     local total_irrelevant=$(jq '[.cve_analysis[].irrelevant_cves] | add' "$json_file")
     local images_with_triage=$(jq '[.cve_analysis[] | select(.has_triage_file == true)] | length' "$json_file")
     local total_images=$(jq '.cve_analysis | length' "$json_file")
-    
+
     echo ""
     echo "📈 SUMMARY STATISTICS"
     echo "===================="
@@ -1036,7 +1036,7 @@ generate_cve_summary_table() {
     echo "Total addressed CVEs: $total_addressed"
     echo "Total irrelevant CVEs (<$min_cve_level): $total_irrelevant"
     echo "Images with triage files: $images_with_triage/$total_images"
-    
+
     if [[ $total_unaddressed -eq 0 ]]; then
         echo "🎉 All relevant CVEs have been addressed!"
     else
@@ -1050,18 +1050,18 @@ main() {
     echo "🚀 Kubernetes Image Scanner" >&2
     log_result "Namespace: $NAMESPACE"
     log_result "Output directory: $OUTPUT_DIR"
-    
+
     if $DRY_RUN; then
         log_result "Mode: DRY RUN (no actual scanning)"
     fi
     echo >&2
-    
+
     # Setup
     check_prerequisites
     setup_temp_dir
     load_ignore_list
     setup_kubectl
-    
+
     # Create output directory (only if not dry-run)
     if ! $DRY_RUN; then
         # Clean existing results
@@ -1071,11 +1071,11 @@ main() {
         fi
         mkdir -p "$OUTPUT_DIR"
     fi
-    
+
     # Extract and process images
     extract_k8s_images
     process_all_images
-    
+
     # Generate final report and CVE summary
     if ! $DRY_RUN; then
         # Generate final report first (creates JSON with CVE data)
@@ -1083,7 +1083,7 @@ main() {
         # Generate CVE summary table from JSON data
         generate_cve_summary_table
     fi
-    
+
     log_success "Kubernetes image scanning completed!"
 }
 

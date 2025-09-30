@@ -124,9 +124,9 @@ COSIGN_ARGS=()
 if $KEYLESS; then
   echo "   ↳ Mode: Keyless verification"
   echo "   ↳ OIDC Issuer: $CERTIFICATE_OIDC_ISSUER"
-  
+
   COSIGN_ARGS+=("--certificate-oidc-issuer=$CERTIFICATE_OIDC_ISSUER")
-  
+
   if [[ -n "$CERTIFICATE_IDENTITY" ]]; then
     echo "   ↳ Identity: $CERTIFICATE_IDENTITY"
     COSIGN_ARGS+=("--certificate-identity=$CERTIFICATE_IDENTITY")
@@ -134,7 +134,7 @@ if $KEYLESS; then
     echo "   ↳ Identity Regexp: $CERTIFICATE_IDENTITY_REGEXP"
     COSIGN_ARGS+=("--certificate-identity-regexp=$CERTIFICATE_IDENTITY_REGEXP")
   fi
-  
+
   COSIGN_ARGS+=("--rekor-url=$REKOR_URL")
 else
   echo "   ↳ Mode: Key-based verification"
@@ -164,25 +164,25 @@ fi
 TEMP_OUTPUT=$(mktemp)
 if cosign verify "${COSIGN_ARGS[@]}" > "$TEMP_OUTPUT" 2>&1; then
   echo "✅ Image signature verification successful!"
-  
+
   if $VERBOSE; then
     echo ""
     echo "📋 Verification Details:"
     cat "$TEMP_OUTPUT"
   fi
-  
+
   # Show output file locations
   if [[ -n "$OUTPUT_SIGNATURE" ]]; then
     echo "💾 Signature saved to: $OUTPUT_SIGNATURE"
   fi
-  
+
   if [[ -n "$OUTPUT_CERTIFICATE" ]]; then
     echo "💾 Certificate saved to: $OUTPUT_CERTIFICATE"
   fi
-  
+
   echo ""
   echo "🛡️  Image is cryptographically signed and verified!"
-  
+
 else
   echo "❌ Image signature verification failed!"
   echo ""
@@ -194,7 +194,7 @@ else
   echo "   • Wrong verification parameters (OIDC issuer, identity, key)"
   echo "   • Signature was created with different signing method"
   echo "   • Network issues accessing transparency log"
-  
+
   rm -f "$TEMP_OUTPUT"
   exit 1
 fi

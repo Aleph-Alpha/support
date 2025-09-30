@@ -541,7 +541,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🏢 About Aleph Alpha
 
-[Aleph Alpha](https://aleph-alpha.com) researches, develops and deploys sovereign, explainable AI. At the heart of our offering is PhariaAI – a modular AI suite that empowers enterprises and governments to build, customize, and operate their own AI infrastructure to maintain critical digital sovereignty. Instead of renting black-box technology, organizations retain full ownership, independence, and control over their data, processes, and value creation. 
+[Aleph Alpha](https://aleph-alpha.com) researches, develops and deploys sovereign, explainable AI. At the heart of our offering is PhariaAI – a modular AI suite that empowers enterprises and governments to build, customize, and operate their own AI infrastructure to maintain critical digital sovereignty. Instead of renting black-box technology, organizations retain full ownership, independence, and control over their data, processes, and value creation.
 
 Our support scripts are designed to assist customers and the broader community in streamlining workflows and enhancing efficiency when working with containerized applications and security attestation processes. By simplifying complex tasks, optimizing performance, and ensuring compliance, these tools empower users to focus on innovation and secure deployment practices.
 ---
