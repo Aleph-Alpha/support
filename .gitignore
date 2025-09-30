@@ -1,0 +1,4 @@
+scan-results
+scanner/ignore.txt
+scanner/test-k8s-scanner.sh
+*.backup

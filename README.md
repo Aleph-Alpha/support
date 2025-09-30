@@ -6,8 +6,11 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
 
 - [Overview](#overview)
 - [Scripts](#scripts)
-  - [cosign-extract.sh](#cosign-extractsh)
-  - [cosign-verify-image.sh](#cosign-verify-imagesh)
+  - [Scanner Scripts](#scanner-scripts)
+    - [k8s-image-scanner.sh](#k8s-image-scannersh)
+  - [Cosign Scripts](#cosign-scripts)
+    - [cosign-extract.sh](#cosign-extractsh)
+    - [cosign-verify-image.sh](#cosign-verify-imagesh)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Contributing](#contributing)
@@ -19,7 +22,184 @@ This repository contains utility scripts designed to help Aleph Alpha customers 
 
 ## 🛠️ Scripts
 
-### cosign-extract.sh
+### Scanner Scripts
+
+#### k8s-image-scanner.sh
+
+A comprehensive Kubernetes image scanning script that automatically discovers container images in a namespace, processes Cosign-signed images with triage attestations, and runs Trivy vulnerability scans with detailed CVE analysis and reporting.
+
+#### Features
+
+- **Kubernetes Integration**: Automatically discovers images from pods, deployments, daemonsets, statefulsets, jobs, and cronjobs
+- **Cosign Integration**: Processes only Cosign-signed images with triage attestations
+- **Smart Image Filtering**: Skips unsigned images and applies configurable ignore lists
+- **Detailed CVE Analysis**: Categorizes CVEs as unaddressed, addressed (via triage), or irrelevant based on severity
+- **Parallel Processing**: Configurable parallel scanning for improved performance
+- **Comprehensive Reporting**: Generates detailed reports with actual CVE IDs in both table and JSON formats
+- **Triage Integration**: Automatically applies Cosign triage attestations to filter known false positives
+- **Flexible Configuration**: Support for custom Trivy configurations and severity filtering
+- **Dry Run Mode**: Preview what would be scanned without executing actual scans
+
+#### Image Processing Logic
+
+The script processes images based on their signature status:
+
+| Image Type | Description | Action |
+|------------|-------------|---------|
+| **Cosign-signed with triage** | Images signed with Cosign that have triage attestations | Scanned with triage filtering applied |
+| **Cosign-signed without triage** | Images signed with Cosign but no triage attestations | Scanned without triage filtering |
+| **Unsigned** | Images without Cosign signatures | Skipped (not scanned) |
+
+#### Usage Examples
+
+**Basic scan of default namespace:**
+```bash
+./scanner/k8s-image-scanner.sh
+```
+
+**Scan specific namespace with ignore file:**
+```bash
+./scanner/k8s-image-scanner.sh --namespace production --ignore-file ./scanner/ignore-images.txt
+```
+
+**Parallel scanning with custom output:**
+```bash
+./scanner/k8s-image-scanner.sh --namespace staging --output-dir ./security-reports --parallel-scans 5
+```
+
+**Dry run to preview what would be scanned:**
+```bash
+./scanner/k8s-image-scanner.sh --namespace production --dry-run
+```
+
+**JSON output with custom severity filtering:**
+```bash
+./scanner/k8s-image-scanner.sh --format json --severity "CRITICAL,HIGH,MEDIUM" --output-dir ./reports
+```
+
+**CVE analysis with custom minimum severity level:**
+```bash
+./scanner/k8s-image-scanner.sh --min-cve-level MEDIUM --namespace production
+```
+
+**Custom Kubernetes context and configuration:**
+```bash
+./scanner/k8s-image-scanner.sh --context prod-cluster --kubeconfig ~/.kube/prod-config --namespace app-prod
+```
+
+#### Command Line Options
+
+```
+Usage:
+  ./scanner/k8s-image-scanner.sh [OPTIONS]
+
+Options:
+  --namespace NAMESPACE         Kubernetes namespace to scan (default: pharia-ai)
+  --ignore-file FILE           File containing images to ignore (one per line)
+  --output-dir DIR             Output directory for reports (default: ./scan-results)
+  --kubeconfig FILE            Path to kubeconfig file (optional)
+  --context CONTEXT            Kubernetes context to use (optional)
+  --trivy-config FILE          Custom Trivy configuration file (optional)
+  --parallel-scans NUM         Number of parallel scans (default: 3)
+  --timeout TIMEOUT            Timeout for individual operations in seconds (default: 300)
+  --certificate-oidc-issuer ISSUER    OIDC issuer for cosign verification
+  --certificate-identity-regexp REGEX Identity regexp for cosign verification
+  --min-cve-level LEVEL        Minimum CVE severity level for analysis: LOW|MEDIUM|HIGH|CRITICAL (default: HIGH)
+  --verbose                    Enable verbose logging
+  --dry-run                    Show what would be scanned without executing
+  --format FORMAT              Report format: table|json|sarif (default: table)
+  --severity SEVERITIES        Comma-separated list of severities to include (default: HIGH,CRITICAL)
+  -h, --help                   Show this help
+```
+
+#### Ignore File Format
+
+Create a text file with one image pattern per line to exclude from scanning:
+
+```
+# Comments start with #
+k8s.gcr.io/pause
+registry.k8s.io/pause
+alpine:latest
+internal-registry.company.com/base/
+nginx:1.20-alpine
+```
+
+See `scanner/sample-ignore-images.txt` for a complete example.
+
+#### Output Structure
+
+The script creates a structured output directory:
+
+```
+scan-results/
+├── scan-summary.json                    # Overall scan summary with detailed CVE analysis
+├── registry_example_com_app_v1_0_0/     # Per-image results (Cosign-signed)
+│   ├── metadata.json                    # Image scan metadata
+│   ├── triage.json                      # Downloaded Cosign triage attestation
+│   ├── triage.trivyignore               # Converted triage file for Trivy
+│   ├── cve_details.json                 # Detailed CVE analysis with actual CVE IDs
+│   ├── trivy-analysis.json              # Raw Trivy JSON output
+│   └── trivy-report.table               # Trivy scan results (table format)
+└── registry_example_com_db_v2_1_0/      # Per-image results (signed, no triage)
+    ├── metadata.json
+    ├── cve_details.json                 # CVE analysis (no triage applied)
+    ├── trivy-analysis.json
+    └── trivy-report.table
+```
+
+#### CVE Analysis Output
+
+The `scan-summary.json` file includes comprehensive CVE analysis data:
+
+```json
+{
+  "scan_summary": {
+    "successful_scans": 2,
+    "failed_scans": 0,
+    "skipped_scans": 5
+  },
+  "cve_analysis": [
+    {
+      "image": "app:v1.0.0",
+      "unaddressed_cves": 0,
+      "addressed_cves": 15,
+      "irrelevant_cves": 23,
+      "has_triage_file": true,
+      "unaddressed_cve_list": [],
+      "addressed_cve_list": ["CVE-2023-1234", "CVE-2023-5678", ...],
+      "irrelevant_cve_list": ["CVE-2022-9999", ...],
+      "min_cve_level": "HIGH"
+    }
+  ]
+}
+```
+
+#### Integration with Existing Scripts
+
+The scanner leverages the existing `cosign-extract.sh` script for Cosign attestation extraction, ensuring consistent verification and extraction behavior. It automatically:
+
+1. **Detects image signatures** using Cosign verification to determine if images are signed
+2. **Downloads triage attestations** from Cosign-signed images using `cosign-extract.sh --last`
+3. **Selects latest attestations** automatically when multiple triage attestations exist
+4. **Verifies attestations** using configurable OIDC settings for security
+5. **Converts triage data** from JSON attestation format to Trivy ignore format
+6. **Applies triage filtering** to Trivy scans automatically
+7. **Analyzes CVE results** categorizing them as unaddressed, addressed, or irrelevant
+8. **Generates comprehensive reports** with detailed CVE analysis and actual CVE IDs
+
+#### Prerequisites
+
+- **kubectl** (configured with access to target cluster)
+- **trivy** (for vulnerability scanning)
+- **jq** (for JSON processing)
+- **crane** (for container registry operations)
+- **cosign** (for signature verification and attestation extraction)
+- **column** (for table formatting, usually pre-installed on Unix systems)
+
+### Cosign Scripts
+
+#### cosign-extract.sh
 
 A powerful bash script for extracting and inspecting Cosign attestations from container images. This tool helps you retrieve various types of security attestations including SLSA provenance, SBOM data, vulnerability reports, and custom attestations.
 
@@ -77,6 +257,11 @@ A powerful bash script for extracting and inspecting Cosign attestations from co
 ./cosign-extract.sh --type spdx --image registry.example.com/myapp:latest --verify --output sbom.spdx.json
 ```
 
+**Automatically select the most recent attestation when multiple exist:**
+```bash
+./cosign-extract.sh --type triage --image registry.example.com/myapp:latest --last --output triage.json
+```
+
 **Extract with custom verification parameters:**
 ```bash
 ./cosign-extract.sh --type slsa --image registry.example.com/myapp:latest --verify \
@@ -109,6 +294,7 @@ Options:
   --type TYPE               Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
   --image IMAGE             Fully qualified image reference (required)
   --choice                  Which attestation to fetch: index, all
+  --last                    Automatically select the most recent attestation if multiple exist
   --output PATH             Output file (single type) or directory (all types)
   --list                    List available predicateTypes and counts
   --show-null               Show entries missing predicateType in --list
@@ -137,6 +323,24 @@ When multiple attestations of the same type are found, the script will prompt yo
 #   [2] sha256:def456...
 # Select attestation [1-2]: 1
 ```
+
+#### Automatic Selection Mode
+
+Use the `--last` flag to automatically select the most recent attestation without interactive prompts:
+
+```bash
+./cosign-extract.sh --type triage --image registry.example.com/myapp:latest --last
+# Output:
+# 🔎 Found 2 attestations for type=triage:
+#   [1] sha256:abc123...
+#   [2] sha256:def456...
+# ℹ️  Automatically selecting most recent attestation [2/2]
+```
+
+This is particularly useful for:
+- **Automated workflows** where user interaction is not possible
+- **CI/CD pipelines** that need the latest attestation data
+- **Scripts** that require deterministic behavior without prompts
 
 #### Cryptographic Verification
 
@@ -187,7 +391,7 @@ When `--verify --no-extraction` is used together, the script optimizes performan
 ./cosign-extract.sh --image myapp:latest --choice all --verify --no-extraction
 ```
 
-### cosign-verify-image.sh
+#### cosign-verify-image.sh
 
 A dedicated script for verifying container image signatures using Cosign. This tool focuses specifically on image signature verification (not attestations) and supports both keyless and key-based verification methods.
 
@@ -275,14 +479,15 @@ Before using these scripts, ensure you have the following tools installed:
 - **bash** (version 4.0 or later)
 - **jq** - JSON processor for parsing and formatting JSON data
 - **crane** - Tool for interacting with container registries
-- **oras** - OCI Registry As Storage client for working with OCI artifacts
-- **cosign** - Container signing and verification tool (required only for `--verify` option)
+- **cosign** - Container signing and verification tool
+- **trivy** - Container vulnerability scanner (for k8s-image-scanner.sh)
+- **column** - Table formatting utility (usually pre-installed on Unix systems)
 
 ### Installation of Prerequisites
 
 **macOS (using Homebrew):**
 ```bash
-brew install jq crane oras cosign
+brew install jq crane cosign trivy
 ```
 
 **Ubuntu/Debian:**
@@ -294,15 +499,13 @@ sudo apt-get update && sudo apt-get install -y jq
 curl -sL "https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_$(uname -s)_$(uname -m).tar.gz" | tar -xz crane
 sudo mv crane /usr/local/bin/
 
-# Install oras
-curl -LO "https://github.com/oras-project/oras/releases/latest/download/oras_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/').tar.gz"
-tar -xzf oras_*.tar.gz
-sudo mv oras /usr/local/bin/
-
 # Install cosign
 curl -O -L "https://github.com/sigstore/cosign/releases/latest/download/cosign-linux-amd64"
 sudo mv cosign-linux-amd64 /usr/local/bin/cosign
 sudo chmod +x /usr/local/bin/cosign
+
+# Install trivy
+curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 ```
 
 ## 🚀 Installation
@@ -315,7 +518,7 @@ sudo chmod +x /usr/local/bin/cosign
 
 2. Make the scripts executable:
    ```bash
-   chmod +x cosign-extract.sh cosign-verify-image.sh
+   chmod +x scanner/k8s-image-scanner.sh cosign-extract.sh cosign-verify-image.sh
    ```
 
 3. Optionally, add the scripts to your PATH or create symlinks in `/usr/local/bin/` for system-wide access.
@@ -338,8 +541,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🏢 About Aleph Alpha
 
-[Aleph Alpha](https://aleph-alpha.com) is a leading AI company focused on developing and deploying large language models and AI solutions. These support scripts are provided to help our customers and the broader community work more effectively with containerized applications and security attestations.
+[Aleph Alpha](https://aleph-alpha.com) researches, develops and deploys sovereign, explainable AI. At the heart of our offering is PhariaAI – a modular AI suite that empowers enterprises and governments to build, customize, and operate their own AI infrastructure to maintain critical digital sovereignty. Instead of renting black-box technology, organizations retain full ownership, independence, and control over their data, processes, and value creation.
 
+Our support scripts are designed to assist customers and the broader community in streamlining workflows and enhancing efficiency when working with containerized applications and security attestation processes. By simplifying complex tasks, optimizing performance, and ensuring compliance, these tools empower users to focus on innovation and secure deployment practices.
 ---
 
 For questions, issues, or feature requests, please open an issue in this repository or contact our support team.
