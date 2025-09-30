@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/Aleph-Alpha/support/compare/v1.1.0...v1.2.0) (2025-09-30)
+
+
+### Features
+
+* scan script to scan k8s pods for cves from their root signed images ([#6](https://github.com/Aleph-Alpha/support/issues/6)) ([79bae93](https://github.com/Aleph-Alpha/support/commit/79bae938f11f57256ec9cb4fb44a0eb0c8d25e5a))
+
 ## [1.1.0](https://github.com/Aleph-Alpha/support/compare/v1.0.0...v1.1.0) (2025-09-27)
 
 
