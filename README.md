@@ -401,6 +401,7 @@ A dedicated script for verifying container image signatures using Cosign. This t
 - **Flexible Identity Matching**: Support for exact identity matching or regex patterns
 - **Signature Extraction**: Save signatures and certificates to files for further analysis
 - **Flexible Output Levels**: Configurable verbosity (none, info, verbose) for different use cases
+- **Non-Failing Mode**: `--no-error` flag allows checking signature status without failing on unsigned images
 - **Digest Resolution**: Automatically resolves tags to digests for secure verification
 - **Pre-configured Defaults**: Ready-to-use settings for Aleph Alpha workflows
 
@@ -447,6 +448,11 @@ A dedicated script for verifying container image signatures using Cosign. This t
 ./cosign-verify-image.sh --image registry.example.com/myapp:latest --output-level none
 ```
 
+**Check if image is signed without failing (useful for discovery):**
+```bash
+./cosign-verify-image.sh --image registry.example.com/myapp:latest --output-level none --no-error
+```
+
 #### Command Line Options
 
 ```
@@ -467,6 +473,7 @@ Options:
   --output-signature FILE               Save signature to file
   --output-certificate FILE             Save certificate to file
   --output-level LEVEL                  Output verbosity: none, info (default), verbose
+  --no-error                            Return exit code 0 even on verification failure
   -h, --help                            Show this help
 ```
 
