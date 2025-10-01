@@ -377,14 +377,34 @@ setup_temp_dir() {
     log_verbose "Created temporary directory: $TEMP_DIR"
 
     # Cleanup on exit
+    log_verbose "Setting up cleanup trap for temporary directory: $TEMP_DIR"
     trap cleanup_temp_dir EXIT
 }
 
 cleanup_temp_dir() {
+    # Disable exit on error for cleanup function
+    set +e
     if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
         log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-        rm -rf "$TEMP_DIR"
+        # List contents for debugging
+        log_verbose "Directory contents: $(ls -la "$TEMP_DIR" 2>/dev/null || echo 'cannot list')"
+        # Try to remove the directory, but don't fail if we can't due to permissions
+        if ! rm -rf "$TEMP_DIR" 2>/dev/null; then
+            log_verbose "Could not remove temporary directory (permission denied): $TEMP_DIR"
+            # Try to remove contents first, then the directory
+            if ! rm -rf "$TEMP_DIR"/* 2>/dev/null; then
+                log_verbose "Could not remove temporary directory contents: $TEMP_DIR"
+            fi
+            # Try to remove the directory again
+            if ! rmdir "$TEMP_DIR" 2>/dev/null; then
+                log_verbose "Could not remove temporary directory: $TEMP_DIR (will be cleaned up by system)"
+            fi
+        else
+            log_verbose "Successfully cleaned up temporary directory: $TEMP_DIR"
+        fi
     fi
+    # Re-enable exit on error
+    set -e
 }
 
 # Load ignore list from file
@@ -1150,7 +1170,10 @@ main() {
     fi
 
     log_success "Kubernetes image scanning completed!"
+    log_verbose "Script execution finished successfully, cleanup will be handled by trap"
 }
 
 # Run main function
+log_verbose "Starting main function execution"
 main "$@"
+log_verbose "Main function completed, script should exit normally"
