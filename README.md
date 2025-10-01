@@ -400,7 +400,7 @@ A dedicated script for verifying container image signatures using Cosign. This t
 - **Multiple Verification Modes**: Keyless verification (default), key-based verification, or custom OIDC configurations
 - **Flexible Identity Matching**: Support for exact identity matching or regex patterns
 - **Signature Extraction**: Save signatures and certificates to files for further analysis
-- **Verbose Output**: Detailed verification information when needed
+- **Flexible Output Levels**: Configurable verbosity (none, info, verbose) for different use cases
 - **Digest Resolution**: Automatically resolves tags to digests for secure verification
 - **Pre-configured Defaults**: Ready-to-use settings for Aleph Alpha workflows
 
@@ -438,8 +438,13 @@ A dedicated script for verifying container image signatures using Cosign. This t
 
 **Verbose verification with signature extraction:**
 ```bash
-./cosign-verify-image.sh --image registry.example.com/myapp:latest --verbose \
+./cosign-verify-image.sh --image registry.example.com/myapp:latest --output-level verbose \
   --output-signature signature.sig --output-certificate cert.pem
+```
+
+**Silent mode for automation (only exit codes):**
+```bash
+./cosign-verify-image.sh --image registry.example.com/myapp:latest --output-level none
 ```
 
 #### Command Line Options
@@ -461,7 +466,7 @@ Options:
   --rekor-url URL                       Rekor transparency log URL (default: https://rekor.sigstore.dev)
   --output-signature FILE               Save signature to file
   --output-certificate FILE             Save certificate to file
-  --verbose                             Show detailed verification output
+  --output-level LEVEL                  Output verbosity: none, info (default), verbose
   -h, --help                            Show this help
 ```
 
