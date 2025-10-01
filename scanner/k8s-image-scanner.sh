@@ -129,6 +129,27 @@ log_verbose() {
     fi
 }
 
+# Execute command with timeout if available
+# Usage: run_with_timeout <timeout_seconds> <command> [args...]
+# Returns: command output in stdout, exit code in $?
+run_with_timeout() {
+    local timeout_seconds="$1"
+    shift
+    local cmd=("$@")
+
+    if command -v timeout >/dev/null 2>&1; then
+        # Linux/GNU timeout
+        timeout "${timeout_seconds}s" "${cmd[@]}"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        # macOS with GNU coreutils (brew install coreutils)
+        gtimeout "${timeout_seconds}s" "${cmd[@]}"
+    else
+        # Fallback without timeout
+        log_verbose "No timeout command available, running without timeout"
+        "${cmd[@]}"
+    fi
+}
+
 # Convert cosign triage attestation JSON to Trivy ignore format
 convert_triage_to_trivyignore() {
     local triage_file="$1"
@@ -368,11 +389,11 @@ check_prerequisites() {
 
 
     log_result "All required tools available"
-    
+
     # Check for required cosign scripts
     local extract_script="$SCRIPT_DIR/../cosign-extract.sh"
     local verify_script="$SCRIPT_DIR/../cosign-verify-image.sh"
-    
+
     if [[ ! -f "$extract_script" ]]; then
         log_error "cosign-extract.sh not found at: $extract_script"
         log_error "Current working directory: $(pwd)"
@@ -381,7 +402,7 @@ check_prerequisites() {
         exit 1
     fi
     log_result "cosign-extract.sh script found"
-    
+
     if [[ ! -f "$verify_script" ]]; then
         log_error "cosign-verify-image.sh not found at: $verify_script"
         log_error "Current working directory: $(pwd)"
@@ -483,53 +504,21 @@ setup_kubectl() {
     echo "🔗 Testing Kubernetes connectivity (30s timeout)" >&2
     local connectivity_test_output
 
-    # Try to use timeout command if available, otherwise use a simpler approach
-    if command -v timeout >/dev/null 2>&1; then
-        # Linux/GNU timeout
-        if connectivity_test_output=$(timeout 30s kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
-            log_verbose "Kubernetes connectivity test successful"
-        else
-            local exit_code=$?
-            if [[ $exit_code -eq 124 ]]; then
-                log_error "Kubernetes connectivity test timed out after 30 seconds"
-                log_error "This usually indicates network issues or an unreachable cluster"
-            else
-                log_error "Cannot access namespace '$NAMESPACE' in Kubernetes cluster"
-                log_error "kubectl output: $connectivity_test_output"
-            fi
-            log_error "Please check your kubeconfig, context, and namespace settings"
-            log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
-            exit 1
-        fi
-    elif command -v gtimeout >/dev/null 2>&1; then
-        # macOS with GNU coreutils (brew install coreutils)
-        if connectivity_test_output=$(gtimeout 30s kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
-            log_verbose "Kubernetes connectivity test successful"
-        else
-            local exit_code=$?
-            if [[ $exit_code -eq 124 ]]; then
-                log_error "Kubernetes connectivity test timed out after 30 seconds"
-                log_error "This usually indicates network issues or an unreachable cluster"
-            else
-                log_error "Cannot access namespace '$NAMESPACE' in Kubernetes cluster"
-                log_error "kubectl output: $connectivity_test_output"
-            fi
-            log_error "Please check your kubeconfig, context, and namespace settings"
-            log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
-            exit 1
-        fi
+    # Test connectivity with timeout
+    if connectivity_test_output=$(run_with_timeout 30 kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
+        log_verbose "Kubernetes connectivity test successful"
     else
-        # Fallback: no timeout available, but at least provide better error messages
-        log_warn "No timeout command available - connectivity test may hang if cluster is unreachable"
-        if ! connectivity_test_output=$(kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
+        local exit_code=$?
+        if [[ $exit_code -eq 124 ]]; then
+            log_error "Kubernetes connectivity test timed out after 30 seconds"
+            log_error "This usually indicates network issues or an unreachable cluster"
+        else
             log_error "Cannot access namespace '$NAMESPACE' in Kubernetes cluster"
             log_error "kubectl output: $connectivity_test_output"
-            log_error "Please check your kubeconfig, context, and namespace settings"
-            log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
-            log_error "Tip: Install GNU coreutils (brew install coreutils) for timeout support"
-            exit 1
         fi
-        log_verbose "Kubernetes connectivity test successful"
+        log_error "Please check your kubeconfig, context, and namespace settings"
+        log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
+        exit 1
     fi
 
     log_result "Connected to cluster, namespace: $NAMESPACE"
@@ -633,7 +622,7 @@ extract_k8s_images() {
             log_verbose "  $img"
         done
     fi
-    
+
     log_verbose "extract_k8s_images function completed successfully"
 }
 
@@ -655,29 +644,13 @@ detect_attestation_type() {
         return 1
     fi
 
-    # Run cosign verification using the dedicated script
-    # Use timeout if available
-    if command -v timeout >/dev/null 2>&1; then
-        # Linux/GNU timeout
-        verify_output=$(timeout 60s "$verify_script" --image "$image" \
-            --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1)
-        verify_exit_code=$?
-    elif command -v gtimeout >/dev/null 2>&1; then
-        # macOS with GNU coreutils (brew install coreutils)
-        verify_output=$(gtimeout 60s "$verify_script" --image "$image" \
-            --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1)
-        verify_exit_code=$?
-    else
-        # Fallback without timeout
-        log_verbose "No timeout command available, running cosign-verify-image.sh without timeout"
-        verify_output=$("$verify_script" --image "$image" \
-            --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1)
-        verify_exit_code=$?
-    fi
-    
+    # Run cosign verification using the dedicated script with timeout
+    verify_output=$(run_with_timeout 60 "$verify_script" --image "$image" \
+        --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+        --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" \
+        --output-level none 2>&1)
+    verify_exit_code=$?
+
     # Log the results
     if [[ $verify_exit_code -eq 0 ]]; then
         log_verbose "cosign-verify-image.sh succeeded"
@@ -685,7 +658,7 @@ detect_attestation_type() {
         log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
         log_verbose "cosign-verify-image.sh output: $verify_output"
     fi
-    
+
     if [[ $verify_exit_code -eq 0 ]]; then
         log_verbose "Image is Cosign-signed, checking for triage attestations"
 
@@ -693,7 +666,7 @@ detect_attestation_type() {
         # We'll do the verification during download
         local extract_output
         local extract_exit_code
-        
+
         if extract_output=$("$SCRIPT_DIR/../cosign-extract.sh" --image "$image" --list 2>&1); then
             extract_exit_code=0
         else
@@ -701,7 +674,7 @@ detect_attestation_type() {
             log_verbose "cosign-extract.sh failed with exit code: $extract_exit_code"
             log_verbose "cosign-extract.sh output: $extract_output"
         fi
-        
+
         if [[ $extract_exit_code -eq 0 ]] && echo "$extract_output" | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
             log_verbose "Found cosign triage attestation for $image"
             echo "cosign"
@@ -713,7 +686,7 @@ detect_attestation_type() {
         log_verbose "Image is not Cosign-signed, skipping"
         echo "unsigned"
     fi
-    
+
     # Re-enable exit on error
     set -e
 }
@@ -813,7 +786,7 @@ run_trivy_scan() {
 process_image() {
     # Disable exit on error for this function since it runs in background
     set +e
-    
+
     local image="$1"
     local image_safe_name
     image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
@@ -833,7 +806,7 @@ process_image() {
     attestation_type=$(detect_attestation_type "$image")
     local detect_exit_code=$?
     set -e
-    
+
     if [[ $detect_exit_code -ne 0 ]]; then
         log_error "Failed to detect attestation type for: $image (exit code: $detect_exit_code)"
         return 1
@@ -893,7 +866,7 @@ EOF
     else
         log_verbose "Scan failed for: $image"
     fi
-    
+
     # Re-enable exit on error
     set -e
 }
@@ -908,13 +881,13 @@ process_all_images() {
         log_error "Images to scan file not found: $TEMP_DIR/images_to_scan.txt"
         return 1
     fi
-    
+
     while IFS= read -r image; do
         if [[ -n "$image" ]]; then
             images+=("$image")
         fi
     done < "$TEMP_DIR/images_to_scan.txt"
-    
+
     log_verbose "Loaded ${#images[@]} images to process"
     log_verbose "Array length: ${#images[@]}, First image: ${images[0]:-none}"
 
@@ -1012,7 +985,7 @@ collect_scan_results() {
         log_error "Images to scan file not found during result collection: $TEMP_DIR/images_to_scan.txt"
         return 1
     fi
-    
+
     while IFS= read -r image; do
         if [[ -z "$image" ]]; then
             continue
@@ -1039,7 +1012,7 @@ collect_scan_results() {
     SUCCESSFUL_SCANS=(${SUCCESSFUL_SCANS[@]:-})
     FAILED_SCANS=(${FAILED_SCANS[@]:-})
     SKIPPED_SCANS=(${SKIPPED_SCANS[@]:-})
-    
+
     log_verbose "Collected ${#SUCCESSFUL_SCANS[@]} successful, ${#FAILED_SCANS[@]} failed, and ${#SKIPPED_SCANS[@]} skipped scans"
 }
 
@@ -1057,7 +1030,7 @@ generate_final_report() {
     SUCCESSFUL_SCANS=(${SUCCESSFUL_SCANS[@]:-})
     FAILED_SCANS=(${FAILED_SCANS[@]:-})
     SKIPPED_SCANS=(${SKIPPED_SCANS[@]:-})
-    
+
     # Safe array length calculation
     if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
         successful_count=${#SUCCESSFUL_SCANS[@]}
@@ -1266,7 +1239,7 @@ main() {
     setup_temp_dir
     load_ignore_list
     setup_kubectl
-    
+
     # Initialize arrays to prevent undefined variable errors
     SUCCESSFUL_SCANS=()
     FAILED_SCANS=()
