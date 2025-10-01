@@ -20,6 +20,7 @@ Options:
   --output-signature FILE               Save signature to file
   --output-certificate FILE             Save certificate to file
   --output-level LEVEL                  Output verbosity: none, info (default), verbose
+  --no-error                            Return exit code 0 even on verification failure
   -h, --help                            Show this help
 
 Verification Modes:
@@ -48,6 +49,9 @@ Examples:
 
   # Silent mode for automation (only exit code)
   $0 --image registry.example.com/myapp:latest --output-level none
+
+  # Check if image is signed without failing (useful for discovery)
+  $0 --image registry.example.com/myapp:latest --output-level none --no-error
 EOF
 }
 
@@ -61,6 +65,7 @@ REKOR_URL="https://rekor.sigstore.dev"
 OUTPUT_SIGNATURE=""
 OUTPUT_CERTIFICATE=""
 OUTPUT_LEVEL="info"
+NO_ERROR=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -74,6 +79,7 @@ while [[ $# -gt 0 ]]; do
     --output-signature) OUTPUT_SIGNATURE="$2"; shift 2 ;;
     --output-certificate) OUTPUT_CERTIFICATE="$2"; shift 2 ;;
     --output-level) OUTPUT_LEVEL="$2"; shift 2 ;;
+    --no-error) NO_ERROR=true; shift ;;
     -h|--help) show_help; exit 0 ;;
     *) echo "❌ Unknown option: $1"; show_help; exit 1 ;;
   esac
@@ -257,7 +263,11 @@ else
   fi
 
   rm -f "$TEMP_OUTPUT"
-  exit 1
+  if $NO_ERROR; then
+    exit 0
+  else
+    exit 1
+  fi
 fi
 
 rm -f "$TEMP_OUTPUT"
