@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Kubernetes Image Scanner with Triage Support
-# This script scans all images in a Kubernetes namespace, downloads triage files,
-# and runs Trivy scans with the triage data applied.
+# Check shell compatibility
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "Warning: This script was designed for bash but is running in: ${0##*/}" >&2
+    echo "Some features may not work correctly in zsh or other shells." >&2
+    echo "For best results, run with: bash $0 $*" >&2
+    echo "" >&2
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 show_help() {
   cat <<EOF
-Kubernetes Image Scanner with Triage Support
+Aleph Alpha - Signed Image Scanner
 
-This script connects to Kubernetes, extracts images from a namespace, determines
-if they use cosign attestations or ORAS-based triage files, downloads the triage
-data, and runs Trivy scans with triage filtering applied.
+This script connects to Kubernetes, extracts Aleph Alpha signed images from a namespace,
+downloads cosign triage attestations, and runs Trivy vulnerability scans with
+triage filtering applied to focus on unaddressed security issues.
 
 Usage:
   $0 [OPTIONS]
@@ -57,6 +61,9 @@ Prerequisites:
   - trivy (for vulnerability scanning)
   - jq (for JSON processing)
   - cosign (for attestation verification)
+  - docker (for registry accessibility checking)
+  - cosign-extract.sh (for extracting triage attestations)
+  - cosign-verify-image.sh (for verifying image signatures)
 
 EOF
 }
@@ -86,6 +93,9 @@ FAILED_SCANS=()
 SUCCESSFUL_SCANS=()
 TOTAL_IMAGES=0
 SKIPPED_IMAGES=0
+IGNORED_IMAGES=0
+INACCESSIBLE_IMAGES=0
+INACCESSIBLE_REGISTRIES=()  # Track registries that are not accessible
 # CVE_ANALYSIS_RESULTS will be stored as files in temp directory
 
 # Logging functions
@@ -102,7 +112,7 @@ log_result() {
 }
 
 log_warn() {
-    echo "⚠️  $*" >&2
+    echo "⚠️ $*" >&2
 }
 
 log_error() {
@@ -116,6 +126,27 @@ log_success() {
 log_verbose() {
     if $VERBOSE; then
         echo "🔍 $*" >&2
+    fi
+}
+
+# Execute command with timeout if available
+# Usage: run_with_timeout <timeout_seconds> <command> [args...]
+# Returns: command output in stdout, exit code in $?
+run_with_timeout() {
+    local timeout_seconds="$1"
+    shift
+    local cmd=("$@")
+
+    if command -v timeout >/dev/null 2>&1; then
+        # Linux/GNU timeout
+        timeout "${timeout_seconds}s" "${cmd[@]}"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        # macOS with GNU coreutils (brew install coreutils)
+        gtimeout "${timeout_seconds}s" "${cmd[@]}"
+    else
+        # Fallback without timeout
+        log_verbose "No timeout command available, running without timeout"
+        "${cmd[@]}"
     fi
 }
 
@@ -276,15 +307,16 @@ analyze_cves() {
     local addressed_json="[]"
     local irrelevant_json="[]"
 
-    if [[ ${#unaddressed_cve_list[@]} -gt 0 ]]; then
+    # Check if arrays exist and have content (for unbound variable safety)
+    if [[ ${unaddressed_cve_list[@]+_} && ${#unaddressed_cve_list[@]} -gt 0 ]]; then
         unaddressed_json="[$(printf '"%s",' "${unaddressed_cve_list[@]}" | sed 's/,$//')]"
     fi
 
-    if [[ ${#addressed_cve_list[@]} -gt 0 ]]; then
+    if [[ ${addressed_cve_list[@]+_} && ${#addressed_cve_list[@]} -gt 0 ]]; then
         addressed_json="[$(printf '"%s",' "${addressed_cve_list[@]}" | sed 's/,$//')]"
     fi
 
-    if [[ ${#irrelevant_cve_list[@]} -gt 0 ]]; then
+    if [[ ${irrelevant_cve_list[@]+_} && ${#irrelevant_cve_list[@]} -gt 0 ]]; then
         irrelevant_json="[$(printf '"%s",' "${irrelevant_cve_list[@]}" | sed 's/,$//')]"
     fi
 
@@ -344,7 +376,7 @@ check_prerequisites() {
 
     local missing_tools=()
 
-    for tool in kubectl trivy jq cosign; do
+    for tool in kubectl trivy jq cosign docker; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
@@ -358,9 +390,11 @@ check_prerequisites() {
 
 
     log_result "All required tools available"
-    
-    # Check for cosign-extract.sh script
+
+    # Check for required cosign scripts
     local extract_script="$SCRIPT_DIR/../cosign-extract.sh"
+    local verify_script="$SCRIPT_DIR/../cosign-verify-image.sh"
+
     if [[ ! -f "$extract_script" ]]; then
         log_error "cosign-extract.sh not found at: $extract_script"
         log_error "Current working directory: $(pwd)"
@@ -369,6 +403,15 @@ check_prerequisites() {
         exit 1
     fi
     log_result "cosign-extract.sh script found"
+
+    if [[ ! -f "$verify_script" ]]; then
+        log_error "cosign-verify-image.sh not found at: $verify_script"
+        log_error "Current working directory: $(pwd)"
+        log_error "Script directory: $SCRIPT_DIR"
+        log_error "Please ensure cosign-verify-image.sh is in the parent directory of the scanner folder"
+        exit 1
+    fi
+    log_result "cosign-verify-image.sh script found"
 }
 
 # Setup temporary directory
@@ -377,20 +420,40 @@ setup_temp_dir() {
     log_verbose "Created temporary directory: $TEMP_DIR"
 
     # Cleanup on exit
+    log_verbose "Setting up cleanup trap for temporary directory: $TEMP_DIR"
     trap cleanup_temp_dir EXIT
 }
 
 cleanup_temp_dir() {
+    # Disable exit on error for cleanup function
+    set +e
     if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
         log_verbose "Cleaning up temporary directory: $TEMP_DIR"
-        rm -rf "$TEMP_DIR"
+        # List contents for debugging
+        log_verbose "Directory contents: $(ls -la "$TEMP_DIR" 2>/dev/null || echo 'cannot list')"
+        # Try to remove the directory, but don't fail if we can't due to permissions
+        if ! rm -rf "$TEMP_DIR" 2>/dev/null; then
+            log_verbose "Could not remove temporary directory (permission denied): $TEMP_DIR"
+            # Try to remove contents first, then the directory
+            if ! rm -rf "$TEMP_DIR"/* 2>/dev/null; then
+                log_verbose "Could not remove temporary directory contents: $TEMP_DIR"
+            fi
+            # Try to remove the directory again
+            if ! rmdir "$TEMP_DIR" 2>/dev/null; then
+                log_verbose "Could not remove temporary directory: $TEMP_DIR (will be cleaned up by system)"
+            fi
+        else
+            log_verbose "Successfully cleaned up temporary directory: $TEMP_DIR"
+        fi
     fi
+    # Re-enable exit on error
+    set -e
 }
 
 # Load ignore list from file
 load_ignore_list() {
     if [[ -n "$IGNORE_FILE" && -f "$IGNORE_FILE" ]]; then
-        echo "📄 Loading ignore patterns from: $IGNORE_FILE" >&2
+        echo "📂 Loading ignore patterns from: $IGNORE_FILE" >&2
 
         while IFS= read -r line || [[ -n "$line" ]]; do
             # Skip empty lines and comments
@@ -426,6 +489,68 @@ should_ignore_image() {
     return 1
 }
 
+# Extract registry from image reference
+extract_registry() {
+    local image="$1"
+    echo "$image" | sed -E 's|^([^/]+).*|\1|'
+}
+
+# Check if registry is accessible using docker
+is_registry_accessible() {
+    local registry="$1"
+    local test_image="$2"  # The actual image we want to test
+
+    # Check if we already know this registry is accessible
+    if [[ ${#ACCESSIBLE_REGISTRIES[@]} -gt 0 ]]; then
+        for accessible_reg in "${ACCESSIBLE_REGISTRIES[@]}"; do
+            if [[ "$registry" == "$accessible_reg" ]]; then
+                log_verbose "Registry already known to be accessible: $registry"
+                return 0
+            fi
+        done
+    fi
+
+    # Check if we already know this registry is inaccessible
+    if [[ ${#INACCESSIBLE_REGISTRIES[@]} -gt 0 ]]; then
+        for inaccessible_reg in "${INACCESSIBLE_REGISTRIES[@]}"; do
+            if [[ "$registry" == "$inaccessible_reg" ]]; then
+                log_verbose "Registry already known to be inaccessible: $registry"
+                return 1
+            fi
+        done
+    fi
+
+    # Check if registry is accessible using docker (which uses proper authentication)
+    # We test with the actual image we want to scan
+    log_verbose "Checking registry accessibility: $registry using image: $test_image"
+
+    # Use docker manifest inspect which respects Docker's authentication
+    if docker manifest inspect "$test_image" >/dev/null 2>&1; then
+        log_verbose "Registry is accessible: $registry"
+        # Add to accessible registries list
+        ACCESSIBLE_REGISTRIES+=("$registry")
+        return 0
+    else
+        log_verbose "Registry is not accessible: $registry"
+        # Add to inaccessible registries list
+        INACCESSIBLE_REGISTRIES+=("$registry")
+        return 1
+    fi
+}
+
+# Check if image should be skipped due to inaccessible registry
+should_skip_inaccessible_registry() {
+    local image="$1"
+    local registry
+    registry=$(extract_registry "$image")
+
+    if ! is_registry_accessible "$registry" "$image"; then
+        return 0  # Skip this image
+    fi
+
+    return 1  # Don't skip
+}
+
 # Setup kubectl context
 setup_kubectl() {
     local kubectl_args=()
@@ -439,56 +564,24 @@ setup_kubectl() {
     fi
 
     # Test kubectl connectivity with timeout
-    echo "🔗 Testing Kubernetes connectivity (30s timeout)" >&2
+    echo "⚡ Testing Kubernetes connectivity (30s timeout)" >&2
     local connectivity_test_output
 
-    # Try to use timeout command if available, otherwise use a simpler approach
-    if command -v timeout >/dev/null 2>&1; then
-        # Linux/GNU timeout
-        if connectivity_test_output=$(timeout 30s kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
-            log_verbose "Kubernetes connectivity test successful"
-        else
-            local exit_code=$?
-            if [[ $exit_code -eq 124 ]]; then
-                log_error "Kubernetes connectivity test timed out after 30 seconds"
-                log_error "This usually indicates network issues or an unreachable cluster"
-            else
-                log_error "Cannot access namespace '$NAMESPACE' in Kubernetes cluster"
-                log_error "kubectl output: $connectivity_test_output"
-            fi
-            log_error "Please check your kubeconfig, context, and namespace settings"
-            log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
-            exit 1
-        fi
-    elif command -v gtimeout >/dev/null 2>&1; then
-        # macOS with GNU coreutils (brew install coreutils)
-        if connectivity_test_output=$(gtimeout 30s kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
-            log_verbose "Kubernetes connectivity test successful"
-        else
-            local exit_code=$?
-            if [[ $exit_code -eq 124 ]]; then
-                log_error "Kubernetes connectivity test timed out after 30 seconds"
-                log_error "This usually indicates network issues or an unreachable cluster"
-            else
-                log_error "Cannot access namespace '$NAMESPACE' in Kubernetes cluster"
-                log_error "kubectl output: $connectivity_test_output"
-            fi
-            log_error "Please check your kubeconfig, context, and namespace settings"
-            log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
-            exit 1
-        fi
+    # Test connectivity with timeout
+    if connectivity_test_output=$(run_with_timeout 30 kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
+        log_verbose "Kubernetes connectivity test successful"
     else
-        # Fallback: no timeout available, but at least provide better error messages
-        log_warn "No timeout command available - connectivity test may hang if cluster is unreachable"
-        if ! connectivity_test_output=$(kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace "$NAMESPACE" 2>&1); then
+        local exit_code=$?
+        if [[ $exit_code -eq 124 ]]; then
+            log_error "Kubernetes connectivity test timed out after 30 seconds"
+            log_error "This usually indicates network issues or an unreachable cluster"
+        else
             log_error "Cannot access namespace '$NAMESPACE' in Kubernetes cluster"
             log_error "kubectl output: $connectivity_test_output"
-            log_error "Please check your kubeconfig, context, and namespace settings"
-            log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
-            log_error "Tip: Install GNU coreutils (brew install coreutils) for timeout support"
-            exit 1
         fi
-        log_verbose "Kubernetes connectivity test successful"
+        log_error "Please check your kubeconfig, context, and namespace settings"
+        log_error "You can test manually with: kubectl ${kubectl_args[@]+"${kubectl_args[@]}"} get namespace $NAMESPACE"
+        exit 1
     fi
 
     log_result "Connected to cluster, namespace: $NAMESPACE"
@@ -530,20 +623,27 @@ extract_k8s_images() {
 
     # Filter out ignored images
     local filtered_images=()
-    log_verbose "Processing images from file: $images_file"
+    log_verbose "📂 Processing images from file: $images_file"
     if [[ -f "$images_file" ]]; then
         log_verbose "Images file exists, processing $(wc -l < "$images_file") images"
-        while IFS= read -r image; do
-            if [[ -n "$image" ]]; then
-                if should_ignore_image "$image"; then
-                    log_verbose "Ignoring image: $image"
-                    ((SKIPPED_IMAGES++))
-                else
-                    filtered_images+=("$image")
-                    log_verbose "Including image: $image"
-                fi
+    while IFS= read -r image || [[ -n "$image" ]]; do
+        if [[ -n "$image" ]]; then
+            if should_ignore_image "$image"; then
+                log_verbose "🚫 Ignoring image: $image"
+                ((IGNORED_IMAGES++))
+                ((SKIPPED_IMAGES++))
+                log_verbose "Updated IGNORED_IMAGES: $IGNORED_IMAGES, SKIPPED_IMAGES: $SKIPPED_IMAGES"
+            elif should_skip_inaccessible_registry "$image"; then
+                log_verbose "🚫 Skipping image from inaccessible registry: $image"
+                ((INACCESSIBLE_IMAGES++))
+                ((SKIPPED_IMAGES++))
+                log_verbose "Updated INACCESSIBLE_IMAGES: $INACCESSIBLE_IMAGES, SKIPPED_IMAGES: $SKIPPED_IMAGES"
+            else
+                filtered_images+=("$image")
+                log_verbose "Including image: $image"
             fi
-        done < "$images_file"
+        fi
+    done < "$images_file"
     else
         log_error "Images file not found: $images_file"
         exit 1
@@ -554,20 +654,59 @@ extract_k8s_images() {
     if [[ $TOTAL_IMAGES -eq 0 ]]; then
         log_warn "No images found to scan in namespace: $NAMESPACE"
         if [[ $SKIPPED_IMAGES -gt 0 ]]; then
-            log_warn "All $SKIPPED_IMAGES images were ignored by ignore patterns"
+            if [[ $INACCESSIBLE_IMAGES -gt 0 && $IGNORED_IMAGES -gt 0 ]]; then
+                log_info "   All $SKIPPED_IMAGES images were skipped:"
+                log_info "    - $INACCESSIBLE_IMAGES images from inaccessible registries"
+                log_info "    - $IGNORED_IMAGES images ignored by patterns"
+                log_info "   Inaccessible registries:"
+                for registry in "${INACCESSIBLE_REGISTRIES[@]}"; do
+                    log_info "    - $registry"
+                done
+                log_info "   To access these registries, run: docker login <registry>"
+                log_info "   Then try running the scanner again."
+            elif [[ $INACCESSIBLE_IMAGES -gt 0 ]]; then
+                log_info "   All $SKIPPED_IMAGES images were skipped due to inaccessible registries"
+                log_info "   Inaccessible registries:"
+                for registry in "${INACCESSIBLE_REGISTRIES[@]}"; do
+                    log_info "     - $registry"
+                done
+                log_info "   To access these registries, run: docker login <registry>"
+                log_info "   Then try running the scanner again."
+            else
+                log_info "   All $SKIPPED_IMAGES images were ignored by ignore patterns"
+            fi
         else
-            log_warn "No images were found in the namespace"
+            log_info "No images were found in the namespace"
         fi
         exit 0
     fi
 
     log_result "Found $TOTAL_IMAGES unique images to scan"
-    if [[ $SKIPPED_IMAGES -gt 0 ]]; then
-        log_result "Skipped $SKIPPED_IMAGES ignored images"
+
+    # Show separate messages for ignored images vs inaccessible registries
+    if [[ $IGNORED_IMAGES -gt 0 ]]; then
+        log_result "🚫 Skipped $IGNORED_IMAGES ignored images"
+    fi
+
+    if [[ $INACCESSIBLE_IMAGES -gt 0 ]]; then
+        log_warn "🚫 Inaccessible registries detected: ${INACCESSIBLE_REGISTRIES[*]}"
+        log_warn "   Skipped $INACCESSIBLE_IMAGES images from these registries"
+        log_warn "   To access these registries, run: docker login <registry>"
+        log_warn "   Then try running the scanner again."
     fi
 
     # Save filtered images list
-    printf '%s\n' "${filtered_images[@]}" > "$TEMP_DIR/images_to_scan.txt"
+    log_verbose "Saving filtered images list to: $TEMP_DIR/images_to_scan.txt"
+    if ! printf '%s\n' "${filtered_images[@]}" > "$TEMP_DIR/images_to_scan.txt"; then
+        log_error "Failed to save images list to: $TEMP_DIR/images_to_scan.txt"
+        return 1
+    fi
+    local line_count
+    if line_count=$(wc -l < "$TEMP_DIR/images_to_scan.txt" 2>/dev/null); then
+        log_verbose "Saved $line_count images to scan file"
+    else
+        log_verbose "Saved images to scan file (could not count lines)"
+    fi
 
     if $VERBOSE; then
         log_verbose "Images to scan:"
@@ -575,24 +714,60 @@ extract_k8s_images() {
             log_verbose "  $img"
         done
     fi
+
+    log_verbose "extract_k8s_images function completed successfully"
 }
 
 # Check if image is Cosign-signed and has triage attestations
 detect_attestation_type() {
     local image="$1"
 
+    # Temporarily disable exit on error for this function
+    set +e
+    local verify_output
+    local verify_exit_code
+
     log_verbose "Checking if image is Cosign-signed: $image"
 
-    # Check if the image is Cosign-signed (as per Aleph Alpha Security Disclosure v2)
-    if cosign verify "$image" \
-        --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-        --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" >/dev/null 2>&1; then
+    # Use the existing cosign-verify-image.sh script for verification
+    local verify_script="$SCRIPT_DIR/../cosign-verify-image.sh"
+    if [[ ! -f "$verify_script" ]]; then
+        log_error "cosign-verify-image.sh not found at: $verify_script"
+        return 1
+    fi
 
+    # Run cosign verification using the dedicated script with timeout
+    verify_output=$(run_with_timeout 60 "$verify_script" --image "$image" \
+        --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+        --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" \
+        --output-level none 2>&1)
+    verify_exit_code=$?
+
+    # Log the results
+    if [[ $verify_exit_code -eq 0 ]]; then
+        log_verbose "cosign-verify-image.sh succeeded"
+    else
+        log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
+        log_verbose "cosign-verify-image.sh output: $verify_output"
+    fi
+
+    if [[ $verify_exit_code -eq 0 ]]; then
         log_verbose "Image is Cosign-signed, checking for triage attestations"
 
         # Image is signed, check if triage attestations exist (without verification for now)
         # We'll do the verification during download
-        if "$SCRIPT_DIR/../cosign-extract.sh" --image "$image" --list 2>/dev/null | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
+        local extract_output
+        local extract_exit_code
+
+        if extract_output=$("$SCRIPT_DIR/../cosign-extract.sh" --image "$image" --list 2>&1); then
+            extract_exit_code=0
+        else
+            extract_exit_code=$?
+            log_verbose "cosign-extract.sh failed with exit code: $extract_exit_code"
+            log_verbose "cosign-extract.sh output: $extract_output"
+        fi
+
+        if [[ $extract_exit_code -eq 0 ]] && echo "$extract_output" | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
             log_verbose "Found cosign triage attestation for $image"
             echo "cosign"
         else
@@ -603,6 +778,9 @@ detect_attestation_type() {
         log_verbose "Image is not Cosign-signed, skipping"
         echo "unsigned"
     fi
+
+    # Re-enable exit on error
+    set -e
 }
 
 # Download triage file using cosign attestation
@@ -698,18 +876,34 @@ run_trivy_scan() {
 
 # Process a single image
 process_image() {
+    # Disable exit on error for this function since it runs in background
+    set +e
+
     local image="$1"
     local image_safe_name
     image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
 
     local image_dir="$OUTPUT_DIR/$image_safe_name"
-    mkdir -p "$image_dir"
+    if ! mkdir -p "$image_dir"; then
+        log_error "Failed to create directory: $image_dir"
+        return 1
+    fi
 
     log_verbose "Processing: $image"
 
     # Detect attestation type
     local attestation_type
+    # Disable exit on error for this command substitution
+    set +e
     attestation_type=$(detect_attestation_type "$image")
+    local detect_exit_code=$?
+    set -e
+
+    if [[ $detect_exit_code -ne 0 ]]; then
+        log_error "Failed to detect attestation type for: $image (exit code: $detect_exit_code)"
+        return 1
+    fi
+    log_verbose "Detected attestation type: $attestation_type"
 
     local triage_file=""
     local triage_downloaded=false
@@ -735,7 +929,11 @@ process_image() {
             # Image is not signed, skip scanning silently
             log_verbose "Image is not Cosign-signed, skipping: $image"
             # Create a marker file to indicate this image was skipped
-            echo "skipped" > "$image_dir/skipped.txt"
+            if echo "skipped" > "$image_dir/skipped.txt"; then
+                log_verbose "Created skip marker for: $image"
+            else
+                log_error "Failed to create skip marker for: $image"
+            fi
             return 0
             ;;
     esac
@@ -749,7 +947,7 @@ process_image() {
   "image": "$image",
   "attestation_type": "$attestation_type",
   "triage_downloaded": $triage_downloaded,
-  "scan_timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "scan_timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")",
   "scan_format": "$FORMAT",
   "severity_filter": "$SEVERITY"
 }
@@ -760,21 +958,33 @@ EOF
     else
         log_verbose "Scan failed for: $image"
     fi
+
+    # Re-enable exit on error
+    set -e
 }
 
 # Process all images
 process_all_images() {
-    echo "⚙️  Processing images" >&2
-
     local images=()
+    log_verbose "Reading images from: $TEMP_DIR/images_to_scan.txt"
+    if [[ ! -f "$TEMP_DIR/images_to_scan.txt" ]]; then
+        log_error "Images to scan file not found: $TEMP_DIR/images_to_scan.txt"
+        return 1
+    fi
+
     while IFS= read -r image; do
-        images+=("$image")
+        if [[ -n "$image" ]]; then
+            images+=("$image")
+        fi
     done < "$TEMP_DIR/images_to_scan.txt"
 
+    log_verbose "Loaded ${#images[@]} images to process"
+    log_verbose "Array length: ${#images[@]}, First image: ${images[0]:-none}"
+
     if $DRY_RUN; then
-        log_result "DRY RUN - Would process ${#images[@]} images:"
+        log_result "[DRY RUN] - Would process ${#images[@]} images:"
         for img in "${images[@]}"; do
-            echo "     • $img" >&2
+            echo "     - $img" >&2
         done
         return 0
     fi
@@ -789,9 +999,12 @@ process_all_images() {
             local new_pids=()
             if [[ ${#pids[@]} -gt 0 ]]; then
                 for pid in "${pids[@]}"; do
+                    # Disable exit on error for kill command
+                    set +e
                     if kill -0 "$pid" 2>/dev/null; then
                         new_pids+=("$pid")
                     fi
+                    set -e
                 done
             fi
             pids=()
@@ -802,22 +1015,39 @@ process_all_images() {
         done
 
         # Start processing in background
+        log_verbose "Starting background process for: $image"
         process_image "$image" &
-        pids+=($!)
+        local bg_pid=$!
+        pids+=($bg_pid)
+        log_verbose "Started background process with PID: $bg_pid"
 
         ((count++))
-        log_result "Processing $count/${#images[@]}: $(basename "$image")"
+        # Update progress on the same line
+        printf "\r🔄 Processing images: %d/%d" "$count" "${#images[@]}" >&2
     done
+
+    # Clear the progress line and show completion
+    printf "\r✅ Processing completed: %d/%d images\n" "${#images[@]}" "${#images[@]}" >&2
+    log_info "Finalizing scan results..."
 
     # Wait for all remaining processes
     if [[ ${#pids[@]} -gt 0 ]]; then
         for pid in "${pids[@]}"; do
-            wait "$pid" || true
+            # Disable exit on error temporarily for wait command
+            set +e
+            wait "$pid"
+            local wait_exit_code=$?
+            set -e
+            if [[ $wait_exit_code -ne 0 ]]; then
+                log_verbose "Background process $pid exited with code $wait_exit_code"
+            fi
         done
     fi
 
     # Collect results by checking what was actually created
+    log_verbose "Collecting scan results"
     collect_scan_results
+    log_verbose "Scan results collection completed"
 
     # Show final results
     if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
@@ -845,7 +1075,16 @@ collect_scan_results() {
     SKIPPED_SCANS=()
 
     # Read the list of images that were supposed to be scanned
+    log_verbose "Reading images from: $TEMP_DIR/images_to_scan.txt"
+    if [[ ! -f "$TEMP_DIR/images_to_scan.txt" ]]; then
+        log_error "Images to scan file not found during result collection: $TEMP_DIR/images_to_scan.txt"
+        return 1
+    fi
+
     while IFS= read -r image; do
+        if [[ -z "$image" ]]; then
+            continue
+        fi
         local image_safe_name
         image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
         local image_dir="$OUTPUT_DIR/$image_safe_name"
@@ -864,6 +1103,11 @@ collect_scan_results() {
         fi
     done < "$TEMP_DIR/images_to_scan.txt"
 
+    # Ensure arrays are defined before accessing them
+    SUCCESSFUL_SCANS=(${SUCCESSFUL_SCANS[@]:-})
+    FAILED_SCANS=(${FAILED_SCANS[@]:-})
+    SKIPPED_SCANS=(${SKIPPED_SCANS[@]:-})
+
     log_verbose "Collected ${#SUCCESSFUL_SCANS[@]} successful, ${#FAILED_SCANS[@]} failed, and ${#SKIPPED_SCANS[@]} skipped scans"
 }
 
@@ -871,11 +1115,14 @@ collect_scan_results() {
 generate_final_report() {
     local report_file="$OUTPUT_DIR/scan-summary.json"
 
-    echo "📊 Generating final report" >&2
-
     local successful_count=0
     local failed_count=0
     local skipped_count=0
+
+    # Ensure arrays are defined before accessing them
+    SUCCESSFUL_SCANS=(${SUCCESSFUL_SCANS[@]:-})
+    FAILED_SCANS=(${FAILED_SCANS[@]:-})
+    SKIPPED_SCANS=(${SKIPPED_SCANS[@]:-})
 
     # Safe array length calculation
     if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
@@ -896,7 +1143,7 @@ generate_final_report() {
     cat > "$report_file" <<EOF
 {
   "scan_summary": {
-    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")",
     "namespace": "$NAMESPACE",
     "total_images_found": $TOTAL_IMAGES,
     "images_skipped": $SKIPPED_IMAGES,
@@ -968,7 +1215,7 @@ EOF
     echo "==============="
     echo "Namespace: $NAMESPACE"
     echo "Total images found: $TOTAL_IMAGES"
-    echo "Images skipped (ignored): $SKIPPED_IMAGES"
+    echo "🚫 Images skipped (ignored): $SKIPPED_IMAGES"
     echo "Images processed: $total_processed"
     echo "Successful scans: $successful_count"
     echo "Failed scans: $failed_count"
@@ -1071,20 +1318,32 @@ generate_cve_summary_table() {
 
 # Main execution
 main() {
-    echo "🚀 Kubernetes Image Scanner" >&2
+    echo "🚀 Aleph Alpha - Signed Image Scanner" >&2
+    echo >&2
+    echo "⚙️ Selected options:" >&2
     log_result "Namespace: $NAMESPACE"
     log_result "Output directory: $OUTPUT_DIR"
 
     if $DRY_RUN; then
         log_result "Mode: DRY RUN (no actual scanning)"
     fi
-    echo >&2
 
     # Setup
     check_prerequisites
     setup_temp_dir
     load_ignore_list
     setup_kubectl
+
+    # Initialize arrays to prevent undefined variable errors
+    SUCCESSFUL_SCANS=()
+    FAILED_SCANS=()
+    SKIPPED_SCANS=()
+    INACCESSIBLE_REGISTRIES=()
+    ACCESSIBLE_REGISTRIES=()
+
+    # Initialize counters
+    IGNORED_IMAGES=0
+    INACCESSIBLE_IMAGES=0
 
     # Create output directory (only if not dry-run)
     if ! $DRY_RUN; then
@@ -1097,19 +1356,29 @@ main() {
     fi
 
     # Extract and process images
+    log_step "Starting image extraction and processing"
     extract_k8s_images
+    log_step "Image extraction completed, starting image processing"
+    log_verbose "About to call process_all_images function"
     process_all_images
+    log_verbose "process_all_images function completed"
+    log_step "Image processing completed"
 
     # Generate final report and CVE summary
     if ! $DRY_RUN; then
+        log_step "Generating final report"
         # Generate final report first (creates JSON with CVE data)
         generate_final_report
+        log_step "Generating CVE summary table"
         # Generate CVE summary table from JSON data
         generate_cve_summary_table
     fi
 
     log_success "Kubernetes image scanning completed!"
+    log_verbose "Script execution finished successfully, cleanup will be handled by trap"
 }
 
 # Run main function
+log_verbose "Starting main function execution"
 main "$@"
+log_verbose "Main function completed, script should exit normally"
