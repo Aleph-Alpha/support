@@ -9,19 +9,15 @@ if [[ -z "${BASH_VERSION:-}" ]]; then
     echo "" >&2
 fi
 
-# Kubernetes Image Scanner with Triage Support
-# This script scans all images in a Kubernetes namespace, downloads triage files,
-# and runs Trivy scans with the triage data applied.
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 show_help() {
   cat <<EOF
-Kubernetes Image Scanner with Triage Support
+Aleph Alpha - Signed Image Scanner
 
-This script connects to Kubernetes, extracts images from a namespace, determines
-if they use cosign attestations or ORAS-based triage files, downloads the triage
-data, and runs Trivy scans with triage filtering applied.
+This script connects to Kubernetes, extracts Aleph Alpha signed images from a namespace,
+downloads cosign triage attestations, and runs Trivy vulnerability scans with
+triage filtering applied to focus on unaddressed security issues.
 
 Usage:
   $0 [OPTIONS]
@@ -307,15 +303,16 @@ analyze_cves() {
     local addressed_json="[]"
     local irrelevant_json="[]"
 
-    if [[ ${#unaddressed_cve_list[@]} -gt 0 ]]; then
+    # Check if arrays exist and have content (for unbound variable safety)
+    if [[ ${unaddressed_cve_list[@]+_} && ${#unaddressed_cve_list[@]} -gt 0 ]]; then
         unaddressed_json="[$(printf '"%s",' "${unaddressed_cve_list[@]}" | sed 's/,$//')]"
     fi
 
-    if [[ ${#addressed_cve_list[@]} -gt 0 ]]; then
+    if [[ ${addressed_cve_list[@]+_} && ${#addressed_cve_list[@]} -gt 0 ]]; then
         addressed_json="[$(printf '"%s",' "${addressed_cve_list[@]}" | sed 's/,$//')]"
     fi
 
-    if [[ ${#irrelevant_cve_list[@]} -gt 0 ]]; then
+    if [[ ${irrelevant_cve_list[@]+_} && ${#irrelevant_cve_list[@]} -gt 0 ]]; then
         irrelevant_json="[$(printf '"%s",' "${irrelevant_cve_list[@]}" | sed 's/,$//')]"
     fi
 
@@ -452,7 +449,7 @@ cleanup_temp_dir() {
 # Load ignore list from file
 load_ignore_list() {
     if [[ -n "$IGNORE_FILE" && -f "$IGNORE_FILE" ]]; then
-        echo "📄 Loading ignore patterns from: $IGNORE_FILE" >&2
+        echo "📂 Loading ignore patterns from: $IGNORE_FILE" >&2
 
         while IFS= read -r line || [[ -n "$line" ]]; do
             # Skip empty lines and comments
@@ -501,7 +498,7 @@ setup_kubectl() {
     fi
 
     # Test kubectl connectivity with timeout
-    echo "🔗 Testing Kubernetes connectivity (30s timeout)" >&2
+    echo "⚡ Testing Kubernetes connectivity (30s timeout)" >&2
     local connectivity_test_output
 
     # Test connectivity with timeout
@@ -560,13 +557,13 @@ extract_k8s_images() {
 
     # Filter out ignored images
     local filtered_images=()
-    log_verbose "Processing images from file: $images_file"
+    log_verbose "📂 Processing images from file: $images_file"
     if [[ -f "$images_file" ]]; then
         log_verbose "Images file exists, processing $(wc -l < "$images_file") images"
     while IFS= read -r image || [[ -n "$image" ]]; do
         if [[ -n "$image" ]]; then
             if should_ignore_image "$image"; then
-                log_verbose "Ignoring image: $image"
+                log_verbose "🚫 Ignoring image: $image"
                 log_verbose "Current SKIPPED_IMAGES: ${SKIPPED_IMAGES:-0}"
                 # Use a more robust arithmetic expansion
                 if [[ -n "${SKIPPED_IMAGES:-}" ]]; then
@@ -591,7 +588,7 @@ extract_k8s_images() {
     if [[ $TOTAL_IMAGES -eq 0 ]]; then
         log_warn "No images found to scan in namespace: $NAMESPACE"
         if [[ $SKIPPED_IMAGES -gt 0 ]]; then
-            log_warn "All $SKIPPED_IMAGES images were ignored by ignore patterns"
+            log_warn "🚫 All $SKIPPED_IMAGES images were ignored by ignore patterns"
         else
             log_warn "No images were found in the namespace"
         fi
@@ -600,7 +597,7 @@ extract_k8s_images() {
 
     log_result "Found $TOTAL_IMAGES unique images to scan"
     if [[ $SKIPPED_IMAGES -gt 0 ]]; then
-        log_result "Skipped $SKIPPED_IMAGES ignored images"
+        log_result "🚫 Skipped $SKIPPED_IMAGES ignored images"
     fi
 
     # Save filtered images list
@@ -648,7 +645,7 @@ detect_attestation_type() {
     verify_output=$(run_with_timeout 60 "$verify_script" --image "$image" \
         --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
         --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" \
-        --output-level none --no-error 2>&1)
+        --output-level none 2>&1)
     verify_exit_code=$?
 
     # Log the results
@@ -873,7 +870,7 @@ EOF
 
 # Process all images
 process_all_images() {
-    echo "⚙️  Processing images" >&2
+    echo "🔄 Processing images" >&2
 
     local images=()
     log_verbose "Reading images from: $TEMP_DIR/images_to_scan.txt"
@@ -892,9 +889,9 @@ process_all_images() {
     log_verbose "Array length: ${#images[@]}, First image: ${images[0]:-none}"
 
     if $DRY_RUN; then
-        log_result "DRY RUN - Would process ${#images[@]} images:"
+        log_result "[DRY RUN] - Would process ${#images[@]} images:"
         for img in "${images[@]}"; do
-            echo "     • $img" >&2
+            echo "     - $img" >&2
         done
         return 0
     fi
@@ -1122,7 +1119,7 @@ EOF
     echo "==============="
     echo "Namespace: $NAMESPACE"
     echo "Total images found: $TOTAL_IMAGES"
-    echo "Images skipped (ignored): $SKIPPED_IMAGES"
+    echo "🚫 Images skipped (ignored): $SKIPPED_IMAGES"
     echo "Images processed: $total_processed"
     echo "Successful scans: $successful_count"
     echo "Failed scans: $failed_count"
@@ -1225,14 +1222,15 @@ generate_cve_summary_table() {
 
 # Main execution
 main() {
-    echo "🚀 Kubernetes Image Scanner" >&2
+    echo "🚀 Aleph Alpha - Signed Image Scanner" >&2
+    echo >&2
+    echo "⚙️ Selected options:" >&2
     log_result "Namespace: $NAMESPACE"
     log_result "Output directory: $OUTPUT_DIR"
 
     if $DRY_RUN; then
         log_result "Mode: DRY RUN (no actual scanning)"
     fi
-    echo >&2
 
     # Setup
     check_prerequisites
