@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Check shell compatibility
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "Warning: This script was designed for bash but is running in: ${0##*/}" >&2
+    echo "Some features may not work correctly in zsh or other shells." >&2
+    echo "For best results, run with: bash $0 $*" >&2
+    echo "" >&2
+fi
+
 # Kubernetes Image Scanner with Triage Support
 # This script scans all images in a Kubernetes namespace, downloads triage files,
 # and runs Trivy scans with the triage data applied.
@@ -57,6 +65,8 @@ Prerequisites:
   - trivy (for vulnerability scanning)
   - jq (for JSON processing)
   - cosign (for attestation verification)
+  - cosign-extract.sh (for extracting triage attestations)
+  - cosign-verify-image.sh (for verifying image signatures)
 
 EOF
 }
@@ -359,8 +369,10 @@ check_prerequisites() {
 
     log_result "All required tools available"
     
-    # Check for cosign-extract.sh script
+    # Check for required cosign scripts
     local extract_script="$SCRIPT_DIR/../cosign-extract.sh"
+    local verify_script="$SCRIPT_DIR/../cosign-verify-image.sh"
+    
     if [[ ! -f "$extract_script" ]]; then
         log_error "cosign-extract.sh not found at: $extract_script"
         log_error "Current working directory: $(pwd)"
@@ -369,6 +381,15 @@ check_prerequisites() {
         exit 1
     fi
     log_result "cosign-extract.sh script found"
+    
+    if [[ ! -f "$verify_script" ]]; then
+        log_error "cosign-verify-image.sh not found at: $verify_script"
+        log_error "Current working directory: $(pwd)"
+        log_error "Script directory: $SCRIPT_DIR"
+        log_error "Please ensure cosign-verify-image.sh is in the parent directory of the scanner folder"
+        exit 1
+    fi
+    log_result "cosign-verify-image.sh script found"
 }
 
 # Setup temporary directory
@@ -622,16 +643,71 @@ detect_attestation_type() {
 
     log_verbose "Checking if image is Cosign-signed: $image"
 
-    # Check if the image is Cosign-signed (as per Aleph Alpha Security Disclosure v2)
-    if cosign verify "$image" \
-        --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-        --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" >/dev/null 2>&1; then
+    # Use the existing cosign-verify-image.sh script for verification
+    local verify_script="$SCRIPT_DIR/../cosign-verify-image.sh"
+    if [[ ! -f "$verify_script" ]]; then
+        log_error "cosign-verify-image.sh not found at: $verify_script"
+        return 1
+    fi
 
+    # Run cosign verification using the dedicated script
+    local verify_output
+    local verify_exit_code
+    
+    # Use timeout if available
+    if command -v timeout >/dev/null 2>&1; then
+        # Linux/GNU timeout
+        if verify_output=$(timeout 60s "$verify_script" --image "$image" \
+            --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1); then
+            verify_exit_code=0
+        else
+            verify_exit_code=$?
+            log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
+            log_verbose "cosign-verify-image.sh output: $verify_output"
+        fi
+    elif command -v gtimeout >/dev/null 2>&1; then
+        # macOS with GNU coreutils (brew install coreutils)
+        if verify_output=$(gtimeout 60s "$verify_script" --image "$image" \
+            --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1); then
+            verify_exit_code=0
+        else
+            verify_exit_code=$?
+            log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
+            log_verbose "cosign-verify-image.sh output: $verify_output"
+        fi
+    else
+        # Fallback without timeout
+        log_verbose "No timeout command available, running cosign-verify-image.sh without timeout"
+        if verify_output=$("$verify_script" --image "$image" \
+            --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
+            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1); then
+            verify_exit_code=0
+        else
+            verify_exit_code=$?
+            log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
+            log_verbose "cosign-verify-image.sh output: $verify_output"
+        fi
+    fi
+    
+    if [[ $verify_exit_code -eq 0 ]]; then
         log_verbose "Image is Cosign-signed, checking for triage attestations"
 
         # Image is signed, check if triage attestations exist (without verification for now)
         # We'll do the verification during download
-        if "$SCRIPT_DIR/../cosign-extract.sh" --image "$image" --list 2>/dev/null | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
+        local extract_output
+        local extract_exit_code
+        
+        if extract_output=$("$SCRIPT_DIR/../cosign-extract.sh" --image "$image" --list 2>&1); then
+            extract_exit_code=0
+        else
+            extract_exit_code=$?
+            log_verbose "cosign-extract.sh failed with exit code: $extract_exit_code"
+            log_verbose "cosign-extract.sh output: $extract_output"
+        fi
+        
+        if [[ $extract_exit_code -eq 0 ]] && echo "$extract_output" | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
             log_verbose "Found cosign triage attestation for $image"
             echo "cosign"
         else
@@ -788,7 +864,7 @@ process_image() {
   "image": "$image",
   "attestation_type": "$attestation_type",
   "triage_downloaded": $triage_downloaded,
-  "scan_timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "scan_timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")",
   "scan_format": "$FORMAT",
   "severity_filter": "$SEVERITY"
 }
@@ -819,6 +895,7 @@ process_all_images() {
     done < "$TEMP_DIR/images_to_scan.txt"
     
     log_verbose "Loaded ${#images[@]} images to process"
+    log_verbose "Array length: ${#images[@]}, First image: ${images[0]:-none}"
 
     if $DRY_RUN; then
         log_result "DRY RUN - Would process ${#images[@]} images:"
@@ -966,7 +1043,7 @@ generate_final_report() {
     cat > "$report_file" <<EOF
 {
   "scan_summary": {
-    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+    "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")",
     "namespace": "$NAMESPACE",
     "total_images_found": $TOTAL_IMAGES,
     "images_skipped": $SKIPPED_IMAGES,

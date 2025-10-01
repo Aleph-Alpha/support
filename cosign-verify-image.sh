@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Check shell compatibility
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "Warning: This script was designed for bash but is running in: ${0##*/}" >&2
+    echo "Some features may not work correctly in zsh or other shells." >&2
+    echo "For best results, run with: bash $0 $*" >&2
+    echo "" >&2
+fi
+
 show_help() {
   cat <<EOF
 Usage:
@@ -108,9 +116,13 @@ fi
 # Resolve tag -> digest for consistent verification
 echo "ℹ️  Resolving image reference..."
 if command -v crane >/dev/null 2>&1; then
-  DIGEST=$(crane digest "$IMAGE")
-  IMAGE_WITH_DIGEST="$IMAGE@$DIGEST"
-  echo "ℹ️  Using image digest: $DIGEST"
+  if DIGEST=$(crane digest "$IMAGE" 2>/dev/null); then
+    IMAGE_WITH_DIGEST="$IMAGE@$DIGEST"
+    echo "ℹ️  Using image digest: $DIGEST"
+  else
+    IMAGE_WITH_DIGEST="$IMAGE"
+    echo "⚠️  Failed to resolve digest, using tag reference (less secure)"
+  fi
 else
   IMAGE_WITH_DIGEST="$IMAGE"
   echo "⚠️  crane not found, using tag reference (less secure)"
@@ -161,7 +173,7 @@ if $VERBOSE; then
   echo ""
 fi
 
-TEMP_OUTPUT=$(mktemp)
+TEMP_OUTPUT=$(mktemp 2>/dev/null || mktemp -t cosign-verify)
 if cosign verify "${COSIGN_ARGS[@]}" > "$TEMP_OUTPUT" 2>&1; then
   echo "✅ Image signature verification successful!"
 

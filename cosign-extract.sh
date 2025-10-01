@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Check shell compatibility
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "Warning: This script was designed for bash but is running in: ${0##*/}" >&2
+    echo "Some features may not work correctly in zsh or other shells." >&2
+    echo "For best results, run with: bash $0 $*" >&2
+    echo "" >&2
+fi
+
 show_help() {
   cat <<EOF
 Usage:
@@ -140,7 +148,7 @@ verify_attestation() {
 
   # Perform verification
   local temp_output
-  temp_output=$(mktemp)
+  temp_output=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
 
   if cosign verify-attestation \
     --type "$pred_type" \
@@ -160,8 +168,18 @@ verify_attestation() {
 }
 
 # Resolve tag -> digest
-DIGEST=$(crane digest "$IMAGE")
-echo "ℹ️  Using image digest: $DIGEST"
+if command -v crane >/dev/null 2>&1; then
+  if DIGEST=$(crane digest "$IMAGE" 2>/dev/null); then
+    echo "ℹ️  Using image digest: $DIGEST"
+  else
+    echo "❌ Failed to resolve image digest with crane"
+    exit 1
+  fi
+else
+  echo "❌ crane command not found. Please install crane to resolve image digests."
+  echo "   Installation: https://github.com/google/go-containerregistry/blob/main/cmd/crane/README.md"
+  exit 1
+fi
 
 # --list mode
 if $LIST_ONLY; then
@@ -193,11 +211,11 @@ if $INSPECT_NULL; then
   for d in $NULL_REFS; do
     echo "----- Referrer $d -----"
     layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
-    bundle=$(mktemp)
+    bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
     oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
 
     if jq -e '.dsseEnvelope.payload' "$bundle" >/dev/null 2>&1; then
-      raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
+      raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
       echo "Inner predicateType: $(echo "$raw" | jq -r '.predicateType')"
       echo "Predicate (truncated):"
       echo "$raw" | jq '.predicate' | head -20
@@ -236,9 +254,9 @@ if [[ -z "$TYPE" && "$CHOICE" == "all" ]]; then
     PRED_TYPES=()
     for d in $REFERRERS; do
       layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
-      bundle=$(mktemp)
+      bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
       oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
-      raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
+      raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
       ptype=$(echo "$raw" | jq -r '.predicateType')
       rm -f "$bundle"
 
@@ -267,9 +285,9 @@ if [[ -z "$TYPE" && "$CHOICE" == "all" ]]; then
   idx=1
   for d in $REFERRERS; do
     layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
-    bundle=$(mktemp)
+    bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
     oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
-    raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
+    raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
 
     ptype=$(echo "$raw" | jq -r '.predicateType')
     base=$(pretty_name "$ptype")
@@ -315,9 +333,9 @@ REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
 for d in $REFERRERS; do
   echo "🔎 Checking candidate referrer digest=$d"
   layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
-  bundle=$(mktemp)
+  bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
   oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
-  raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
+  raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
   inner=$(echo "$raw" | jq -r '.predicateType')
   echo "   ↳ inner predicateType=$inner"
   rm -f "$bundle"
@@ -349,13 +367,13 @@ fetch_attestation() {
   local ref_digest="$1"
   local index="${2:-}"
   local bundle
-  bundle=$(mktemp)
+  bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
 
   # fetch manifest → get blob digest
   layer_digest=$(oras manifest fetch "$IMAGE@$ref_digest" | jq -r '.layers[0].digest')
   oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
 
-  raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d)
+  raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
 
   # Skip extraction if --no-extraction is used
   if $NO_EXTRACTION; then
