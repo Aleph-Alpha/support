@@ -144,6 +144,11 @@ if ! command -v cosign >/dev/null 2>&1; then
   exit 1
 fi
 
+# Show helpful info about authentication
+output "ℹ️  Note: If you encounter authentication errors, ensure you're logged in to the registry:"
+output "   docker login <registry>"
+output ""
+
 # Resolve tag -> digest for consistent verification
 output "ℹ️  Resolving image reference..."
 if command -v crane >/dev/null 2>&1; then

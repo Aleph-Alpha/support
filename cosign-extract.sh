@@ -167,6 +167,11 @@ verify_attestation() {
   fi
 }
 
+# Show helpful info about authentication
+echo "ℹ️  Note: If you encounter authentication errors, ensure you're logged in to the registry:"
+echo "   docker login <registry>"
+echo ""
+
 # Resolve tag -> digest
 if command -v crane >/dev/null 2>&1; then
   if DIGEST=$(crane digest "$IMAGE" 2>/dev/null); then
