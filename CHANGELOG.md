@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/Aleph-Alpha/support/compare/v1.2.1...v1.2.2) (2025-10-01)
+
+
+### Bug Fixes
+
+* improve handling of output for verify-image script ([#10](https://github.com/Aleph-Alpha/support/issues/10)) ([ea3e68e](https://github.com/Aleph-Alpha/support/commit/ea3e68e0d099bf327860f1193965500f54a67ab0))
+* make cosign-verify fully silent in case of errors ([#12](https://github.com/Aleph-Alpha/support/issues/12)) ([6f0d5ef](https://github.com/Aleph-Alpha/support/commit/6f0d5efcd8930d0da9366904fd0e26f8797f26fa))
+
 ## [1.2.1](https://github.com/Aleph-Alpha/support/compare/v1.2.0...v1.2.1) (2025-09-30)
 
 
