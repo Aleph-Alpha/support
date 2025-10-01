@@ -141,9 +141,22 @@ fi
 # Resolve tag -> digest for consistent verification
 output "ℹ️  Resolving image reference..."
 if command -v crane >/dev/null 2>&1; then
-  DIGEST=$(crane digest "$IMAGE")
-  IMAGE_WITH_DIGEST="$IMAGE@$DIGEST"
-  output "ℹ️  Using image digest: $DIGEST"
+  if [[ "$OUTPUT_LEVEL" == "none" ]]; then
+    # In silent mode, suppress crane stderr
+    DIGEST=$(crane digest "$IMAGE" 2>/dev/null)
+  else
+    # In info/verbose mode, show crane errors
+    DIGEST=$(crane digest "$IMAGE")
+  fi
+
+  if [[ -n "$DIGEST" ]]; then
+    IMAGE_WITH_DIGEST="$IMAGE@$DIGEST"
+    output "ℹ️  Using image digest: $DIGEST"
+  else
+    # If crane failed to get digest, fall back to tag reference
+    IMAGE_WITH_DIGEST="$IMAGE"
+    output "⚠️  Failed to resolve digest, using tag reference (less secure)"
+  fi
 else
   IMAGE_WITH_DIGEST="$IMAGE"
   output "⚠️  crane not found, using tag reference (less secure)"
@@ -192,8 +205,24 @@ output ""
 output_verbose "🔍 Running: cosign verify ${COSIGN_ARGS[*]}"
 output_verbose ""
 
-TEMP_OUTPUT=$(mktemp 2>/dev/null || mktemp -t cosign-verify)
-if cosign verify "${COSIGN_ARGS[@]}" > "$TEMP_OUTPUT" 2>&1; then
+TEMP_OUTPUT=$(mktemp)
+if [[ "$OUTPUT_LEVEL" == "none" ]]; then
+  # In silent mode, suppress all output including stderr
+  if cosign verify "${COSIGN_ARGS[@]}" > "$TEMP_OUTPUT" 2>/dev/null; then
+    VERIFY_SUCCESS=true
+  else
+    VERIFY_SUCCESS=false
+  fi
+else
+  # In info/verbose mode, capture both stdout and stderr
+  if cosign verify "${COSIGN_ARGS[@]}" > "$TEMP_OUTPUT" 2>&1; then
+    VERIFY_SUCCESS=true
+  else
+    VERIFY_SUCCESS=false
+  fi
+fi
+
+if $VERIFY_SUCCESS; then
   output "✅ Image signature verification successful!"
 
   output_verbose ""
@@ -215,22 +244,25 @@ if cosign verify "${COSIGN_ARGS[@]}" > "$TEMP_OUTPUT" 2>&1; then
   output "🛡️  Image is cryptographically signed and verified!"
 
 else
-  output "❌ Image signature verification failed!"
-  output ""
+  # Only show error details if not in silent mode
+  if [[ "$OUTPUT_LEVEL" != "none" ]]; then
+    output "❌ Image signature verification failed!"
+    output ""
 
-  # Extract clean error message from cosign output
-  ERROR_MSG=$(grep -E "^Error:|^error during command execution:" "$TEMP_OUTPUT" | head -1 | sed 's/^Error: //' | sed 's/^error during command execution: //')
-  if [[ -z "$ERROR_MSG" ]]; then
-    ERROR_MSG=$(head -1 "$TEMP_OUTPUT")
+    # Extract clean error message from cosign output
+    ERROR_MSG=$(grep -E "^Error:|^error during command execution:" "$TEMP_OUTPUT" | head -1 | sed 's/^Error: //' | sed 's/^error during command execution: //')
+    if [[ -z "$ERROR_MSG" ]]; then
+      ERROR_MSG=$(head -1 "$TEMP_OUTPUT")
+    fi
+
+    output "📋 Error Details: $ERROR_MSG"
+    output ""
+    output "💡 Possible reasons:"
+    output "   • Image is not signed"
+    output "   • Wrong verification parameters (OIDC issuer, identity, key)"
+    output "   • Signature was created with different signing method"
+    output "   • Network issues accessing transparency log"
   fi
-
-  output "📋 Error Details: $ERROR_MSG"
-  output ""
-  output "💡 Possible reasons:"
-  output "   • Image is not signed"
-  output "   • Wrong verification parameters (OIDC issuer, identity, key)"
-  output "   • Signature was created with different signing method"
-  output "   • Network issues accessing transparency log"
 
   rm -f "$TEMP_OUTPUT"
   exit 1
