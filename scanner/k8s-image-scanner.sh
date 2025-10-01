@@ -641,6 +641,11 @@ extract_k8s_images() {
 detect_attestation_type() {
     local image="$1"
 
+    # Temporarily disable exit on error for this function
+    set +e
+    local verify_output
+    local verify_exit_code
+
     log_verbose "Checking if image is Cosign-signed: $image"
 
     # Use the existing cosign-verify-image.sh script for verification
@@ -651,44 +656,34 @@ detect_attestation_type() {
     fi
 
     # Run cosign verification using the dedicated script
-    local verify_output
-    local verify_exit_code
-    
     # Use timeout if available
     if command -v timeout >/dev/null 2>&1; then
         # Linux/GNU timeout
-        if verify_output=$(timeout 60s "$verify_script" --image "$image" \
+        verify_output=$(timeout 60s "$verify_script" --image "$image" \
             --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1); then
-            verify_exit_code=0
-        else
-            verify_exit_code=$?
-            log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
-            log_verbose "cosign-verify-image.sh output: $verify_output"
-        fi
+            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1)
+        verify_exit_code=$?
     elif command -v gtimeout >/dev/null 2>&1; then
         # macOS with GNU coreutils (brew install coreutils)
-        if verify_output=$(gtimeout 60s "$verify_script" --image "$image" \
+        verify_output=$(gtimeout 60s "$verify_script" --image "$image" \
             --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1); then
-            verify_exit_code=0
-        else
-            verify_exit_code=$?
-            log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
-            log_verbose "cosign-verify-image.sh output: $verify_output"
-        fi
+            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1)
+        verify_exit_code=$?
     else
         # Fallback without timeout
         log_verbose "No timeout command available, running cosign-verify-image.sh without timeout"
-        if verify_output=$("$verify_script" --image "$image" \
+        verify_output=$("$verify_script" --image "$image" \
             --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
-            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1); then
-            verify_exit_code=0
-        else
-            verify_exit_code=$?
-            log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
-            log_verbose "cosign-verify-image.sh output: $verify_output"
-        fi
+            --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" 2>&1)
+        verify_exit_code=$?
+    fi
+    
+    # Log the results
+    if [[ $verify_exit_code -eq 0 ]]; then
+        log_verbose "cosign-verify-image.sh succeeded"
+    else
+        log_verbose "cosign-verify-image.sh failed with exit code: $verify_exit_code"
+        log_verbose "cosign-verify-image.sh output: $verify_output"
     fi
     
     if [[ $verify_exit_code -eq 0 ]]; then
@@ -718,6 +713,9 @@ detect_attestation_type() {
         log_verbose "Image is not Cosign-signed, skipping"
         echo "unsigned"
     fi
+    
+    # Re-enable exit on error
+    set -e
 }
 
 # Download triage file using cosign attestation
