@@ -587,7 +587,17 @@ extract_k8s_images() {
     fi
 
     # Save filtered images list
-    printf '%s\n' "${filtered_images[@]}" > "$TEMP_DIR/images_to_scan.txt"
+    log_verbose "Saving filtered images list to: $TEMP_DIR/images_to_scan.txt"
+    if ! printf '%s\n' "${filtered_images[@]}" > "$TEMP_DIR/images_to_scan.txt"; then
+        log_error "Failed to save images list to: $TEMP_DIR/images_to_scan.txt"
+        return 1
+    fi
+    local line_count
+    if line_count=$(wc -l < "$TEMP_DIR/images_to_scan.txt" 2>/dev/null); then
+        log_verbose "Saved $line_count images to scan file"
+    else
+        log_verbose "Saved images to scan file (could not count lines)"
+    fi
 
     if $VERBOSE; then
         log_verbose "Images to scan:"
@@ -595,6 +605,8 @@ extract_k8s_images() {
             log_verbose "  $img"
         done
     fi
+    
+    log_verbose "extract_k8s_images function completed successfully"
 }
 
 # Check if image is Cosign-signed and has triage attestations
@@ -1156,7 +1168,9 @@ main() {
     log_step "Starting image extraction and processing"
     extract_k8s_images
     log_step "Image extraction completed, starting image processing"
+    log_verbose "About to call process_all_images function"
     process_all_images
+    log_verbose "process_all_images function completed"
     log_step "Image processing completed"
 
     # Generate final report and CVE summary
