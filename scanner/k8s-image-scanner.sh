@@ -648,7 +648,7 @@ detect_attestation_type() {
     verify_output=$(run_with_timeout 60 "$verify_script" --image "$image" \
         --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
         --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" \
-        --output-level none 2>&1)
+        --output-level none --no-error 2>&1)
     verify_exit_code=$?
 
     # Log the results
