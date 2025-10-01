@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Check shell compatibility
+if [[ -z "${BASH_VERSION:-}" ]]; then
+    echo "Warning: This script was designed for bash but is running in: ${0##*/}" >&2
+    echo "Some features may not work correctly in zsh or other shells." >&2
+    echo "For best results, run with: bash $0 $*" >&2
+    echo "" >&2
+fi
+
 show_help() {
   cat <<EOF
 Usage:
@@ -135,6 +143,11 @@ if ! command -v cosign >/dev/null 2>&1; then
   echo "   Installation: https://docs.sigstore.dev/cosign/installation/"
   exit 1
 fi
+
+# Show helpful info about authentication
+output "ℹ️  Note: If you encounter authentication errors, ensure you're logged in to the registry:"
+output "   docker login <registry>"
+output ""
 
 # Resolve tag -> digest for consistent verification
 output "ℹ️  Resolving image reference..."
