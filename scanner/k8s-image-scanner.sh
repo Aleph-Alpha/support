@@ -767,9 +767,19 @@ process_all_images() {
     echo "⚙️  Processing images" >&2
 
     local images=()
+    log_verbose "Reading images from: $TEMP_DIR/images_to_scan.txt"
+    if [[ ! -f "$TEMP_DIR/images_to_scan.txt" ]]; then
+        log_error "Images to scan file not found: $TEMP_DIR/images_to_scan.txt"
+        return 1
+    fi
+    
     while IFS= read -r image; do
-        images+=("$image")
+        if [[ -n "$image" ]]; then
+            images+=("$image")
+        fi
     done < "$TEMP_DIR/images_to_scan.txt"
+    
+    log_verbose "Loaded ${#images[@]} images to process"
 
     if $DRY_RUN; then
         log_result "DRY RUN - Would process ${#images[@]} images:"
@@ -817,7 +827,9 @@ process_all_images() {
     fi
 
     # Collect results by checking what was actually created
+    log_verbose "Collecting scan results"
     collect_scan_results
+    log_verbose "Scan results collection completed"
 
     # Show final results
     if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
@@ -845,7 +857,16 @@ collect_scan_results() {
     SKIPPED_SCANS=()
 
     # Read the list of images that were supposed to be scanned
+    log_verbose "Reading images from: $TEMP_DIR/images_to_scan.txt"
+    if [[ ! -f "$TEMP_DIR/images_to_scan.txt" ]]; then
+        log_error "Images to scan file not found during result collection: $TEMP_DIR/images_to_scan.txt"
+        return 1
+    fi
+    
     while IFS= read -r image; do
+        if [[ -z "$image" ]]; then
+            continue
+        fi
         local image_safe_name
         image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
         local image_dir="$OUTPUT_DIR/$image_safe_name"
@@ -864,6 +885,11 @@ collect_scan_results() {
         fi
     done < "$TEMP_DIR/images_to_scan.txt"
 
+    # Ensure arrays are defined before accessing them
+    SUCCESSFUL_SCANS=(${SUCCESSFUL_SCANS[@]:-})
+    FAILED_SCANS=(${FAILED_SCANS[@]:-})
+    SKIPPED_SCANS=(${SKIPPED_SCANS[@]:-})
+    
     log_verbose "Collected ${#SUCCESSFUL_SCANS[@]} successful, ${#FAILED_SCANS[@]} failed, and ${#SKIPPED_SCANS[@]} skipped scans"
 }
 
@@ -877,6 +903,11 @@ generate_final_report() {
     local failed_count=0
     local skipped_count=0
 
+    # Ensure arrays are defined before accessing them
+    SUCCESSFUL_SCANS=(${SUCCESSFUL_SCANS[@]:-})
+    FAILED_SCANS=(${FAILED_SCANS[@]:-})
+    SKIPPED_SCANS=(${SKIPPED_SCANS[@]:-})
+    
     # Safe array length calculation
     if [[ ${#SUCCESSFUL_SCANS[@]} -gt 0 ]]; then
         successful_count=${#SUCCESSFUL_SCANS[@]}
@@ -1085,6 +1116,11 @@ main() {
     setup_temp_dir
     load_ignore_list
     setup_kubectl
+    
+    # Initialize arrays to prevent undefined variable errors
+    SUCCESSFUL_SCANS=()
+    FAILED_SCANS=()
+    SKIPPED_SCANS=()
 
     # Create output directory (only if not dry-run)
     if ! $DRY_RUN; then
@@ -1097,13 +1133,18 @@ main() {
     fi
 
     # Extract and process images
+    log_step "Starting image extraction and processing"
     extract_k8s_images
+    log_step "Image extraction completed, starting image processing"
     process_all_images
+    log_step "Image processing completed"
 
     # Generate final report and CVE summary
     if ! $DRY_RUN; then
+        log_step "Generating final report"
         # Generate final report first (creates JSON with CVE data)
         generate_final_report
+        log_step "Generating CVE summary table"
         # Generate CVE summary table from JSON data
         generate_cve_summary_table
     fi
