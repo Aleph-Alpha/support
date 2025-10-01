@@ -811,18 +811,28 @@ run_trivy_scan() {
 
 # Process a single image
 process_image() {
+    # Disable exit on error for this function since it runs in background
+    set +e
+    
     local image="$1"
     local image_safe_name
     image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
 
     local image_dir="$OUTPUT_DIR/$image_safe_name"
-    mkdir -p "$image_dir"
+    if ! mkdir -p "$image_dir"; then
+        log_error "Failed to create directory: $image_dir"
+        return 1
+    fi
 
     log_verbose "Processing: $image"
 
     # Detect attestation type
     local attestation_type
-    attestation_type=$(detect_attestation_type "$image")
+    if ! attestation_type=$(detect_attestation_type "$image"); then
+        log_error "Failed to detect attestation type for: $image"
+        return 1
+    fi
+    log_verbose "Detected attestation type: $attestation_type"
 
     local triage_file=""
     local triage_downloaded=false
@@ -848,7 +858,11 @@ process_image() {
             # Image is not signed, skip scanning silently
             log_verbose "Image is not Cosign-signed, skipping: $image"
             # Create a marker file to indicate this image was skipped
-            echo "skipped" > "$image_dir/skipped.txt"
+            if echo "skipped" > "$image_dir/skipped.txt"; then
+                log_verbose "Created skip marker for: $image"
+            else
+                log_error "Failed to create skip marker for: $image"
+            fi
             return 0
             ;;
     esac
@@ -873,6 +887,9 @@ EOF
     else
         log_verbose "Scan failed for: $image"
     fi
+    
+    # Re-enable exit on error
+    set -e
 }
 
 # Process all images
