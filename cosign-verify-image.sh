@@ -27,7 +27,7 @@ Options:
   --rekor-url URL                       Rekor transparency log URL (default: https://rekor.sigstore.dev)
   --output-signature FILE               Save signature to file
   --output-certificate FILE             Save certificate to file
-  --verbose                             Show detailed verification output
+  --output-level LEVEL                  Output verbosity: none, info (default), verbose
   -h, --help                            Show this help
 
 Verification Modes:
@@ -51,8 +51,11 @@ Examples:
   $0 --image registry.example.com/myapp:latest --key cosign.pub
 
   # Verbose output with signature extraction
-  $0 --image registry.example.com/myapp:latest --verbose \\
+  $0 --image registry.example.com/myapp:latest --output-level verbose \\
     --output-signature signature.sig --output-certificate cert.pem
+
+  # Silent mode for automation (only exit code)
+  $0 --image registry.example.com/myapp:latest --output-level none
 EOF
 }
 
@@ -65,7 +68,7 @@ KEYLESS=true
 REKOR_URL="https://rekor.sigstore.dev"
 OUTPUT_SIGNATURE=""
 OUTPUT_CERTIFICATE=""
-VERBOSE=false
+OUTPUT_LEVEL="info"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -78,7 +81,7 @@ while [[ $# -gt 0 ]]; do
     --rekor-url) REKOR_URL="$2"; shift 2 ;;
     --output-signature) OUTPUT_SIGNATURE="$2"; shift 2 ;;
     --output-certificate) OUTPUT_CERTIFICATE="$2"; shift 2 ;;
-    --verbose) VERBOSE=true; shift ;;
+    --output-level) OUTPUT_LEVEL="$2"; shift 2 ;;
     -h|--help) show_help; exit 0 ;;
     *) echo "❌ Unknown option: $1"; show_help; exit 1 ;;
   esac
@@ -106,6 +109,28 @@ if [[ -n "$CERTIFICATE_IDENTITY" && -n "$CERTIFICATE_IDENTITY_REGEXP" ]]; then
   exit 1
 fi
 
+# Validate output level
+case "$OUTPUT_LEVEL" in
+  none|info|verbose) ;;
+  *) echo "❌ Invalid output level: $OUTPUT_LEVEL (must be: none, info, verbose)"
+     exit 1 ;;
+esac
+
+# Output functions for different verbosity levels
+output() {
+  case "$OUTPUT_LEVEL" in
+    none) ;;
+    info|verbose) echo "$@" ;;
+  esac
+}
+
+output_verbose() {
+  case "$OUTPUT_LEVEL" in
+    none|info) ;;
+    verbose) echo "$@" ;;
+  esac
+}
+
 # Check if cosign is available
 if ! command -v cosign >/dev/null 2>&1; then
   echo "❌ cosign command not found. Please install cosign."
@@ -114,43 +139,39 @@ if ! command -v cosign >/dev/null 2>&1; then
 fi
 
 # Resolve tag -> digest for consistent verification
-echo "ℹ️  Resolving image reference..."
+output "ℹ️  Resolving image reference..."
 if command -v crane >/dev/null 2>&1; then
-  if DIGEST=$(crane digest "$IMAGE" 2>/dev/null); then
-    IMAGE_WITH_DIGEST="$IMAGE@$DIGEST"
-    echo "ℹ️  Using image digest: $DIGEST"
-  else
-    IMAGE_WITH_DIGEST="$IMAGE"
-    echo "⚠️  Failed to resolve digest, using tag reference (less secure)"
-  fi
+  DIGEST=$(crane digest "$IMAGE")
+  IMAGE_WITH_DIGEST="$IMAGE@$DIGEST"
+  output "ℹ️  Using image digest: $DIGEST"
 else
   IMAGE_WITH_DIGEST="$IMAGE"
-  echo "⚠️  crane not found, using tag reference (less secure)"
+  output "⚠️  crane not found, using tag reference (less secure)"
 fi
 
-echo "🔐 Verifying image signature for: $IMAGE_WITH_DIGEST"
+output "🔐 Verifying image signature for: $IMAGE_WITH_DIGEST"
 
 # Build cosign verify command arguments
 COSIGN_ARGS=()
 
 if $KEYLESS; then
-  echo "   ↳ Mode: Keyless verification"
-  echo "   ↳ OIDC Issuer: $CERTIFICATE_OIDC_ISSUER"
+  output "   ↳ Mode: Keyless verification"
+  output "   ↳ OIDC Issuer: $CERTIFICATE_OIDC_ISSUER"
 
   COSIGN_ARGS+=("--certificate-oidc-issuer=$CERTIFICATE_OIDC_ISSUER")
 
   if [[ -n "$CERTIFICATE_IDENTITY" ]]; then
-    echo "   ↳ Identity: $CERTIFICATE_IDENTITY"
+    output "   ↳ Identity: $CERTIFICATE_IDENTITY"
     COSIGN_ARGS+=("--certificate-identity=$CERTIFICATE_IDENTITY")
   else
-    echo "   ↳ Identity Regexp: $CERTIFICATE_IDENTITY_REGEXP"
+    output "   ↳ Identity Regexp: $CERTIFICATE_IDENTITY_REGEXP"
     COSIGN_ARGS+=("--certificate-identity-regexp=$CERTIFICATE_IDENTITY_REGEXP")
   fi
 
   COSIGN_ARGS+=("--rekor-url=$REKOR_URL")
 else
-  echo "   ↳ Mode: Key-based verification"
-  echo "   ↳ Public Key: $KEY_FILE"
+  output "   ↳ Mode: Key-based verification"
+  output "   ↳ Public Key: $KEY_FILE"
   COSIGN_ARGS+=("--key=$KEY_FILE")
 fi
 
@@ -167,45 +188,49 @@ fi
 COSIGN_ARGS+=("$IMAGE_WITH_DIGEST")
 
 # Execute verification
-echo ""
-if $VERBOSE; then
-  echo "🔍 Running: cosign verify ${COSIGN_ARGS[*]}"
-  echo ""
-fi
+output ""
+output_verbose "🔍 Running: cosign verify ${COSIGN_ARGS[*]}"
+output_verbose ""
 
 TEMP_OUTPUT=$(mktemp 2>/dev/null || mktemp -t cosign-verify)
 if cosign verify "${COSIGN_ARGS[@]}" > "$TEMP_OUTPUT" 2>&1; then
-  echo "✅ Image signature verification successful!"
+  output "✅ Image signature verification successful!"
 
-  if $VERBOSE; then
-    echo ""
-    echo "📋 Verification Details:"
+  output_verbose ""
+  output_verbose "📋 Verification Details:"
+  if [[ "$OUTPUT_LEVEL" == "verbose" ]]; then
     cat "$TEMP_OUTPUT"
   fi
 
   # Show output file locations
   if [[ -n "$OUTPUT_SIGNATURE" ]]; then
-    echo "💾 Signature saved to: $OUTPUT_SIGNATURE"
+    output "💾 Signature saved to: $OUTPUT_SIGNATURE"
   fi
 
   if [[ -n "$OUTPUT_CERTIFICATE" ]]; then
-    echo "💾 Certificate saved to: $OUTPUT_CERTIFICATE"
+    output "💾 Certificate saved to: $OUTPUT_CERTIFICATE"
   fi
 
-  echo ""
-  echo "🛡️  Image is cryptographically signed and verified!"
+  output ""
+  output "🛡️  Image is cryptographically signed and verified!"
 
 else
-  echo "❌ Image signature verification failed!"
-  echo ""
-  echo "📋 Error Details:"
-  cat "$TEMP_OUTPUT"
-  echo ""
-  echo "💡 Possible reasons:"
-  echo "   • Image is not signed"
-  echo "   • Wrong verification parameters (OIDC issuer, identity, key)"
-  echo "   • Signature was created with different signing method"
-  echo "   • Network issues accessing transparency log"
+  output "❌ Image signature verification failed!"
+  output ""
+
+  # Extract clean error message from cosign output
+  ERROR_MSG=$(grep -E "^Error:|^error during command execution:" "$TEMP_OUTPUT" | head -1 | sed 's/^Error: //' | sed 's/^error during command execution: //')
+  if [[ -z "$ERROR_MSG" ]]; then
+    ERROR_MSG=$(head -1 "$TEMP_OUTPUT")
+  fi
+
+  output "📋 Error Details: $ERROR_MSG"
+  output ""
+  output "💡 Possible reasons:"
+  output "   • Image is not signed"
+  output "   • Wrong verification parameters (OIDC issuer, identity, key)"
+  output "   • Signature was created with different signing method"
+  output "   • Network issues accessing transparency log"
 
   rm -f "$TEMP_OUTPUT"
   exit 1
