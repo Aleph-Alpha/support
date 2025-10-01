@@ -965,8 +965,6 @@ EOF
 
 # Process all images
 process_all_images() {
-    echo "🔄 Processing images" >&2
-
     local images=()
     log_verbose "Reading images from: $TEMP_DIR/images_to_scan.txt"
     if [[ ! -f "$TEMP_DIR/images_to_scan.txt" ]]; then
@@ -1024,8 +1022,13 @@ process_all_images() {
         log_verbose "Started background process with PID: $bg_pid"
 
         ((count++))
-        log_result "Processing $count/${#images[@]}: $(basename "$image")"
+        # Update progress on the same line
+        printf "\r🔄 Processing images: %d/%d" "$count" "${#images[@]}" >&2
     done
+
+    # Clear the progress line and show completion
+    printf "\r✅ Processing completed: %d/%d images\n" "${#images[@]}" "${#images[@]}" >&2
+    log_info "Finalizing scan results..."
 
     # Wait for all remaining processes
     if [[ ${#pids[@]} -gt 0 ]]; then
@@ -1111,8 +1114,6 @@ collect_scan_results() {
 # Generate final report
 generate_final_report() {
     local report_file="$OUTPUT_DIR/scan-summary.json"
-
-    echo "📊 Generating final report" >&2
 
     local successful_count=0
     local failed_count=0
