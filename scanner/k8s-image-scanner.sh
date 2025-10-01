@@ -828,8 +828,14 @@ process_image() {
 
     # Detect attestation type
     local attestation_type
-    if ! attestation_type=$(detect_attestation_type "$image"); then
-        log_error "Failed to detect attestation type for: $image"
+    # Disable exit on error for this command substitution
+    set +e
+    attestation_type=$(detect_attestation_type "$image")
+    local detect_exit_code=$?
+    set -e
+    
+    if [[ $detect_exit_code -ne 0 ]]; then
+        log_error "Failed to detect attestation type for: $image (exit code: $detect_exit_code)"
         return 1
     fi
     log_verbose "Detected attestation type: $attestation_type"
@@ -930,9 +936,12 @@ process_all_images() {
             local new_pids=()
             if [[ ${#pids[@]} -gt 0 ]]; then
                 for pid in "${pids[@]}"; do
+                    # Disable exit on error for kill command
+                    set +e
                     if kill -0 "$pid" 2>/dev/null; then
                         new_pids+=("$pid")
                     fi
+                    set -e
                 done
             fi
             pids=()
@@ -943,8 +952,11 @@ process_all_images() {
         done
 
         # Start processing in background
+        log_verbose "Starting background process for: $image"
         process_image "$image" &
-        pids+=($!)
+        local bg_pid=$!
+        pids+=($bg_pid)
+        log_verbose "Started background process with PID: $bg_pid"
 
         ((count++))
         log_result "Processing $count/${#images[@]}: $(basename "$image")"
@@ -953,7 +965,14 @@ process_all_images() {
     # Wait for all remaining processes
     if [[ ${#pids[@]} -gt 0 ]]; then
         for pid in "${pids[@]}"; do
-            wait "$pid" || true
+            # Disable exit on error temporarily for wait command
+            set +e
+            wait "$pid"
+            local wait_exit_code=$?
+            set -e
+            if [[ $wait_exit_code -ne 0 ]]; then
+                log_verbose "Background process $pid exited with code $wait_exit_code"
+            fi
         done
     fi
 
