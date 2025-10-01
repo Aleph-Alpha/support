@@ -553,17 +553,24 @@ extract_k8s_images() {
     log_verbose "Processing images from file: $images_file"
     if [[ -f "$images_file" ]]; then
         log_verbose "Images file exists, processing $(wc -l < "$images_file") images"
-        while IFS= read -r image; do
-            if [[ -n "$image" ]]; then
-                if should_ignore_image "$image"; then
-                    log_verbose "Ignoring image: $image"
-                    ((SKIPPED_IMAGES++))
+    while IFS= read -r image || [[ -n "$image" ]]; do
+        if [[ -n "$image" ]]; then
+            if should_ignore_image "$image"; then
+                log_verbose "Ignoring image: $image"
+                log_verbose "Current SKIPPED_IMAGES: ${SKIPPED_IMAGES:-0}"
+                # Use a more robust arithmetic expansion
+                if [[ -n "${SKIPPED_IMAGES:-}" ]]; then
+                    SKIPPED_IMAGES=$((SKIPPED_IMAGES + 1))
                 else
-                    filtered_images+=("$image")
-                    log_verbose "Including image: $image"
+                    SKIPPED_IMAGES=1
                 fi
+                log_verbose "Updated SKIPPED_IMAGES: $SKIPPED_IMAGES"
+            else
+                filtered_images+=("$image")
+                log_verbose "Including image: $image"
             fi
-        done < "$images_file"
+        fi
+    done < "$images_file"
     else
         log_error "Images file not found: $images_file"
         exit 1
