@@ -358,6 +358,17 @@ check_prerequisites() {
 
 
     log_result "All required tools available"
+    
+    # Check for cosign-extract.sh script
+    local extract_script="$SCRIPT_DIR/../cosign-extract.sh"
+    if [[ ! -f "$extract_script" ]]; then
+        log_error "cosign-extract.sh not found at: $extract_script"
+        log_error "Current working directory: $(pwd)"
+        log_error "Script directory: $SCRIPT_DIR"
+        log_error "Please ensure cosign-extract.sh is in the parent directory of the scanner folder"
+        exit 1
+    fi
+    log_result "cosign-extract.sh script found"
 }
 
 # Setup temporary directory
@@ -519,19 +530,34 @@ extract_k8s_images() {
 
     # Filter out ignored images
     local filtered_images=()
-    while IFS= read -r image; do
-        if should_ignore_image "$image"; then
-            log_verbose "Ignoring image: $image"
-            ((SKIPPED_IMAGES++))
-        else
-            filtered_images+=("$image")
-        fi
-    done < "$images_file"
+    log_verbose "Processing images from file: $images_file"
+    if [[ -f "$images_file" ]]; then
+        log_verbose "Images file exists, processing $(wc -l < "$images_file") images"
+        while IFS= read -r image; do
+            if [[ -n "$image" ]]; then
+                if should_ignore_image "$image"; then
+                    log_verbose "Ignoring image: $image"
+                    ((SKIPPED_IMAGES++))
+                else
+                    filtered_images+=("$image")
+                    log_verbose "Including image: $image"
+                fi
+            fi
+        done < "$images_file"
+    else
+        log_error "Images file not found: $images_file"
+        exit 1
+    fi
 
     TOTAL_IMAGES=${#filtered_images[@]}
 
     if [[ $TOTAL_IMAGES -eq 0 ]]; then
         log_warn "No images found to scan in namespace: $NAMESPACE"
+        if [[ $SKIPPED_IMAGES -gt 0 ]]; then
+            log_warn "All $SKIPPED_IMAGES images were ignored by ignore patterns"
+        else
+            log_warn "No images were found in the namespace"
+        fi
         exit 0
     fi
 
@@ -588,10 +614,14 @@ download_cosign_triage() {
 
     # Use the existing cosign-extract.sh script
     local extract_script="$SCRIPT_DIR/../cosign-extract.sh"
+    log_verbose "Looking for cosign-extract.sh at: $extract_script"
     if [[ ! -f "$extract_script" ]]; then
         log_error "cosign-extract.sh not found at: $extract_script"
+        log_error "Current working directory: $(pwd)"
+        log_error "Script directory: $SCRIPT_DIR"
         return 1
     fi
+    log_verbose "Found cosign-extract.sh script"
 
     # Extract triage attestation (automatically select latest if multiple)
     if "$extract_script" --type triage --image "$image" --output "$output_file" --last --verify \
