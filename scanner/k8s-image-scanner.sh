@@ -61,6 +61,7 @@ Prerequisites:
   - trivy (for vulnerability scanning)
   - jq (for JSON processing)
   - cosign (for attestation verification)
+  - docker (for registry accessibility checking)
   - cosign-extract.sh (for extracting triage attestations)
   - cosign-verify-image.sh (for verifying image signatures)
 
@@ -92,6 +93,9 @@ FAILED_SCANS=()
 SUCCESSFUL_SCANS=()
 TOTAL_IMAGES=0
 SKIPPED_IMAGES=0
+IGNORED_IMAGES=0
+INACCESSIBLE_IMAGES=0
+INACCESSIBLE_REGISTRIES=()  # Track registries that are not accessible
 # CVE_ANALYSIS_RESULTS will be stored as files in temp directory
 
 # Logging functions
@@ -108,7 +112,7 @@ log_result() {
 }
 
 log_warn() {
-    echo "⚠️  $*" >&2
+    echo "⚠️ $*" >&2
 }
 
 log_error() {
@@ -372,7 +376,7 @@ check_prerequisites() {
 
     local missing_tools=()
 
-    for tool in kubectl trivy jq cosign; do
+    for tool in kubectl trivy jq cosign docker; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
@@ -485,6 +489,68 @@ should_ignore_image() {
     return 1
 }
 
+# Extract registry from image reference
+extract_registry() {
+    local image="$1"
+    echo "$image" | sed -E 's|^([^/]+).*|\1|'
+}
+
+# Check if registry is accessible using docker
+is_registry_accessible() {
+    local registry="$1"
+    local test_image="$2"  # The actual image we want to test
+
+    # Check if we already know this registry is accessible
+    if [[ ${#ACCESSIBLE_REGISTRIES[@]} -gt 0 ]]; then
+        for accessible_reg in "${ACCESSIBLE_REGISTRIES[@]}"; do
+            if [[ "$registry" == "$accessible_reg" ]]; then
+                log_verbose "Registry already known to be accessible: $registry"
+                return 0
+            fi
+        done
+    fi
+
+    # Check if we already know this registry is inaccessible
+    if [[ ${#INACCESSIBLE_REGISTRIES[@]} -gt 0 ]]; then
+        for inaccessible_reg in "${INACCESSIBLE_REGISTRIES[@]}"; do
+            if [[ "$registry" == "$inaccessible_reg" ]]; then
+                log_verbose "Registry already known to be inaccessible: $registry"
+                return 1
+            fi
+        done
+    fi
+
+    # Check if registry is accessible using docker (which uses proper authentication)
+    # We test with the actual image we want to scan
+    log_verbose "Checking registry accessibility: $registry using image: $test_image"
+
+    # Use docker manifest inspect which respects Docker's authentication
+    if docker manifest inspect "$test_image" >/dev/null 2>&1; then
+        log_verbose "Registry is accessible: $registry"
+        # Add to accessible registries list
+        ACCESSIBLE_REGISTRIES+=("$registry")
+        return 0
+    else
+        log_verbose "Registry is not accessible: $registry"
+        # Add to inaccessible registries list
+        INACCESSIBLE_REGISTRIES+=("$registry")
+        return 1
+    fi
+}
+
+# Check if image should be skipped due to inaccessible registry
+should_skip_inaccessible_registry() {
+    local image="$1"
+    local registry
+    registry=$(extract_registry "$image")
+
+    if ! is_registry_accessible "$registry" "$image"; then
+        return 0  # Skip this image
+    fi
+
+    return 1  # Don't skip
+}
+
 # Setup kubectl context
 setup_kubectl() {
     local kubectl_args=()
@@ -564,14 +630,14 @@ extract_k8s_images() {
         if [[ -n "$image" ]]; then
             if should_ignore_image "$image"; then
                 log_verbose "🚫 Ignoring image: $image"
-                log_verbose "Current SKIPPED_IMAGES: ${SKIPPED_IMAGES:-0}"
-                # Use a more robust arithmetic expansion
-                if [[ -n "${SKIPPED_IMAGES:-}" ]]; then
-                    SKIPPED_IMAGES=$((SKIPPED_IMAGES + 1))
-                else
-                    SKIPPED_IMAGES=1
-                fi
-                log_verbose "Updated SKIPPED_IMAGES: $SKIPPED_IMAGES"
+                ((IGNORED_IMAGES++))
+                ((SKIPPED_IMAGES++))
+                log_verbose "Updated IGNORED_IMAGES: $IGNORED_IMAGES, SKIPPED_IMAGES: $SKIPPED_IMAGES"
+            elif should_skip_inaccessible_registry "$image"; then
+                log_verbose "🚫 Skipping image from inaccessible registry: $image"
+                ((INACCESSIBLE_IMAGES++))
+                ((SKIPPED_IMAGES++))
+                log_verbose "Updated INACCESSIBLE_IMAGES: $INACCESSIBLE_IMAGES, SKIPPED_IMAGES: $SKIPPED_IMAGES"
             else
                 filtered_images+=("$image")
                 log_verbose "Including image: $image"
@@ -588,16 +654,45 @@ extract_k8s_images() {
     if [[ $TOTAL_IMAGES -eq 0 ]]; then
         log_warn "No images found to scan in namespace: $NAMESPACE"
         if [[ $SKIPPED_IMAGES -gt 0 ]]; then
-            log_warn "🚫 All $SKIPPED_IMAGES images were ignored by ignore patterns"
+            if [[ $INACCESSIBLE_IMAGES -gt 0 && $IGNORED_IMAGES -gt 0 ]]; then
+                log_info "   All $SKIPPED_IMAGES images were skipped:"
+                log_info "    - $INACCESSIBLE_IMAGES images from inaccessible registries"
+                log_info "    - $IGNORED_IMAGES images ignored by patterns"
+                log_info "   Inaccessible registries:"
+                for registry in "${INACCESSIBLE_REGISTRIES[@]}"; do
+                    log_info "    - $registry"
+                done
+                log_info "   To access these registries, run: docker login <registry>"
+                log_info "   Then try running the scanner again."
+            elif [[ $INACCESSIBLE_IMAGES -gt 0 ]]; then
+                log_info "   All $SKIPPED_IMAGES images were skipped due to inaccessible registries"
+                log_info "   Inaccessible registries:"
+                for registry in "${INACCESSIBLE_REGISTRIES[@]}"; do
+                    log_info "     - $registry"
+                done
+                log_info "   To access these registries, run: docker login <registry>"
+                log_info "   Then try running the scanner again."
+            else
+                log_info "   All $SKIPPED_IMAGES images were ignored by ignore patterns"
+            fi
         else
-            log_warn "No images were found in the namespace"
+            log_info "No images were found in the namespace"
         fi
         exit 0
     fi
 
     log_result "Found $TOTAL_IMAGES unique images to scan"
-    if [[ $SKIPPED_IMAGES -gt 0 ]]; then
-        log_result "🚫 Skipped $SKIPPED_IMAGES ignored images"
+
+    # Show separate messages for ignored images vs inaccessible registries
+    if [[ $IGNORED_IMAGES -gt 0 ]]; then
+        log_result "🚫 Skipped $IGNORED_IMAGES ignored images"
+    fi
+
+    if [[ $INACCESSIBLE_IMAGES -gt 0 ]]; then
+        log_warn "🚫 Inaccessible registries detected: ${INACCESSIBLE_REGISTRIES[*]}"
+        log_warn "   Skipped $INACCESSIBLE_IMAGES images from these registries"
+        log_warn "   To access these registries, run: docker login <registry>"
+        log_warn "   Then try running the scanner again."
     fi
 
     # Save filtered images list
@@ -1242,6 +1337,12 @@ main() {
     SUCCESSFUL_SCANS=()
     FAILED_SCANS=()
     SKIPPED_SCANS=()
+    INACCESSIBLE_REGISTRIES=()
+    ACCESSIBLE_REGISTRIES=()
+
+    # Initialize counters
+    IGNORED_IMAGES=0
+    INACCESSIBLE_IMAGES=0
 
     # Create output directory (only if not dry-run)
     if ! $DRY_RUN; then

@@ -194,6 +194,7 @@ The scanner leverages the existing `cosign-extract.sh` script for Cosign attesta
 - **trivy** (for vulnerability scanning)
 - **jq** (for JSON processing)
 - **crane** (for container registry operations)
+- **docker** (for registry accessibility checking in k8s-image-scanner.sh)
 - **cosign** (for signature verification and attestation extraction)
 - **column** (for table formatting, usually pre-installed on Unix systems)
 
@@ -491,6 +492,7 @@ Before using these scripts, ensure you have the following tools installed:
 - **bash** (version 4.0 or later)
 - **jq** - JSON processor for parsing and formatting JSON data
 - **crane** - Tool for interacting with container registries
+- **docker** - Container runtime (for registry accessibility checking in k8s-image-scanner.sh)
 - **cosign** - Container signing and verification tool
 - **trivy** - Container vulnerability scanner (for k8s-image-scanner.sh)
 - **column** - Table formatting utility (usually pre-installed on Unix systems)
