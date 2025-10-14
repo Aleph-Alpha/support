@@ -23,22 +23,22 @@ Usage:
   $0 [OPTIONS]
 
 Options:
-  --namespace NAMESPACE         Kubernetes namespace to scan (default: pharia-ai)
-  --ignore-file FILE           File containing images to ignore (one per line)
-  --output-dir DIR             Output directory for reports (default: ./scan-results)
-  --kubeconfig FILE            Path to kubeconfig file (optional)
-  --context CONTEXT            Kubernetes context to use (optional)
-  --trivy-config FILE          Custom Trivy configuration file (optional)
-  --parallel-scans NUM         Number of parallel scans (default: 3)
-  --timeout TIMEOUT            Timeout for individual operations in seconds (default: 300)
-  --certificate-oidc-issuer ISSUER    OIDC issuer for cosign verification
-  --certificate-identity-regexp REGEX Identity regexp for cosign verification
-  --verbose                    Enable verbose logging
-  --dry-run                    Show what would be scanned without executing
-  --format FORMAT              Report format: table|json|sarif (default: table)
-  --severity SEVERITIES        Comma-separated list of severities to include (default: HIGH,CRITICAL)
-  --min-cve-level LEVEL       Minimum CVE level to consider relevant: LOW|MEDIUM|HIGH|CRITICAL (default: HIGH)
-  -h, --help                   Show this help
+  --namespace NAMESPACE                 Kubernetes namespace to scan (default: pharia-ai)
+  --ignore-file FILE                    File containing images to ignore (one per line)
+  --output-dir DIR                      Output directory for reports (default: ./scan-results)
+  --kubeconfig FILE                     Path to kubeconfig file (optional)
+  --context CONTEXT                     Kubernetes context to use (optional)
+  --trivy-config FILE                   Custom Trivy configuration file (optional)
+  --parallel-scans NUM                  Number of parallel scans (default: 3)
+  --timeout TIMEOUT                     Timeout for individual operations in seconds (default: 300)
+  --certificate-oidc-issuer ISSUER      OIDC issuer for cosign verification
+  --certificate-identity-regexp REGEX   Identity regexp for cosign verification
+  --verbose                             Enable verbose logging
+  --dry-run                             Show what would be scanned without executing
+  --format FORMAT                       Report format: table|json|sarif (default: table)
+  --severity SEVERITIES                 Comma-separated list of severities to include (default: HIGH,CRITICAL)
+  --min-cve-level LEVEL                 Minimum CVE level to consider relevant: LOW|MEDIUM|HIGH|CRITICAL (default: HIGH)
+  -h, --help                            Show this help
 
 Examples:
   # Scan default namespace with default settings
