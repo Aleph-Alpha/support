@@ -13,11 +13,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 show_help() {
   cat <<EOF
-Aleph Alpha - Signed Image Scanner
+Aleph Alpha - Signed Image Scanner (SBOM-based)
 
 This script connects to Kubernetes, extracts Aleph Alpha signed images from a namespace,
-downloads cosign triage attestations, and runs Trivy vulnerability scans with
-triage filtering applied to focus on unaddressed security issues.
+downloads SBOM attestations, downloads cosign triage attestations, and runs Trivy
+vulnerability scans on the SBOM with triage filtering applied to focus on unaddressed
+security issues.
 
 Usage:
   $0 [OPTIONS]
@@ -36,7 +37,7 @@ Options:
   --verbose                             Enable verbose logging
   --dry-run                             Show what would be scanned without executing
   --format FORMAT                       Report format: table|json|sarif (default: table)
-  --severity SEVERITIES                 Comma-separated list of severities to include (default: HIGH,CRITICAL)
+  --severity SEVERITIES                 Comma-separated list of severities to include (default: LOW,MEDIUM,HIGH,CRITICAL)
   --min-cve-level LEVEL                 Minimum CVE level to consider relevant: LOW|MEDIUM|HIGH|CRITICAL (default: HIGH)
   -h, --help                            Show this help
 
@@ -58,11 +59,11 @@ Examples:
 
 Prerequisites:
   - kubectl (configured with access to target cluster)
-  - trivy (for vulnerability scanning)
+  - trivy (for vulnerability scanning of SBOMs)
   - jq (for JSON processing)
   - cosign (for attestation verification)
   - docker (for registry accessibility checking)
-  - cosign-extract.sh (for extracting triage attestations)
+  - cosign-extract.sh (for extracting SBOM and triage attestations)
   - cosign-verify-image.sh (for verifying image signatures)
 
 EOF
@@ -82,7 +83,7 @@ CERTIFICATE_IDENTITY_REGEXP="https://github.com/Aleph-Alpha/shared-workflows/.gi
 VERBOSE=false
 DRY_RUN=false
 FORMAT="table"
-SEVERITY="HIGH,CRITICAL"
+SEVERITY="LOW,MEDIUM,HIGH,CRITICAL"
 MIN_CVE_LEVEL="HIGH"  # Minimum CVE level to consider relevant (LOW, MEDIUM, HIGH, CRITICAL)
 
 # Global variables
@@ -752,10 +753,9 @@ detect_attestation_type() {
     fi
 
     if [[ $verify_exit_code -eq 0 ]]; then
-        log_verbose "Image is Cosign-signed, checking for triage attestations"
+        log_verbose "Image is Cosign-signed, checking for SBOM and triage attestations"
 
-        # Image is signed, check if triage attestations exist (without verification for now)
-        # We'll do the verification during download
+        # Image is signed, check what attestations exist (using --list which is fast)
         local extract_output
         local extract_exit_code
 
@@ -767,20 +767,82 @@ detect_attestation_type() {
             log_verbose "cosign-extract.sh output: $extract_output"
         fi
 
-        if [[ $extract_exit_code -eq 0 ]] && echo "$extract_output" | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
-            log_verbose "Found cosign triage attestation for $image"
-            echo "cosign"
+        if [[ $extract_exit_code -eq 0 ]]; then
+            local has_sbom=false
+            local has_triage=false
+
+            # Check for SBOM (cyclonedx or spdx)
+            if echo "$extract_output" | grep -qE "https://cyclonedx.org/bom|https://spdx.dev/Document"; then
+                has_sbom=true
+                log_verbose "Found SBOM attestation for $image"
+            fi
+
+            # Check for triage
+            if echo "$extract_output" | grep -q "https://aleph-alpha.com/attestations/triage/v1"; then
+                has_triage=true
+                log_verbose "Found triage attestation for $image"
+            fi
+
+            # Return status based on what we found
+            if [[ "$has_sbom" == "true" && "$has_triage" == "true" ]]; then
+                echo "cosign-sbom-triage"
+            elif [[ "$has_sbom" == "true" ]]; then
+                echo "cosign-sbom"
+            elif [[ "$has_triage" == "true" ]]; then
+                echo "cosign-no-sbom"
+            else
+                echo "cosign-no-sbom"
+            fi
         else
-            log_verbose "Image is Cosign-signed but no triage attestation found"
-            echo "cosign-no-triage"
+            log_verbose "Image is Cosign-signed but couldn't list attestations"
+            echo "cosign-no-sbom"
         fi
     else
-        log_verbose "Image is not Cosign-signed, skipping"
+        log_verbose "Image is not Cosign-signed"
         echo "unsigned"
     fi
 
     # Re-enable exit on error
     set -e
+}
+
+# Download SBOM using cosign attestation
+download_sbom() {
+    local image="$1"
+    local output_file="$2"
+    local sbom_type="${3:-cyclonedx}"  # Default to cyclonedx
+
+    log_verbose "Downloading SBOM attestation ($sbom_type) for: $image"
+
+    # Use the existing cosign-extract.sh script
+    local extract_script="$SCRIPT_DIR/../cosign-extract.sh"
+    log_verbose "Looking for cosign-extract.sh at: $extract_script"
+    if [[ ! -f "$extract_script" ]]; then
+        log_error "cosign-extract.sh not found at: $extract_script"
+        log_error "Current working directory: $(pwd)"
+        log_error "Script directory: $SCRIPT_DIR"
+        return 1
+    fi
+    log_verbose "Found cosign-extract.sh script"
+
+    # Extract SBOM attestation predicate (automatically select latest if multiple)
+    # Use --predicate-only to extract just the SBOM content, not the attestation envelope
+    if "$extract_script" --type "$sbom_type" --image "$image" --output "$output_file" --last --predicate-only >/dev/null 2>&1; then
+        log_verbose "Successfully downloaded SBOM for: $image"
+
+        # Verify the extracted SBOM is valid JSON
+        if jq empty "$output_file" 2>/dev/null; then
+            log_verbose "SBOM is valid JSON"
+            return 0
+        else
+            log_error "Extracted SBOM is not valid JSON"
+            rm -f "$output_file"
+            return 1
+        fi
+    else
+        log_verbose "Failed to download SBOM for: $image"
+        return 1
+    fi
 }
 
 # Download triage file using cosign attestation
@@ -814,16 +876,16 @@ download_cosign_triage() {
     fi
 }
 
-# Run Trivy scan with triage file
+# Run Trivy scan on SBOM file
 run_trivy_scan() {
-    local image="$1"
+    local sbom_file="$1"
     local triage_file="$2"
     local output_file="$3"
 
-    log_verbose "Running Trivy scan for: $image"
+    log_verbose "Running Trivy scan on SBOM: $sbom_file"
 
     local trivy_args=(
-        "image"
+        "sbom"
         "--format" "$FORMAT"
         "--severity" "$SEVERITY"
         "--output" "$output_file"
@@ -849,8 +911,8 @@ run_trivy_scan() {
     # Add timeout
     trivy_args+=("--timeout" "${TIMEOUT}s")
 
-    # Add the image
-    trivy_args+=("$image")
+    # Add the SBOM file
+    trivy_args+=("$sbom_file")
 
     # Run Trivy scan
     log_verbose "Running: trivy ${trivy_args[*]}"
@@ -859,11 +921,11 @@ run_trivy_scan() {
     local stderr_file=$(mktemp)
 
     if trivy "${trivy_args[@]}" 2>"$stderr_file"; then
-        log_verbose "Trivy scan completed for: $image"
+        log_verbose "Trivy SBOM scan completed"
         rm -f "$stderr_file"
         return 0
     else
-        log_verbose "Trivy scan failed for: $image"
+        log_verbose "Trivy SBOM scan failed"
         # Show error output for debugging
         if $VERBOSE && [[ -s "$stderr_file" ]]; then
             echo "Debug: Trivy error output:" >&2
@@ -905,25 +967,60 @@ process_image() {
     fi
     log_verbose "Detected attestation type: $attestation_type"
 
+    local sbom_file=""
+    local sbom_downloaded=false
     local triage_file=""
     local triage_downloaded=false
 
     # Handle image based on signature status
     case "$attestation_type" in
-        "cosign")
-            # Image is signed and has triage attestation
+        "cosign-sbom-triage")
+            # Image is signed and has both SBOM and triage
+            log_verbose "Image has SBOM and triage attestations"
+
+            # Download SBOM
+            sbom_file="$image_dir/sbom.json"
+            if download_sbom "$image" "$sbom_file"; then
+                sbom_downloaded=true
+                log_verbose "Downloaded SBOM for: $image"
+            else
+                log_error "Failed to download SBOM for: $image"
+                return 1
+            fi
+
+            # Download triage
             triage_file="$image_dir/triage.json"
             if download_cosign_triage "$image" "$triage_file"; then
                 triage_downloaded=true
-                log_verbose "Downloaded cosign triage for: $image"
+                log_verbose "Downloaded triage for: $image"
             else
-                log_warn "Failed to download cosign triage for: $image"
+                log_warn "Failed to download triage for: $image"
                 triage_file=""
             fi
             ;;
-        "cosign-no-triage")
-            # Image is signed but no triage attestation
-            log_verbose "Image is signed but no triage attestation found for: $image"
+        "cosign-sbom")
+            # Image is signed and has SBOM but no triage
+            log_verbose "Image has SBOM attestation (no triage)"
+
+            # Download SBOM
+            sbom_file="$image_dir/sbom.json"
+            if download_sbom "$image" "$sbom_file"; then
+                sbom_downloaded=true
+                log_verbose "Downloaded SBOM for: $image"
+            else
+                log_error "Failed to download SBOM for: $image"
+                return 1
+            fi
+            ;;
+        "cosign-no-sbom")
+            # Image is signed but no SBOM - skip scanning
+            log_verbose "Image is signed but no SBOM attestation found, skipping: $image"
+            if echo "skipped-no-sbom" > "$image_dir/skipped.txt"; then
+                log_verbose "Created skip marker (no SBOM) for: $image"
+            else
+                log_error "Failed to create skip marker for: $image"
+            fi
+            return 0
             ;;
         "unsigned")
             # Image is not signed, skip scanning silently
@@ -938,18 +1035,26 @@ process_image() {
             ;;
     esac
 
-    # Run Trivy scan
+    # Verify we have an SBOM to scan
+    if [[ ! -f "$sbom_file" ]]; then
+        log_error "No SBOM file available for scanning: $image"
+        return 1
+    fi
+
+    # Run Trivy scan on SBOM
     local scan_output="$image_dir/trivy-report.$FORMAT"
-    if run_trivy_scan "$image" "$triage_file" "$scan_output"; then
+    if run_trivy_scan "$sbom_file" "$triage_file" "$scan_output"; then
         # Create metadata file to indicate successful scan
         cat > "$image_dir/metadata.json" <<EOF
 {
   "image": "$image",
   "attestation_type": "$attestation_type",
+  "sbom_downloaded": $sbom_downloaded,
   "triage_downloaded": $triage_downloaded,
   "scan_timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")",
   "scan_format": "$FORMAT",
-  "severity_filter": "$SEVERITY"
+  "severity_filter": "$SEVERITY",
+  "scan_method": "sbom"
 }
 EOF
         # Analyze CVEs for summary table
