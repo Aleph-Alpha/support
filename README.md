@@ -8,6 +8,7 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
 - [Scripts](#scripts)
   - [Scanner Scripts](#scanner-scripts)
     - [k8s-image-scanner.sh](#k8s-image-scannersh)
+    - [cosign-scan-image.sh](#cosign-scan-imagesh)
   - [Cosign Scripts](#cosign-scripts)
     - [cosign-extract.sh](#cosign-extractsh)
     - [cosign-verify-image.sh](#cosign-verify-imagesh)
@@ -26,13 +27,14 @@ This repository contains utility scripts designed to help Aleph Alpha customers 
 
 #### k8s-image-scanner.sh
 
-A comprehensive Kubernetes image scanning script that automatically discovers container images in a namespace, processes Cosign-signed images with triage attestations, and runs Trivy vulnerability scans with detailed CVE analysis and reporting.
+A comprehensive Kubernetes image scanning script that automatically discovers container images in a namespace, downloads SBOM attestations from Cosign-signed images, processes triage attestations, and runs Trivy vulnerability scans on SBOMs with detailed CVE analysis and reporting.
 
 #### Features
 
 - **Kubernetes Integration**: Automatically discovers images from pods, deployments, daemonsets, statefulsets, jobs, and cronjobs
-- **Cosign Integration**: Processes only Cosign-signed images with triage attestations
-- **Smart Image Filtering**: Skips unsigned images and applies configurable ignore lists
+- **SBOM-Based Scanning**: Downloads SBOM attestations and scans them with Trivy for accurate vulnerability detection
+- **Cosign Integration**: Processes only Cosign-signed images with SBOM attestations
+- **Smart Image Filtering**: Skips unsigned images, images without SBOM, and applies configurable ignore lists
 - **Detailed CVE Analysis**: Categorizes CVEs as unaddressed, addressed (via triage), or irrelevant based on severity
 - **Parallel Processing**: Configurable parallel scanning for improved performance
 - **Comprehensive Reporting**: Generates detailed reports with actual CVE IDs in both table and JSON formats
@@ -42,12 +44,13 @@ A comprehensive Kubernetes image scanning script that automatically discovers co
 
 #### Image Processing Logic
 
-The script processes images based on their signature status:
+The script processes images based on their signature and attestation status:
 
 | Image Type | Description | Action |
 |------------|-------------|---------|
-| **Cosign-signed with triage** | Images signed with Cosign that have triage attestations | Scanned with triage filtering applied |
-| **Cosign-signed without triage** | Images signed with Cosign but no triage attestations | Scanned without triage filtering |
+| **Cosign-signed with SBOM and triage** | Images signed with Cosign that have both SBOM and triage attestations | SBOM downloaded and scanned with triage filtering applied |
+| **Cosign-signed with SBOM only** | Images signed with Cosign that have SBOM but no triage attestations | SBOM downloaded and scanned without triage filtering |
+| **Cosign-signed without SBOM** | Images signed with Cosign but no SBOM attestations | Skipped (cannot scan without SBOM) |
 | **Unsigned** | Images without Cosign signatures | Skipped (not scanned) |
 
 #### Usage Examples
@@ -108,7 +111,7 @@ Options:
   --verbose                    Enable verbose logging
   --dry-run                    Show what would be scanned without executing
   --format FORMAT              Report format: table|json|sarif (default: table)
-  --severity SEVERITIES        Comma-separated list of severities to include (default: HIGH,CRITICAL)
+  --severity SEVERITIES        Comma-separated list of severities to include (default: LOW,MEDIUM,HIGH,CRITICAL)
   -h, --help                   Show this help
 ```
 
@@ -134,15 +137,17 @@ The script creates a structured output directory:
 ```
 scan-results/
 ├── scan-summary.json                    # Overall scan summary with detailed CVE analysis
-├── registry_example_com_app_v1_0_0/     # Per-image results (Cosign-signed)
+├── registry_example_com_app_v1_0_0/     # Per-image results (Cosign-signed with SBOM and triage)
 │   ├── metadata.json                    # Image scan metadata
+│   ├── sbom.json                        # Downloaded SBOM attestation
 │   ├── triage.json                      # Downloaded Cosign triage attestation
 │   ├── triage.trivyignore               # Converted triage file for Trivy
 │   ├── cve_details.json                 # Detailed CVE analysis with actual CVE IDs
 │   ├── trivy-analysis.json              # Raw Trivy JSON output
 │   └── trivy-report.table               # Trivy scan results (table format)
-└── registry_example_com_db_v2_1_0/      # Per-image results (signed, no triage)
+└── registry_example_com_db_v2_1_0/      # Per-image results (signed with SBOM, no triage)
     ├── metadata.json
+    ├── sbom.json                        # Downloaded SBOM attestation
     ├── cve_details.json                 # CVE analysis (no triage applied)
     ├── trivy-analysis.json
     └── trivy-report.table
@@ -180,23 +185,179 @@ The `scan-summary.json` file includes comprehensive CVE analysis data:
 The scanner leverages the existing `cosign-extract.sh` script for Cosign attestation extraction, ensuring consistent verification and extraction behavior. It automatically:
 
 1. **Detects image signatures** using Cosign verification to determine if images are signed
-2. **Downloads triage attestations** from Cosign-signed images using `cosign-extract.sh --last`
-3. **Selects latest attestations** automatically when multiple triage attestations exist
-4. **Verifies attestations** using configurable OIDC settings for security
-5. **Converts triage data** from JSON attestation format to Trivy ignore format
-6. **Applies triage filtering** to Trivy scans automatically
-7. **Analyzes CVE results** categorizing them as unaddressed, addressed, or irrelevant
-8. **Generates comprehensive reports** with detailed CVE analysis and actual CVE IDs
+2. **Downloads SBOM attestations** from Cosign-signed images using `cosign-extract.sh --predicate-only`
+3. **Downloads triage attestations** from Cosign-signed images using `cosign-extract.sh --last`
+4. **Selects latest attestations** automatically when multiple attestations exist
+5. **Verifies attestations** using configurable OIDC settings for security
+6. **Scans SBOMs with Trivy** using `trivy sbom` for accurate vulnerability detection
+7. **Converts triage data** from JSON attestation format to Trivy ignore format
+8. **Applies triage filtering** to Trivy scans automatically
+9. **Analyzes CVE results** categorizing them as unaddressed, addressed, or irrelevant
+10. **Generates comprehensive reports** with detailed CVE analysis and actual CVE IDs
 
 #### Prerequisites
 
 - **kubectl** (configured with access to target cluster)
-- **trivy** (for vulnerability scanning)
+- **trivy** (for vulnerability scanning of SBOMs)
 - **jq** (for JSON processing)
 - **crane** (for container registry operations)
 - **docker** (for registry accessibility checking in k8s-image-scanner.sh)
 - **cosign** (for signature verification and attestation extraction)
 - **column** (for table formatting, usually pre-installed on Unix systems)
+
+#### cosign-scan-image.sh
+
+A focused scanning script for analyzing single container images by downloading SBOM attestations and performing Trivy vulnerability scans on the SBOM. This script automatically applies cosign triage attestations to filter known and addressed vulnerabilities, providing detailed CVE analysis and reporting.
+
+#### Features
+
+- **SBOM-Based Scanning**: Downloads SBOM attestations and scans them with Trivy for accurate vulnerability detection
+- **Single Image Focus**: Scan any container image directly without Kubernetes integration
+- **Cosign Integration**: Automatically detects signed images and downloads SBOM and triage attestations
+- **Triage Filtering**: Applies cosign triage attestations to filter known false positives (optional with `--no-triage`)
+- **Flexible Formats**: Support for table, JSON, and SARIF output formats
+- **Registry Accessibility Check**: Validates registry access before scanning
+- **Comprehensive CVE Analysis**: Categorizes CVEs by severity with detailed counts and integrated CVE table
+- **CVE Display Options**: Control CVE table output with `--show-cves` and `--max-cves` flags
+- **SBOM Type Selection**: Choose between CycloneDX (default) or SPDX SBOM formats
+- **Dry Run Mode**: Preview what would be scanned without executing
+- **Verbose Logging**: Optional detailed output for troubleshooting
+
+#### Image Processing Logic
+
+The script handles different image types intelligently:
+
+| Image Type | Description | Action |
+|------------|-------------|---------|
+| **Cosign-signed with SBOM and triage** | Images signed with Cosign that have both SBOM and triage attestations | SBOM downloaded and scanned with triage filtering applied |
+| **Cosign-signed with SBOM only** | Images signed with Cosign that have SBOM but no triage attestations | SBOM downloaded and scanned without triage filtering |
+| **Cosign-signed without SBOM** | Images signed with Cosign but no SBOM attestations | Error: Cannot scan without SBOM |
+| **Unsigned** | Images without Cosign signatures | Error: Unsigned images cannot be scanned (SBOM required) |
+
+#### Usage Examples
+
+**Basic scan of a container image:**
+```bash
+./cosign-scan-image.sh --image harbor.example.com/library/myapp:v1.0.0
+```
+
+**Scan with JSON output format:**
+```bash
+./cosign-scan-image.sh --image myregistry.io/app:latest --format json --output-dir ./my-reports
+```
+
+**Dry run to preview what would be scanned:**
+```bash
+./cosign-scan-image.sh --image harbor.example.com/prod/api:1.2.3 --dry-run
+```
+
+**Scan with verbose output and custom severity:**
+```bash
+./cosign-scan-image.sh --image myimage:tag --verbose --severity "CRITICAL,HIGH,MEDIUM"
+```
+
+**Scan with custom output directory:**
+```bash
+./cosign-scan-image.sh --image registry.company.com/app:v2.0 --output-dir ./security-scans
+```
+
+#### Command Line Options
+
+```
+Usage:
+  ./cosign-scan-image.sh --image IMAGE [OPTIONS]
+
+Required:
+  --image IMAGE                         Container image to scan (e.g., registry.io/org/image:tag)
+
+Options:
+  --output-dir DIR                      Output directory for reports (default: ./scan-results)
+  --trivy-config FILE                   Custom Trivy configuration file (optional)
+  --timeout TIMEOUT                     Timeout for individual operations in seconds (default: 300)
+  --certificate-oidc-issuer ISSUER      OIDC issuer for cosign verification
+  --certificate-identity-regexp REGEX   Identity regexp for cosign verification
+  --sbom-type TYPE                      SBOM type to extract: cyclonedx|spdx (default: cyclonedx)
+  --no-triage                           Skip downloading and applying triage attestations
+  --show-cves                           Show detailed CVE table in summary (default: enabled)
+  --max-cves NUM                        Maximum CVEs to display in table (0 for all, default: 20)
+  --verbose                             Enable verbose logging
+  --dry-run                             Show what would be scanned without executing
+  --format FORMAT                       Report format: table|json|sarif (default: table)
+  --severity LEVEL                      Severity level to report: LOW|MEDIUM|HIGH|CRITICAL (default: CRITICAL)
+  -h, --help                            Show this help
+```
+
+#### Output Structure
+
+The script creates a structured output directory for the scanned image:
+
+```
+scan-results/
+└── harbor_example_com_library_myapp_v1_0_0/    # Per-image results
+    ├── metadata.json                            # Image scan metadata
+    ├── sbom.json                                # Downloaded SBOM attestation (CycloneDX or SPDX)
+    ├── triage.json                              # Downloaded Cosign triage attestation (if available)
+    ├── triage.trivyignore                       # Converted triage file for Trivy
+    ├── trivy-report.json                        # Trivy JSON report for CVE analysis
+    └── trivy-report.table                       # Trivy scan results (format: table/json/sarif)
+```
+
+#### CVE Summary Output
+
+The script displays an integrated summary with vulnerability counts and detailed CVE table:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📊 SCAN SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Image:               harbor.example.com/library/myapp:v1.0.0
+SBOM:                ✅ Downloaded
+Triage:              ✅ Applied
+Scan Method:         SBOM-based
+
+Vulnerabilities:
+  🔴 Critical: 0
+  🟠 High:     2
+  🟡 Medium:   5
+  🟢 Low:      12
+
+Details:
+  CVE ID              SEVERITY    PACKAGE              INSTALLED       FIXED           TITLE
+  ──────────────────  ──────────  ────────────────────  ───────────────  ───────────────  ─────────────────────────────
+  CVE-2024-1234       🟠 HIGH     libssl1.1            1.1.1f-1ubuntu   1.1.1f-2ubuntu   OpenSSL vulnerability
+  CVE-2024-5678       🟠 HIGH     curl                 7.68.0-1ubuntu   7.68.0-2ubuntu   CURL remote code execution
+  ...
+
+Output: ./scan-results
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ Scan completed successfully
+```
+
+#### Integration with Existing Scripts
+
+The scanner leverages existing scripts for consistent behavior:
+
+1. **Signature Detection**: Uses `cosign-verify-image.sh` to verify image signatures
+2. **SBOM Download**: Uses `cosign-extract.sh --predicate-only` to download SBOM attestations
+3. **Attestation Download**: Uses `cosign-extract.sh` to download triage attestations
+4. **Automatic Selection**: Automatically selects the latest attestation when multiple exist
+5. **Verification**: Verifies attestations using configurable OIDC settings
+6. **SBOM Scanning**: Uses `trivy sbom` to scan the downloaded SBOM for vulnerabilities
+7. **Triage Conversion**: Converts triage data to Trivy ignore format
+8. **CVE Analysis**: Categorizes vulnerabilities by severity with integrated table display
+
+#### Prerequisites
+
+- **trivy** (for vulnerability scanning of SBOMs)
+- **jq** (for JSON processing)
+- **crane** (for image digest resolution)
+- **docker** (for registry accessibility checking)
+- **cosign** (for signature verification and attestation extraction)
+- **cosign-extract.sh** (for extracting SBOM and triage attestations)
+- **cosign-verify-image.sh** (for verifying image signatures)
 
 ### Cosign Scripts
 
@@ -208,6 +369,7 @@ A powerful bash script for extracting and inspecting Cosign attestations from co
 
 - **Multiple Attestation Types**: Supports SLSA, CycloneDX, SPDX, vulnerability reports, license information, triage data, and custom attestations
 - **Flexible Extraction**: Extract single attestations, all attestations of a specific type, or all available attestations
+- **Predicate-Only Extraction**: Extract only the predicate content with `--predicate-only` (ideal for raw SBOM extraction for Trivy scanning)
 - **Discovery Mode**: List available attestation types for any container image
 - **Inspection Tools**: Inspect referrers with missing predicate types
 - **Output Options**: Save to files or output to stdout with proper JSON formatting
@@ -236,6 +398,11 @@ A powerful bash script for extracting and inspecting Cosign attestations from co
 **Extract a specific attestation type:**
 ```bash
 ./cosign-extract.sh --type slsa --image registry.example.com/myapp:latest --output provenance.json
+```
+
+**Extract only the predicate content (raw SBOM) for Trivy scanning:**
+```bash
+./cosign-extract.sh --type cyclonedx --image registry.example.com/myapp:latest --output sbom.json --predicate-only
 ```
 
 **Extract all SBOM attestations:**
@@ -297,6 +464,7 @@ Options:
   --choice                  Which attestation to fetch: index, all
   --last                    Automatically select the most recent attestation if multiple exist
   --output PATH             Output file (single type) or directory (all types)
+  --predicate-only          Extract only the predicate content (useful for raw SBOM extraction for Trivy)
   --list                    List available predicateTypes and counts
   --show-null               Show entries missing predicateType in --list
   --inspect-null            Inspect referrers missing predicateType
@@ -532,7 +700,7 @@ curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/inst
 
 2. Make the scripts executable:
    ```bash
-   chmod +x scanner/k8s-image-scanner.sh cosign-extract.sh cosign-verify-image.sh
+   chmod +x scanner/k8s-image-scanner.sh cosign-scan-image.sh cosign-extract.sh cosign-verify-image.sh
    ```
 
 3. Optionally, add the scripts to your PATH or create symlinks in `/usr/local/bin/` for system-wide access.
