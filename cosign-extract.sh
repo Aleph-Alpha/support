@@ -12,11 +12,12 @@ fi
 show_help() {
   cat <<EOF
 Usage:
-  $0 --type TYPE --image IMAGE[:TAG] [--choice index|all] [--output FILE] [--verify] [--no-extraction]
+  $0 --type TYPE --image IMAGE[:TAG] [--choice index|all] [--output FILE] [--verify] [--no-extraction|--predicate-only]
   $0 --image IMAGE[:TAG] --choice all --output DIR      # extract ALL types
   $0 --image IMAGE[:TAG] --list [--show-null]
   $0 --image IMAGE[:TAG] --inspect-null
   $0 --type TYPE --image IMAGE[:TAG] --verify --no-extraction  # verify only, no extraction
+  $0 --type TYPE --image IMAGE[:TAG] --output FILE --predicate-only  # extract only predicate content
 
 Options:
   --type TYPE               Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
@@ -29,6 +30,7 @@ Options:
   --inspect-null            Inspect referrers missing predicateType
   --verify                  Verify attestations using cosign before extraction
   --no-extraction           Skip extraction and content output (useful with --verify for verification-only)
+  --predicate-only          Extract only the predicate content, not the full attestation envelope (mutually exclusive with --no-extraction)
   --certificate-oidc-issuer ISSUER    OIDC issuer for verification (default: https://token.actions.githubusercontent.com)
   --certificate-identity-regexp REGEX Identity regexp for verification (default: Aleph Alpha workflows)
   -h, --help                Show this help
@@ -48,6 +50,7 @@ SHOW_NULL=false
 INSPECT_NULL=false
 VERIFY=false
 NO_EXTRACTION=false
+PREDICATE_ONLY=false
 USE_LAST=false
 CERTIFICATE_OIDC_ISSUER="https://token.actions.githubusercontent.com"
 CERTIFICATE_IDENTITY_REGEXP="https://github.com/Aleph-Alpha/shared-workflows/.github/workflows/(build-and-push|scan-and-reattest).yaml@.*"
@@ -64,12 +67,21 @@ while [[ $# -gt 0 ]]; do
     --inspect-null) INSPECT_NULL=true; shift ;;
     --verify) VERIFY=true; shift ;;
     --no-extraction) NO_EXTRACTION=true; shift ;;
+    --predicate-only) PREDICATE_ONLY=true; shift ;;
     --certificate-oidc-issuer) CERTIFICATE_OIDC_ISSUER="$2"; shift 2 ;;
     --certificate-identity-regexp) CERTIFICATE_IDENTITY_REGEXP="$2"; shift 2 ;;
     -h|--help) show_help; exit 0 ;;
     *) echo "❌ Unknown option: $1"; show_help; exit 1 ;;
   esac
 done
+
+# Validate mutually exclusive options
+if $PREDICATE_ONLY && $NO_EXTRACTION; then
+  echo "❌ Conflicting options: --predicate-only and --no-extraction cannot be used together"
+  echo "   --predicate-only extracts only the predicate content"
+  echo "   --no-extraction skips all content extraction"
+  exit 1
+fi
 
 if [[ -z "$IMAGE" ]]; then
   echo "❌ Missing required --image"
@@ -388,7 +400,12 @@ fetch_attestation() {
   fi
 
   local output=""
-  if echo "$raw" | jq -e '.predicate.Data' >/dev/null 2>&1; then
+
+  # If --predicate-only is set, extract only the predicate content
+  if $PREDICATE_ONLY; then
+    output=$(echo "$raw" | jq '.predicate')
+  # Otherwise, handle special cases and return full attestation
+  elif echo "$raw" | jq -e '.predicate.Data' >/dev/null 2>&1; then
     data=$(echo "$raw" | jq -r '.predicate.Data')
     if echo "$data" | jq empty >/dev/null 2>&1; then
       output=$(echo "$raw" | jq --argjson parsed "$data" '.predicate.Data=$parsed')
