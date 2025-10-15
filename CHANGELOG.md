@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/Aleph-Alpha/support/compare/v1.2.2...v1.3.0) (2025-10-15)
+
+
+### Features
+
+* add --predicate-only functionality to cosign-extract ([#16](https://github.com/Aleph-Alpha/support/issues/16)) ([9ed2950](https://github.com/Aleph-Alpha/support/commit/9ed29504863035fa9f737e26c27adb7359cdf635))
+* add cosign-scan-image script ([#17](https://github.com/Aleph-Alpha/support/issues/17)) ([01abd12](https://github.com/Aleph-Alpha/support/commit/01abd127688e9017cc970da39f3705a0b1c6a628))
+
+
+### Bug Fixes
+
+* k8s-image-scanner now scan SBOM and not image directly ([#14](https://github.com/Aleph-Alpha/support/issues/14)) ([60cf51f](https://github.com/Aleph-Alpha/support/commit/60cf51f5e2597aff966712450ab06757fdff98d3))
+
 ## [1.2.2](https://github.com/Aleph-Alpha/support/compare/v1.2.1...v1.2.2) (2025-10-01)
 
 
