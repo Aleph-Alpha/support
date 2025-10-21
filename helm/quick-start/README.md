@@ -14,9 +14,8 @@ This chart deploys the following components:
 
 ## Secret Management
 
-This chart includes an automatic secret creation job that runs as a pre-install hook. The job:
+This chart includes an automatic secret creation job. The job:
 
-- **Runs once**: Only executes before the Helm chart is installed
 - **Creates all required secrets**: PostgreSQL, Redis, and MinIO secrets with randomly generated passwords
 - **Persists secrets**: Created secrets are kept when the Helm chart is uninstalled
 - **Uses proper RBAC**: Runs with a dedicated ServiceAccount with minimal required permissions
@@ -61,25 +60,22 @@ This chart supports selective database installation. You can enable/disable spec
 
 ## Installation
 
-### 1. Create Required Secrets
 
-The chart now includes automatic secret creation, so manual secret creation is no longer required. The secrets will be created automatically during installation.
-
-### 2. Install the Chart
+### 1. Install the Chart
 
 ```bash
 # Update dependencies
 helm dependency update
 
 # Install the chart
-helm install quick-start . --namespace your-namespace
+helm upgrade --install quick-start . --namespace your-namespace
 ```
 
 #### Selective Installation Examples
 
 **Install only Temporal databases:**
 ```bash
-helm install my-release ./quick-start -f values-examples/temporal-only.yaml
+helm upgrade --install my-release ./quick-start -f values-examples/temporal-only.yaml
 ```
 
 **Custom configuration:**
@@ -96,7 +92,7 @@ postgresql:
 EOF
 
 # Install with custom values
-helm install my-release ./quick-start -f my-values.yaml
+helm upgrade --install my-release ./quick-start -f my-values.yaml
 ```
 
 ### 3. Verify Installation
@@ -192,7 +188,7 @@ Creates all required Kubernetes secrets with proper field names and connection d
 
 ### Common Issues
 
-1. **Secrets not found**: Ensure you've run `./scripts/create-secrets.sh` before installation
+1. **Cloudnativepg is not ready**: The first installation may fail if cloudnative-pg operator is being installed the first time. Try rerunning or enable only cloudnative-pg in Chart.yaml with `.Values.postgres.clusters` and `.Values.postgres.databases` empty in the first run.
 2. **PostgreSQL cluster not ready**: Check CloudNative-PG operator is installed
 3. **Storage issues**: Verify storage classes are available in your cluster
 

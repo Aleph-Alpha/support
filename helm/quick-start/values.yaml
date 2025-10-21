@@ -15,6 +15,7 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+# Install CloudNative-PG operator. Set to false if already installed
 cloudnative:
   enabled: false
 
