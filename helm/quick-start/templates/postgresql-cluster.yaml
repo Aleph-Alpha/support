@@ -1,0 +1,91 @@
+{{- if .Values.postgresql.clusters }}
+{{- range .Values.postgresql.clusters }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .name }}
+spec:
+  instances: {{ .instances | default 3 }}
+  {{- if .imageName }}
+  imageName: {{ .imageName }}
+  {{- end }}
+  postgresql:
+    parameters:
+      {{- toYaml (.postgresql.parameters | default dict) | nindent 6 }}
+  
+  {{- if .bootstrap }}
+  bootstrap:
+    initdb:
+      database: {{ .bootstrap.database }}
+      owner: {{ .bootstrap.owner }}
+      secret:
+        name: {{ .bootstrap.secret.name }}
+  {{- end }}
+  storage:
+    size: {{ .storage.size | default "20Gi" }}
+    {{- if .storage.storageClass }}
+    storageClass: {{ .storage.storageClass }}
+    {{- end }}
+  
+  {{- if .backup.enabled }}
+  backup:
+    {{- toYaml .backup | nindent 4 }}
+  {{- end }}
+  
+  resources:
+    {{- toYaml (.resources | default dict) | nindent 4 }}
+  
+  {{- if .nodeSelector }}
+  nodeSelector:
+    {{- toYaml .nodeSelector | nindent 4 }}
+  {{- end }}
+  
+  {{- if .tolerations }}
+  tolerations:
+    {{- toYaml .tolerations | nindent 4 }}
+  {{- end }}
+  
+  {{- if .affinity }}
+  affinity:
+    {{- toYaml .affinity | nindent 4 }}
+  {{- end }}
+
+  {{- if .users }}
+  managed:
+    roles:
+    {{- range .users }}
+    {{- $userEnabled := false }}
+    {{- range $.Values.postgresql.databases }}
+    {{- if and (eq .name (printf "%s" $.name | replace "_" "-")) .enabled }}
+      {{- $userEnabled = true }}
+    {{- end }}
+    {{- end }}
+    {{- if $userEnabled }}
+    - name: {{ .name }}
+      {{- if .password }}
+      passwordSecret:
+        name: {{ .password.secretName }}
+      {{- end }}
+      {{- if .login | default true }}
+      login: {{ .login }}
+      {{- end }}
+      {{- if .superuser | default false }}
+      superuser: {{ .superuser }}
+      {{- end }}
+      {{- if .replication | default false }}
+      replication: {{ .replication }}
+      {{- end }}
+      {{- if .validUntil }}
+      validUntil: {{ .validUntil }}
+      {{- end }}
+      {{- if .roles }}
+      inRoles:
+        {{- toYaml .roles | nindent 8 }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+  {{- end }}
+
+{{- end }}
+{{- end }}

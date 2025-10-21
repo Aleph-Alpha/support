@@ -1,0 +1,446 @@
+global:
+  security:
+    allowInsecureImages: true
+
+nameOverride: "quick-start"
+fullnameOverride: "quick-start"
+
+# ServiceAccount configuration for the secret creation job
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+cloudnative:
+  enabled: false
+
+postgresql:
+  clusters:
+    - name: "pharia-ai-pg-cluster"
+      instances: 3
+      imageName: harbor.management-prod01.stackit.run/proxy-ghcr/cloudnative-pg/postgresql:17.5
+      postgresql:
+        parameters:
+          max_connections: "200"
+          shared_buffers: "1950MB"
+          effective_cache_size: "5460MB"
+          checkpoint_completion_target: "0.9"
+          wal_buffers: "16MB"
+          default_statistics_target: "100"
+      storage:
+        size: "200Gi"
+        storageClass: "premium-perf4-stackit"
+      backup:
+        enabled: false
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1000m"
+        limits:
+          memory: "4Gi"
+          cpu: "2000m"
+
+      users:
+        - name: "document_index"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
+          password:
+            secretName: "document-index-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_os"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_os)
+          password:
+            secretName: "pharia-os-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "inference_api"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (inference_api)
+          password:
+            secretName: "inference-api-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_studio"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_studio)
+          password:
+            secretName: "pharia-studio-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_oauth_gateway"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_oauth_gateway)
+          password:
+            secretName: "pharia-oauth-gateway-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_assistant"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_assistant)
+          password:
+            secretName: "pharia-assistant-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_chat"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_chat)
+          password:
+            secretName: "pharia-chat-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_catch"
+          # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_catch)
+          password:
+            secretName: "pharia-catch-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "zitadel"
+          # `password` and `username` key should exist in secret. username key should be the name of the user (zitadel)
+          password:
+            secretName: "zitadel-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "openfga"
+          # `password` and `username` key should exist in secret. username key should be the name of the user (openfga)
+          password:
+            secretName: "openfga-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "dex"
+          # `password` and `username` key should exist in secret. username key should be the name of the user (dex)
+          password:
+            secretName: "dex-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_conductor"
+          # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_conductor)
+          password:
+            secretName: "pharia-conductor-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_numinous"
+          # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_numinous)
+          password:
+            secretName: "pharia-numinous-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_transcribe_app"
+          # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_transcribe_app)
+          password:
+            secretName: "pharia-transcribe-app-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "pharia_data"
+          # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_data)
+          password:
+            secretName: "pharia-data-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+
+
+    - name: "temporal-cluster"
+      instances: 3
+      imageName: harbor.management-prod01.stackit.run/proxy-ghcr/cloudnative-pg/postgresql:17.5
+      postgresql:
+        parameters:
+          max_connections: "100"
+          shared_buffers: "1950MB"
+          effective_cache_size: "5460MB"
+          checkpoint_completion_target: "0.9"
+          wal_buffers: "16MB"
+          default_statistics_target: "100"
+      storage:
+        size: "100Gi"
+        storageClass: "premium-perf4-stackit"
+      backup:
+        enabled: false
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1000m"
+        limits:
+          memory: "4Gi"
+          cpu: "2000m"
+
+      users:
+        - name: "temporal"
+          # password and username key should exist in secret. username key should be the same as the name of the user
+          password:
+            secretName: "temporal-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+        - name: "temporal-visibility"
+          # password and username key should exist in secret. username key should be the same as the name of the user
+          password:
+            secretName: "temporal-visibility-pg-secret-qs"
+          login: true
+          superuser: true
+          replication: false
+
+  databases:
+    - name: "document-index"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "document_index"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-os"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_os"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "inference-api"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "inference_api"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-studio"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_studio"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-oauth-gateway"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_oauth_gateway"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-assistant"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_assistant"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-chat"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_chat"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-catch"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_catch"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "zitadel"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "zitadel"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "openfga"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "openfga"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "dex"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "dex"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-conductor"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_conductor"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-numinous"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_numinous"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-transcribe-app"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_transcribe_app"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "pharia-data"
+      enabled: true
+      cluster: "pharia-ai-pg-cluster"
+      owner: "pharia_data"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "temporal"
+      enabled: true
+      cluster: "temporal-cluster"
+      owner: "temporal"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+    - name: "temporal-visibility"
+      enabled: true
+      cluster: "temporal-cluster"
+      owner: "temporal-visibility"
+      extensions:
+        - "uuid-ossp"
+        - "pgcrypto"
+        - "pg_stat_statements"
+        - "pg_trgm"
+        - "btree_gin"
+      connectionLimit: 50
+
+pharia-assistant-api-redis:
+  enabled: true
+  fullnameOverride: pharia-assistant-api-redis
+  architecture: standalone
+  auth:
+    # `username` key and `password` key should exist in secret
+    existingSecret: "pharia-assistant-api-redis-secret-qs"
+    existingSecretPasswordKey: "password"
+  master:
+    containerPorts:
+      redis: 6379
+  image:
+    repository: bitnamilegacy/redis
+  sentinel:
+    image:
+      repository: bitnamilegacy/redis-sentinel
+  metrics:
+    image:
+      repository: bitnamilegacy/redis-exporter
+
+pharia-transcribe-app-redis:
+  enabled: true
+  fullnameOverride: pharia-transcribe-app-redis
+  architecture: standalone
+  auth:
+    # `username` key and `password` key should exist in secret
+    existingSecret: "pharia-transcribe-app-redis-secret-qs"
+    existingSecretPasswordKey: "password"
+  master:
+    containerPorts:
+      redis: 6379
+    resources:
+      requests:
+        cpu: "256m"
+        memory: 256Mi
+      limits:
+        cpu: "500m"
+        memory: "500Mi"
+  image:
+    repository: bitnamilegacy/redis
+  sentinel:
+    image:
+      repository: bitnamilegacy/redis-sentinel
+  metrics:
+    image:
+      repository: bitnamilegacy/redis-exporter
+
+pharia-data-api-minio:
+  enabled: true
+  fullnameOverride: "minio-data"
+  image:
+    repository: bitnamilegacy/minio
+  clientImage:
+    repository: bitnamilegacy/minio-client
+  volumePermissions:
+    image:
+      repository: bitnamilegacy/os-shell
+  defaultBuckets: "external-bucket,internal-bucket"
+  mode: standalone
+  auth:
+    existingSecret: "pharia-data-api-minio-secret-qs"
+    rootUserSecretKey: "username"
+    rootPasswordSecretKey: "password"

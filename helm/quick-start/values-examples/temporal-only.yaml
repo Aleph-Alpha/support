@@ -1,0 +1,58 @@
+# Example: Install only Temporal databases
+# This example shows how to install only the Temporal workflow databases
+# while disabling all other application databases.
+
+# Override database enablement in postgresql.databases
+postgresql:
+  databases:
+    # Disable all main application databases
+    - name: "document-index"
+      enabled: false
+    - name: "pharia-os"
+      enabled: false
+    - name: "inference-api"
+      enabled: false
+    - name: "pharia-studio"
+      enabled: false
+    - name: "pharia-oauth-gateway"
+      enabled: false
+    - name: "pharia-assistant"
+      enabled: false
+    - name: "pharia-chat"
+      enabled: false
+    - name: "pharia-catch"
+      enabled: false
+    - name: "zitadel"
+      enabled: false
+    - name: "openfga"
+      enabled: false
+    - name: "dex"
+      enabled: false
+    - name: "pharia-conductor"
+      enabled: false
+    - name: "pharia-numinous"
+      enabled: false
+    - name: "pharia-transcribe-app"
+      enabled: false
+    - name: "pharia-data"
+      enabled: false
+    
+    # Enable only Temporal databases
+    - name: "temporal"
+      enabled: true
+    - name: "temporal-visibility"
+      enabled: true
+
+# Enable CloudNative-PG operator
+cloudnative:
+  enabled: true
+
+# Disable other services
+pharia-assistant-api-redis:
+  enabled: false
+
+pharia-transcribe-app-redis:
+  enabled: false
+
+pharia-data-api-minio:
+  enabled: false
