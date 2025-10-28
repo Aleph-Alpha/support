@@ -1,0 +1,6 @@
+apiVersion: v2
+name: qs-postgresql-db
+home: https://aleph-alpha.com/phariaai/
+icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
+description: Pharia AI Quick Start Helm chart for Postgresql Databases
+version: 0.1.0

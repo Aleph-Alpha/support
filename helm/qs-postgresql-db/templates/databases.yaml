@@ -1,0 +1,39 @@
+{{- if .Values.databases }}
+{{- range .Values.databases }}
+{{- if .enabled }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ .name }}
+spec:
+  cluster:
+    name: {{ .cluster }}
+  name: {{ .name }}
+  {{- if .owner }}
+  owner: {{ .owner }}
+  {{- end }}
+  {{- if .template }}
+  template: {{ .template }}
+  {{- end }}
+  {{- if .encoding }}
+  encoding: {{ .encoding }}
+  {{- end }}
+  {{- if .locale }}
+  locale: {{ .locale }}
+  {{- end }}
+  {{- if .tablespace }}
+  tablespace: {{ .tablespace }}
+  {{- end }}
+  {{- if .connectionLimit }}
+  connectionLimit: {{ .connectionLimit }}
+  {{- end }}
+  {{- if .isTemplate }}
+  isTemplate: {{ .isTemplate }}
+  {{- end }}
+  {{- if .allowConnections }}
+  allowConnections: {{ .allowConnections }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

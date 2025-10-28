@@ -11,7 +11,7 @@ serviceAccount:
 # PG Cluster for Pharia Applications
 clusterPharia:
   enabled: true
-  nameOverride: pg-cluster-pharia
+  nameOverride: cluster-pharia
   type: postgresql
   version:
     # -- PostgreSQL major version to use
@@ -175,7 +175,7 @@ clusterPharia:
 # PG Cluster for Temporal
 clusterTemporal:
   enabled: true
-  nameOverride: pg-cluster-temporal
+  nameOverride: cluster-temporal
   type: postgresql
   version:
     # -- PostgreSQL major version to use
