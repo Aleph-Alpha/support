@@ -19,7 +19,7 @@ spec:
       serviceAccountName: {{ include "quick-start.serviceAccountName" . }}
       containers:
       - name: create-secrets
-        image: bitnami/kubectl:latest
+        image: bitnamilegacy/kubectl:latest
         command: ["/bin/bash"]
         args:
           - -c
@@ -106,63 +106,7 @@ spec:
                     print_success "Created secret: $secret_name with username/user: $username, host: $host, port: 5432, protocol: postgres"
                 done
             }
-            
-            # Function to create Redis secrets
-            create_redis_secrets() {
-                print_status "Creating Redis secrets..."
-                
-                # pharia-assistant-api-redis secret
-                local assistant_redis_username="pharia-assistant"
-                local assistant_redis_password=$(generate_password)
-                
-                print_status "Creating secret: pharia-assistant-api-redis-secret-qs"
-                kubectl create secret generic "pharia-assistant-api-redis-secret-qs" \
-                    --from-literal=username="$assistant_redis_username" \
-                    --from-literal=password="$assistant_redis_password" \
-                    --dry-run=client -o yaml | \
-                    kubectl label --local -f - \
-                    app.kubernetes.io/name="{{ include "quick-start.name" . }}" \
-                    -o yaml | kubectl apply -f -
-                
-                print_success "Created secret: pharia-assistant-api-redis-secret-qs"
 
-                # pharia-transcribe-app-redis secret
-                local transcribe_redis_username="pharia-transcribe-app"
-                local transcribe_redis_password=$(generate_password)
-                
-                print_status "Creating secret: pharia-transcribe-app-redis-secret-qs"
-                kubectl create secret generic "pharia-transcribe-app-redis-secret-qs" \
-                    --from-literal=username="$transcribe_redis_username" \
-                    --from-literal=password="$transcribe_redis_password" \
-                    --dry-run=client -o yaml | \
-                    kubectl label --local -f - \
-                    app.kubernetes.io/name="{{ include "quick-start.name" . }}" \
-                    -o yaml | kubectl apply -f -
-                
-                print_success "Created secret: pharia-transcribe-app-redis-secret-qs"
-            }
-            
-            # Function to create MinIO secrets
-            create_minio_secrets() {
-                print_status "Creating MinIO secrets..."
-                
-                # pharia-data-api-minio secret
-                local minio_username="pharia-data"
-                local minio_password=$(generate_password)
-                
-                print_status "Creating secret: pharia-data-api-minio-secret-qs"
-                kubectl create secret generic "pharia-data-api-minio-secret-qs" \
-                    --from-literal=username="$minio_username" \
-                    --from-literal=password="$minio_password" \
-                    --from-literal=bucket-name="$minio_password" \
-                    --dry-run=client -o yaml | \
-                    kubectl label --local -f - \
-                    app.kubernetes.io/name="{{ include "quick-start.name" . }}" \
-                    -o yaml | kubectl apply -f -
-                
-                print_success "Created MinIO secrets"
-            }
-            
             # Main execution
             main() {
                 print_status "Starting secret creation for pharia-ai-helm-chart..."
@@ -182,10 +126,6 @@ spec:
                 
                 # Create all secrets
                 create_postgresql_secrets
-                echo ""
-                create_redis_secrets
-                echo ""
-                create_minio_secrets
                 echo ""
                 
                 print_success "All secrets for enabled services have been created successfully!"

@@ -14,6 +14,8 @@ serviceAccount:
 # Install CloudNative-PG operator. Set to false if already installed
 pg-operator:
   enabled: true
+  config:
+    clusterWide: false
 
 pg-cluster-pharia:
   enabled: true
