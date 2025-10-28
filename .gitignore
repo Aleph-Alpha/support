@@ -1,5 +1,22 @@
+# Editors
+.idea
+.vscode
+
+\.DS_Store
+
+\.env
+
+report*.json
+
+.docker
+.env
+
 scan-results
 scanner/ignore.txt
 scanner/test-k8s-scanner.sh
 *.backup
 ignore.txt
+
+*.tgz
+Chart.lock
+CHART.md

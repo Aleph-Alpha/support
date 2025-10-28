@@ -1,0 +1,10 @@
+cloudnative-pg:
+  crds:
+    # -- Specifies whether the CRDs should be created when installing the chart.
+    create: true
+  # Operator configuration.
+  config:
+    # -- This option determines if the operator is responsible for observing
+    # events across the entire Kubernetes cluster or if its focus should be
+    # narrowed down to the specific namespace within which it has been deployed.
+    clusterWide: false
