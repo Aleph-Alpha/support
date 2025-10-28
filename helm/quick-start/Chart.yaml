@@ -6,23 +6,18 @@ description: Pharia AI quick-start Helm chart provides 3rd party tools which you
 version: 0.1.0
 
 dependencies:
-- name: cloudnative-pg
-  version: 0.26.0
-  alias: cloudnative
-  condition: cloudnative.enabled
-  repository: "https://cloudnative-pg.github.io/charts"
-- name: redis
-  version: 21.2.14
-  alias: pharia-assistant-api-redis
-  condition: pharia-assistant-api-redis.enabled
-  repository: oci://registry-1.docker.io/bitnamicharts
-- name: redis
-  version: 21.2.14
-  alias: pharia-transcribe-app-redis
-  condition: pharia-transcribe-app-redis.enabled
-  repository: oci://registry-1.docker.io/bitnamicharts
-- name: minio
-  version: 14.10.5
-  alias: pharia-data-api-minio
-  condition: pharia-data-api-minio.enabled
-  repository: oci://registry-1.docker.io/bitnamicharts
+  - name: cloudnative-pg
+    version: 0.26.1
+    alias: pg-operator
+    condition: pg-operator.enabled
+    repository: https://cloudnative-pg.github.io/charts
+  - name: cluster
+    version: 0.3.1
+    alias: pg-cluster-pharia
+    condition: pg-cluster-pharia.enabled
+    repository: https://cloudnative-pg.github.io/charts
+  - name: cluster
+    version: 0.3.1
+    alias: pg-cluster-temporal
+    condition: pg-cluster-temporal.enabled
+    repository: https://cloudnative-pg.github.io/charts
