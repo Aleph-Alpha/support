@@ -3,10 +3,10 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: {{ include "qs-pgbouncer.fullname" . }}
+  name: {{ include "pgbouncer.fullname" . }}
   namespace: {{ .Release.Namespace | quote }}
   labels:
-    {{- include "qs-pgbouncer.labels" . | nindent 4 }}
+    {{- include "pgbouncer.labels" . | nindent 4 }}
     {{- with .Values.serviceMonitor.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -17,7 +17,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      {{- include "qs-pgbouncer.selectorLabels" . | nindent 6 }}
+      {{- include "pgbouncer.selectorLabels" . | nindent 6 }}
   endpoints:
   - port: metrics
     {{- with .Values.serviceMonitor.interval }}

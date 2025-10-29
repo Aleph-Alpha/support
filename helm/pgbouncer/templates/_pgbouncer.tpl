@@ -1,23 +1,23 @@
 {{/* vim: set filetype=mustache: */}}
 
 {{/*
-Get the qs-pgbouncer config file name.
+Get the pgbouncer config file name.
 */}}
-{{- define "qs-pgbouncer.configFile" -}}
-{{- printf "%s-config-file" (include "qs-pgbouncer.fullname" .) | trunc 63 | trimSuffix "-" | quote -}}
+{{- define "pgbouncer.configFile" -}}
+{{- printf "%s-config-file" (include "pgbouncer.fullname" .) | trunc 63 | trimSuffix "-" | quote -}}
 {{- end -}}
 
 
 {{/*
 
-qs-pgbouncer.ini is a configuration file used to specify qs-pgbouncer parameters and identify user-specific parameters.
+pgbouncer.ini is a configuration file used to specify pgbouncer parameters and identify user-specific parameters.
 It can contain include directives to split the file into separate parts.
 
-For further information, refer to https://www.qs-pgbouncer.org/config.html
+For further information, refer to https://www.pgbouncer.org/config.html
 
 */}}
 
-{{ define "qs-pgbouncer.ini" }}
+{{ define "pgbouncer.ini" }}
 
 {{/* [databases] section */}}
 {{- if $.Values.databases }}
@@ -27,7 +27,7 @@ For further information, refer to https://www.qs-pgbouncer.org/config.html
   {{- end }}
 {{- end }}
 
-{{/* [qs-pgbouncer] section */}}
+{{/* [pgbouncer] section */}}
 {{- if $.Values.pgbouncer }}
   {{ printf "[pgbouncer]" }}
   {{- range $k, $v := $.Values.pgbouncer }}
@@ -52,11 +52,11 @@ For further information, refer to https://www.qs-pgbouncer.org/config.html
 
 
 {{/*
-The userlist.txt file in qs-pgbouncer contains the database users and their passwords,
+The userlist.txt file in pgbouncer contains the database users and their passwords,
 used to authenticate the client agains PostgreSQL.
 
-For further information, check https://www.qs-pgbouncer.org/config.html#authentication-file-format
+For further information, check https://www.pgbouncer.org/config.html#authentication-file-format
 */}}
-{{- define "qs-pgbouncer.userlist.secret" -}}
-{{- default (printf "%s-qs-pgbouncer-userlist-secret" .Release.Name) .Values.userlist.secret | quote -}}
+{{- define "pgbouncer.userlist.secret" -}}
+{{- default (printf "%s-pgbouncer-userlist-secret" .Release.Name) .Values.userlist.secret | quote -}}
 {{- end -}}

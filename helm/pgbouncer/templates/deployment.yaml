@@ -1,10 +1,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ template "qs-pgbouncer.fullname" . }}
+  name: {{ template "pgbouncer.fullname" . }}
   namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "qs-pgbouncer.labels" . | nindent 4 }}
+    {{- include "pgbouncer.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   {{- if .Values.deployment.strategy }}
@@ -12,11 +12,11 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "qs-pgbouncer.selectorLabels" . | nindent 6 }}
+      {{- include "pgbouncer.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "qs-pgbouncer.labels" . | nindent 8 }}
+        {{- include "pgbouncer.labels" . | nindent 8 }}
         {{- if .Values.podLabels }}
         {{- toYaml .Values.podLabels | nindent 8 }}
         {{- end }}
@@ -33,7 +33,7 @@ spec:
             - topologyKey: {{ .Values.affinity.podAntiAffinity.topologyKey }}
               labelSelector:
                 matchLabels:
-                  {{- include "qs-pgbouncer.selectorLabels" . | nindent 18 }}
+                  {{- include "pgbouncer.selectorLabels" . | nindent 18 }}
         {{- else if eq .Values.antiAffinity "soft" }}
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -42,7 +42,7 @@ spec:
                 topologyKey: {{ .Values.affinity.podAntiAffinity.topologyKey }}
                 labelSelector:
                   matchLabels:
-                    {{- include "qs-pgbouncer.selectorLabels" . | nindent 20 }}
+                    {{- include "pgbouncer.selectorLabels" . | nindent 20 }}
         {{- end }}
         {{- if .Values.nodeAffinity }}
         nodeAffinity:
@@ -61,11 +61,9 @@ spec:
           projected:
             sources:
               - configMap:          
-                  name: {{ template "qs-pgbouncer.configFile" . }}
-      {{- if .Values.userlist.enabled }}
+                  name: {{ template "pgbouncer.configFile" . }}
               - secret:
-                  name: {{ template "qs-pgbouncer.userlist.secret" . }}
-      {{- end }}
+                  name: {{ template "pgbouncer.userlist.secret" . }}
       {{- if .Values.extraVolumes -}}
       {{ toYaml .Values.extraVolumes | nindent 8 }}
       {{ end -}}
