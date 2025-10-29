@@ -155,6 +155,30 @@ tests:
 # ============================================================================
 
 databases:
+  - name: "pgbouncer-pharia"
+    enabled: true
+    cluster: "qs-postgresql-cluster-cluster-pharia"
+    owner: "pgbouncer_pharia"
+    connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
+
+  - name: "pgbouncer-temporal"
+    enabled: true
+    cluster: "qs-postgresql-cluster-cluster-temporal"
+    owner: "pgbouncer_temporal"
+    connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
+
   - name: "document-index"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"

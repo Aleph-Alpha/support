@@ -41,6 +41,13 @@ clusterPharia:
         memory: "4Gi"
         cpu: "2000m"
     roles:
+      - name: "pgbouncer_pharia"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
+        passwordSecret:
+          name: "pgbouncer-pharia-pg-secret-qs"
+        login: true
+        superuser: false
+        replication: false
       - name: "document_index"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
         passwordSecret:
@@ -205,6 +212,13 @@ clusterTemporal:
         memory: "4Gi"
         cpu: "2000m"
     roles:
+      - name: "pgbouncer_temporal"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
+        passwordSecret:
+          name: "pgbouncer-temporal-pg-secret-qs"
+        login: true
+        superuser: false
+        replication: false
       - name: "temporal"
         # password and username key should exist in secret. username key should be the same as the name of the user
         passwordSecret:
