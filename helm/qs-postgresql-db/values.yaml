@@ -21,6 +21,17 @@ extensionJob:
   sslMode: "prefer"
 
 # ============================================================================
+# Helm Test Configuration
+# ============================================================================
+# Configuration for Helm tests that verify database connectivity and functionality
+# Note: Tests are only executed when you run 'helm test <release-name>'
+tests:
+  # Container image to use for tests
+  image: "postgres:17"
+  # SSL mode for PostgreSQL connections during tests
+  sslMode: "prefer"
+
+# ============================================================================
 # Field Reference Documentation
 # ============================================================================
 #
