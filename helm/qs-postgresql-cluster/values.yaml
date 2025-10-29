@@ -27,7 +27,7 @@ clusterPharia:
       storageClass: ""
     postgresql:
       parameters:
-        max_connections: "200"
+        max_connections: "300"
         shared_buffers: "4642MB"
         effective_cache_size: "10584MB"
         checkpoint_completion_target: "0.9"
@@ -43,11 +43,11 @@ clusterPharia:
         min_wal_size: "1GB"
     resources:
       requests:
-        memory: "16Gi"
-        cpu: "10000m"
+        memory: "48Gi"
+        cpu: "16000m"
       limits:
-        memory: "24Gi"
-        cpu: "10000m"
+        memory: "64Gi"
+        cpu: "16000m"
     roles:
       - name: "document_index"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
@@ -216,10 +216,10 @@ clusterTemporal:
     resources:
       requests:
         memory: "16Gi"
-        cpu: "10000m"
+        cpu: "6000m"
       limits:
-        memory: "24Gi"
-        cpu: "10000m"
+        memory: "20Gi"
+        cpu: "6000m"
     roles:
       - name: "temporal"
         # password and username key should exist in secret. username key should be the same as the name of the user
