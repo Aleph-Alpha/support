@@ -37,10 +37,10 @@ clusterPharia:
         default_statistics_target: "100"
         maintenance_work_mem: "1287MB"
         work_mem: "287MB"
-        effective_io_concurrency: 200
-        max_worker_processes: 6
-        max_parallel_workers_per_gather: 3 
-        max_parallel_workers: 9
+        effective_io_concurrency: "200"
+        max_worker_processes: "6"
+        max_parallel_workers_per_gather: "3"
+        max_parallel_workers: "9"
         max_wal_size: "2GB"
         min_wal_size: "1GB"
     resources:
@@ -218,10 +218,10 @@ clusterTemporal:
         default_statistics_target: "100"
         maintenance_work_mem: "1287MB"
         work_mem: "287MB"
-        effective_io_concurrency: 200
-        max_worker_processes: 6
-        max_parallel_workers_per_gather: 3 
-        max_parallel_workers: 9
+        effective_io_concurrency: "200"
+        max_worker_processes: "6"
+        max_parallel_workers_per_gather: "3"
+        max_parallel_workers: "9"
         max_wal_size: "2GB"
         min_wal_size: "1GB"
     resources:
