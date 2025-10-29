@@ -1,0 +1,262 @@
+# ServiceAccount configuration for the secret creation job
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# PG Cluster for Pharia Applications
+clusterPharia:
+  enabled: true
+  nameOverride: cluster-pharia
+  type: postgresql
+  version:
+    # -- PostgreSQL major version to use
+    postgresql: "17"
+  cluster:
+    # -- Number of instances
+    instances: 3
+    # -- Name of the container image, supporting both tags (<image>:<tag>) and digests for deterministic and repeatable deployments:
+    # <image>:<tag>@sha256:<digestValue>
+    imageName: ""  # Default value depends on type (postgresql/postgis/timescaledb)
+    storage:
+      size: 250Gi
+      storageClass: ""
+    postgresql:
+      parameters:
+        max_connections: "200"
+        shared_buffers: "4642MB"
+        effective_cache_size: "10584MB"
+        checkpoint_completion_target: "0.9"
+        wal_buffers: "64MB"
+        default_statistics_target: "100"
+        maintenance_work_mem: "1287MB"
+        work_mem: "287MB"
+        effective_io_concurrency: 200
+        max_worker_processes: 6
+        max_parallel_workers_per_gather: 3 
+        max_parallel_workers: 9
+        max_wal_size: "2GB"
+        min_wal_size: "1GB"
+    resources:
+      requests:
+        memory: "16Gi"
+        cpu: "10000m"
+      limits:
+        memory: "24Gi"
+        cpu: "10000m"
+    roles:
+      - name: "document_index"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
+        passwordSecret:
+          name: "document-index-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_os"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_os)
+        passwordSecret:
+          name: "pharia-os-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "inference_api"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (inference_api)
+        passwordSecret:
+          name: "inference-api-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_studio"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_studio)
+        passwordSecret:
+          name: "pharia-studio-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_oauth_gateway"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_oauth_gateway)
+        passwordSecret:
+          name: "pharia-oauth-gateway-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_assistant"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_assistant)
+        passwordSecret:
+          name: "pharia-assistant-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_chat"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_chat)
+        passwordSecret:
+          name: "pharia-chat-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_catch"
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_catch)
+        passwordSecret:
+          name: "pharia-catch-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "zitadel"
+        # `password` and `username` key should exist in secret. username key should be the name of the user (zitadel)
+        passwordSecret:
+          name: "zitadel-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "openfga"
+        # `password` and `username` key should exist in secret. username key should be the name of the user (openfga)
+        passwordSecret:
+          name: "openfga-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "dex"
+        # `password` and `username` key should exist in secret. username key should be the name of the user (dex)
+        passwordSecret:
+          name: "dex-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_conductor"
+        # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_conductor)
+        passwordSecret:
+          name: "pharia-conductor-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_numinous"
+        # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_numinous)
+        passwordSecret:
+          name: "pharia-numinous-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_transcribe_app"
+        # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_transcribe_app)
+        passwordSecret:
+          name: "pharia-transcribe-app-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "pharia_data"
+        # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_data)
+        passwordSecret:
+          name: "pharia-data-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+  backups:
+    # -- You need to configure backups manually, so backups are disabled by default.
+    enabled: false
+  # -- List of PgBouncer poolers
+  poolers: []
+  #  - name: pharia-rw
+  #    # -- PgBouncer type of service to forward traffic to.
+  #    type: rw
+  #    # -- PgBouncer pooling mode
+  #    poolMode: transaction
+  #    # -- Number of PgBouncer instances
+  #    instances: 3
+  #    # -- PgBouncer configuration parameters
+  #    parameters:
+  #      max_client_conn: "1000"
+  #      default_pool_size: "25"
+  #    monitoring:
+  #      # -- Whether to enable monitoring
+  #      enabled: false
+  #      podMonitor:
+  #        # -- Whether to enable the PodMonitor
+  #        enabled: true
+  #    # -- Custom PgBouncer deployment template.
+  #    # Use to override image, specify resources, etc.
+  #    template: {}
+
+# PG Cluster for Temporal
+clusterTemporal:
+  enabled: true
+  nameOverride: cluster-temporal
+  type: postgresql
+  version:
+    # -- PostgreSQL major version to use
+    postgresql: "17"
+  cluster:
+    # -- Number of instances
+    instances: 3
+    # -- Name of the container image, supporting both tags (<image>:<tag>) and digests for deterministic and repeatable deployments:
+    # <image>:<tag>@sha256:<digestValue>
+    imageName: ""  # Default value depends on type (postgresql/postgis/timescaledb)
+    storage:
+      size: 250Gi
+      storageClass: ""
+    postgresql:
+      parameters:
+        max_connections: "200"
+        shared_buffers: "4642MB"
+        effective_cache_size: "10584MB"
+        checkpoint_completion_target: "0.9"
+        wal_buffers: "64MB"
+        default_statistics_target: "100"
+        maintenance_work_mem: "1287MB"
+        work_mem: "287MB"
+        effective_io_concurrency: 200
+        max_worker_processes: 6
+        max_parallel_workers_per_gather: 3 
+        max_parallel_workers: 9
+        max_wal_size: "2GB"
+        min_wal_size: "1GB"
+    resources:
+      requests:
+        memory: "16Gi"
+        cpu: "10000m"
+      limits:
+        memory: "24Gi"
+        cpu: "10000m"
+    roles:
+      - name: "temporal"
+        # password and username key should exist in secret. username key should be the same as the name of the user
+        passwordSecret:
+          name: "temporal-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+      - name: "temporal_visibility"
+        # password and username key should exist in secret. username key should be the same as the name of the user
+        passwordSecret:
+          name: "temporal-visibility-pg-secret-qs"
+        login: true
+        superuser: true
+        replication: false
+  backups:
+    # -- You need to configure backups manually, so backups are disabled by default.
+    enabled: false
+  # -- List of PgBouncer poolers
+  poolers: []
+  #  - name: temporal-rw
+  #    # -- PgBouncer type of service to forward traffic to.
+  #    type: rw
+  #    # -- PgBouncer pooling mode
+  #    poolMode: transaction
+  #    # -- Number of PgBouncer instances
+  #    instances: 3
+  #    # -- PgBouncer configuration parameters
+  #    parameters:
+  #      max_client_conn: "1000"
+  #      default_pool_size: "25"
+  #    monitoring:
+  #      # -- Whether to enable monitoring
+  #      enabled: false
+  #      podMonitor:
+  #        # -- Whether to enable the PodMonitor
+  #        enabled: true
+  #    # -- Custom PgBouncer deployment template.
+  #    # Use to override image, specify resources, etc.
+  #    template: {}
