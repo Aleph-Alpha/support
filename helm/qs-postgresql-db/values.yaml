@@ -231,7 +231,7 @@ databases:
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_chat"
-    connectionLimit: 50
+    connectionLimit: 100
     extensions:
       - uuid-ossp
       - pgcrypto
