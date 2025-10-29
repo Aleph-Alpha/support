@@ -13,6 +13,8 @@ clusterPharia:
   enabled: true
   nameOverride: cluster-pharia
   type: postgresql
+  # PgBouncer host for connection pooling (optional)
+  pgbouncerHost: ""
   version:
     # -- PostgreSQL major version to use
     postgresql: "17"
@@ -184,6 +186,8 @@ clusterTemporal:
   enabled: true
   nameOverride: cluster-temporal
   type: postgresql
+  # PgBouncer host for connection pooling (optional)
+  pgbouncerHost: ""
   version:
     # -- PostgreSQL major version to use
     postgresql: "17"
