@@ -23,23 +23,31 @@ clusterPharia:
     # <image>:<tag>@sha256:<digestValue>
     imageName: ""  # Default value depends on type (postgresql/postgis/timescaledb)
     storage:
-      size: 8Gi
+      size: 250Gi
       storageClass: ""
     postgresql:
       parameters:
         max_connections: "200"
-        shared_buffers: "1950MB"
-        effective_cache_size: "5460MB"
+        shared_buffers: "4642MB"
+        effective_cache_size: "10584MB"
         checkpoint_completion_target: "0.9"
-        wal_buffers: "16MB"
+        wal_buffers: "64MB"
         default_statistics_target: "100"
+        maintenance_work_mem: "1287MB"
+        work_mem: "287MB"
+        effective_io_concurrency: 200
+        max_worker_processes: 6
+        max_parallel_workers_per_gather: 3 
+        max_parallel_workers: 9
+        max_wal_size: "2GB"
+        min_wal_size: "1GB"
     resources:
       requests:
-        memory: "2Gi"
-        cpu: "1000m"
+        memory: "16Gi"
+        cpu: "10000m"
       limits:
-        memory: "4Gi"
-        cpu: "2000m"
+        memory: "24Gi"
+        cpu: "10000m"
     roles:
       - name: "document_index"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
@@ -187,23 +195,31 @@ clusterTemporal:
     # <image>:<tag>@sha256:<digestValue>
     imageName: ""  # Default value depends on type (postgresql/postgis/timescaledb)
     storage:
-      size: 8Gi
+      size: 250Gi
       storageClass: ""
     postgresql:
       parameters:
-        max_connections: "100"
-        shared_buffers: "1950MB"
-        effective_cache_size: "5460MB"
+        max_connections: "200"
+        shared_buffers: "4642MB"
+        effective_cache_size: "10584MB"
         checkpoint_completion_target: "0.9"
-        wal_buffers: "16MB"
+        wal_buffers: "64MB"
         default_statistics_target: "100"
+        maintenance_work_mem: "1287MB"
+        work_mem: "287MB"
+        effective_io_concurrency: 200
+        max_worker_processes: 6
+        max_parallel_workers_per_gather: 3 
+        max_parallel_workers: 9
+        max_wal_size: "2GB"
+        min_wal_size: "1GB"
     resources:
       requests:
-        memory: "2Gi"
-        cpu: "1000m"
+        memory: "16Gi"
+        cpu: "10000m"
       limits:
-        memory: "4Gi"
-        cpu: "2000m"
+        memory: "24Gi"
+        cpu: "10000m"
     roles:
       - name: "temporal"
         # password and username key should exist in secret. username key should be the same as the name of the user
