@@ -1,0 +1,6 @@
+apiVersion: v1
+appVersion: "1.24.0"
+description: pgbouncer chart
+home: https://gitlab.cern.ch/pgbouncer
+name: pgbouncer
+version: 1.3.0
