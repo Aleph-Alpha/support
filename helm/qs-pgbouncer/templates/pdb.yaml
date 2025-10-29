@@ -1,0 +1,14 @@
+{{- if .Values.maxUnavailable -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "qs-pgbouncer.fullname" . }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "qs-pgbouncer.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "qs-pgbouncer.selectorLabels" . | nindent 6 }}
+  maxUnavailable: {{ .Values.maxUnavailable }}
+{{- end -}}

@@ -1,0 +1,132 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "qs-pgbouncer.fullname" . }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "qs-pgbouncer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.deployment.strategy }}
+  strategy: {{ .Values.deployment.strategy | toYaml | nindent 4 }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "qs-pgbouncer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "qs-pgbouncer.labels" . | nindent 8 }}
+        {{- if .Values.podLabels }}
+        {{- toYaml .Values.podLabels | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if .Values.podAnnotations }}
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+        {{- end }}
+    spec:
+      affinity:
+        {{- if eq .Values.antiAffinity "hard" }}
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: {{ .Values.affinity.podAntiAffinity.topologyKey }}
+              labelSelector:
+                matchLabels:
+                  {{- include "qs-pgbouncer.selectorLabels" . | nindent 18 }}
+        {{- else if eq .Values.antiAffinity "soft" }}
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                topologyKey: {{ .Values.affinity.podAntiAffinity.topologyKey }}
+                labelSelector:
+                  matchLabels:
+                    {{- include "qs-pgbouncer.selectorLabels" . | nindent 20 }}
+        {{- end }}
+        {{- if .Values.nodeAffinity }}
+        nodeAffinity:
+          {{- toYaml .Values.nodeAffinity | nindent 10 }}
+        {{- end }}
+      {{- if .Values.nodeSelector}}
+      nodeSelector:
+      {{- toYaml .Values.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.tolerations }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: config
+          projected:
+            sources:
+              - configMap:          
+                  name: {{ template "qs-pgbouncer.configFile" . }}
+      {{- if .Values.userlist.enabled }}
+              - secret:
+                  name: {{ template "qs-pgbouncer.userlist.secret" . }}
+      {{- end }}
+      {{- if .Values.extraVolumes -}}
+      {{ toYaml .Values.extraVolumes | nindent 8 }}
+      {{ end -}}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{ if .Values.extraInitContainers -}}
+      initContainers:
+      {{- toYaml .Values.extraInitContainers | nindent 8 }}
+      {{ end -}}
+      containers:
+        - name: pgbouncer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: pgbouncer
+              containerPort: {{ .Values.internalPort }}
+          {{- if .Values.deployment.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.internalPort }}
+            initialDelaySeconds: {{ .Values.deployment.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.deployment.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.deployment.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.deployment.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.deployment.readinessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.deployment.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.internalPort }}
+            initialDelaySeconds: {{ .Values.deployment.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.deployment.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.deployment.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.deployment.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.deployment.livenessProbe.failureThreshold }}
+          {{- end }}
+          lifecycle:
+            preStop:
+              exec:
+                # So termination grace period is handling by terminationGracePeriodSeconds
+                command: ["/bin/sh", "-c", "killall -INT pgbouncer && sleep infinity"]
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pgbouncer
+              readOnly: true
+            {{- if .Values.extraVolumeMounts -}}
+            {{ toYaml .Values.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+          {{- if .Values.resources }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- end }}
+          {{ if .Values.pgbouncerExporter -}}
+          {{- toYaml .Values.pgbouncerExporter | nindent 8 }}
+          {{- end}}
+      securityContext:
+        runAsUser: {{ .Values.security.runAsUser}}
+        fsGroup: {{ .Values.security.fsGroup }}
+      terminationGracePeriodSeconds: {{ .Values.deployment.terminationGracePeriodSeconds }}
+
