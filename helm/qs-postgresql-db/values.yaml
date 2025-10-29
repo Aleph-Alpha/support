@@ -11,6 +11,16 @@
 # - README.md for complete documentation
 
 # ============================================================================
+# Extension Job Configuration
+# ============================================================================
+# Configuration for the Kubernetes Job that enables PostgreSQL extensions
+extensionJob:
+  # Container image to use for extension enablement
+  image: "postgres:17"
+  # SSL mode for PostgreSQL connection
+  sslMode: "prefer"
+
+# ============================================================================
 # Field Reference Documentation
 # ============================================================================
 #
@@ -49,6 +59,11 @@
 # METADATA:
 # - labels: Kubernetes labels (key-value pairs)
 # - annotations: Kubernetes annotations (key-value pairs)
+#
+# EXTENSIONS (PostgreSQL Extensions):
+# - extensions: List of PostgreSQL extensions to enable in this database
+#   Note: Extensions are enabled via a post-install/upgrade Job.
+#   The extensions must be available in the PostgreSQL cluster (built-in or via ImageVolume).
 
 # ============================================================================
 # Advanced Configuration Example (Commented Out)
@@ -112,6 +127,17 @@
 #   annotations:
 #     description: "Production database with advanced configuration"
 #     managed-by: "helm"
+#   
+#   # === PostgreSQL Extensions ===
+#   # Extensions are enabled automatically via a post-install/upgrade Job
+#   extensions:
+#     - uuid-ossp
+#     - pgcrypto
+#     - pg_stat_statements
+#     - pg_trgm
+#     - btree_gin
+#     # - postgis         # For spatial data
+#     # - pgvector        # For vector embeddings (requires ImageVolume in PG 18+)
 
 # ============================================================================
 # Database Configurations
@@ -123,99 +149,201 @@ databases:
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "document_index"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-os"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_os"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "inference-api"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "inference_api"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-studio"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_studio"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-oauth-gateway"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_oauth_gateway"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-assistant"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_assistant"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-chat"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_chat"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-catch"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_catch"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "zitadel"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "zitadel"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "openfga"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "openfga"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "dex"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "dex"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-conductor"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_conductor"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-numinous"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_numinous"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-transcribe-app"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_transcribe_app"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "pharia-data"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_data"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "temporal"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-temporal"
     owner: "temporal"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
 
   - name: "temporal-visibility"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-temporal"
     owner: "temporal_visibility"
     connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
