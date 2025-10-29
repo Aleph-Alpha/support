@@ -46,105 +46,105 @@ clusterPharia:
         passwordSecret:
           name: "document-index-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_os"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_os)
         passwordSecret:
           name: "pharia-os-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "inference_api"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (inference_api)
         passwordSecret:
           name: "inference-api-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_studio"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_studio)
         passwordSecret:
           name: "pharia-studio-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_oauth_gateway"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_oauth_gateway)
         passwordSecret:
           name: "pharia-oauth-gateway-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_assistant"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_assistant)
         passwordSecret:
           name: "pharia-assistant-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_chat"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_chat)
         passwordSecret:
           name: "pharia-chat-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_catch"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_catch)
         passwordSecret:
           name: "pharia-catch-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "zitadel"
         # `password` and `username` key should exist in secret. username key should be the name of the user (zitadel)
         passwordSecret:
           name: "zitadel-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "openfga"
         # `password` and `username` key should exist in secret. username key should be the name of the user (openfga)
         passwordSecret:
           name: "openfga-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "dex"
         # `password` and `username` key should exist in secret. username key should be the name of the user (dex)
         passwordSecret:
           name: "dex-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_conductor"
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_conductor)
         passwordSecret:
           name: "pharia-conductor-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_numinous"
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_numinous)
         passwordSecret:
           name: "pharia-numinous-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_transcribe_app"
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_transcribe_app)
         passwordSecret:
           name: "pharia-transcribe-app-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "pharia_data"
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_data)
         passwordSecret:
           name: "pharia-data-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
@@ -210,14 +210,14 @@ clusterTemporal:
         passwordSecret:
           name: "temporal-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
       - name: "temporal_visibility"
         # password and username key should exist in secret. username key should be the same as the name of the user
         passwordSecret:
           name: "temporal-visibility-pg-secret-qs"
         login: true
-        superuser: true
+        superuser: false
         replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
