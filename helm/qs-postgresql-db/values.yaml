@@ -1,188 +1,221 @@
+# ============================================================================
+# CloudNativePG Database Resources Configuration
+# ============================================================================
+#
+# This Helm chart manages CloudNativePG Database resources declaratively.
+# Each database entry supports the full CloudNativePG Database CRD specification.
+#
+# For more details, see:
+# - https://cloudnative-pg.io/documentation/current/declarative_database_management/
+# - EXTENSIONS.md for PostgreSQL extension management
+# - README.md for complete documentation
+
+# ============================================================================
+# Field Reference Documentation
+# ============================================================================
+#
+# REQUIRED FIELDS:
+# - name: Database name within PostgreSQL
+# - cluster: Reference to the CloudNativePG Cluster resource
+# - enabled: Control whether this database is created
+#
+# BASIC FIELDS:
+# - owner: PostgreSQL role that owns the database
+# - ensure: "present" (create/maintain) or "absent" (delete)
+# - connectionLimit: Max connections (-1 = unlimited, default)
+# - allowConnections: Whether users can connect (default: true)
+#
+# IMMUTABLE FIELDS (cannot be changed after creation):
+# - template: Source template database
+# - encoding: Character set encoding
+# - locale: Default locale for collation and character classification
+# - localeProvider: Locale system ("libc", "icu", "builtin")
+# - localeCollate: Collation order
+# - localeCType: Character classification
+# - icuLocale: ICU locale identifier (PostgreSQL 15+)
+# - icuRules: Custom collation rules (PostgreSQL 16+)
+# - builtinLocale: Builtin locale name (PostgreSQL 17+)
+# - collationVersion: Track collation version
+#
+# TEMPLATE SETTINGS:
+# - isTemplate: If true, database can be cloned as a template
+#
+# LIFECYCLE:
+# - databaseReclaimPolicy: "retain" or "delete" - what happens when DB is removed from Kubernetes
+#
+# STORAGE:
+# - tablespace: PostgreSQL tablespace name
+#
+# METADATA:
+# - labels: Kubernetes labels (key-value pairs)
+# - annotations: Kubernetes annotations (key-value pairs)
+
+# ============================================================================
+# Advanced Configuration Example (Commented Out)
+# ============================================================================
+# Uncomment and modify this example to use advanced features:
+#
+# - name: "advanced-example"
+#   enabled: false
+#   
+#   # === Required Fields ===
+#   cluster: "my-postgres-cluster"  # Reference to the PostgreSQL cluster
+#   
+#   # === Basic Configuration ===
+#   owner: "app_user"               # Database owner role
+#   ensure: "present"               # Options: "present" (default) or "absent"
+#   
+#   # === Connection Settings ===
+#   connectionLimit: 100            # Max concurrent connections (-1 = no limit)
+#   allowConnections: true          # Allow connections to this database
+#   
+#   # === Template and Tablespace ===
+#   template: "template0"           # Template database to clone from
+#   tablespace: "pg_default"        # Tablespace for the database
+#   
+#   # === Character Set and Locale (Basic) ===
+#   encoding: "UTF8"                # Character encoding (e.g., UTF8, SQL_ASCII)
+#   locale: "en_US.UTF-8"           # Default locale (collation and ctype)
+#   
+#   # === Advanced Locale Configuration ===
+#   # Note: These settings cannot be changed after database creation
+#   
+#   # Locale provider: "libc" (default), "icu" (PostgreSQL 15+), "builtin" (PostgreSQL 17+)
+#   localeProvider: "libc"
+#   
+#   # Individual locale components (override the 'locale' setting)
+#   localeCollate: "en_US.UTF-8"    # String sort order
+#   localeCType: "en_US.UTF-8"      # Character classification
+#   
+#   # ICU Locale Settings (requires localeProvider: "icu", PostgreSQL 15+)
+#   # icuLocale: "en-US"            # ICU locale identifier
+#   # icuRules: ""                  # Custom collation rules (PostgreSQL 16+)
+#   
+#   # Builtin Locale (requires localeProvider: "builtin", PostgreSQL 17+)
+#   # builtinLocale: "C.UTF-8"
+#   
+#   # === Collation Version ===
+#   # collationVersion: "2.31"      # Track collation version for compatibility
+#   
+#   # === Template Database Settings ===
+#   isTemplate: false               # Make this database a template for cloning
+#   
+#   # === Lifecycle Management ===
+#   databaseReclaimPolicy: "retain" # Options: "retain" (default) or "delete"
+#   
+#   # === Kubernetes Metadata ===
+#   labels:
+#     app: "my-application"
+#     environment: "production"
+#     team: "platform"
+#   
+#   annotations:
+#     description: "Production database with advanced configuration"
+#     managed-by: "helm"
+
+# ============================================================================
+# Database Configurations
+# ============================================================================
+
 databases:
   - name: "document-index"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "document_index"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-os"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_os"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "inference-api"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "inference_api"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-studio"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_studio"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-oauth-gateway"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_oauth_gateway"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-assistant"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_assistant"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-chat"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_chat"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-catch"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_catch"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "zitadel"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "zitadel"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "openfga"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "openfga"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "dex"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "dex"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-conductor"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_conductor"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-numinous"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_numinous"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-transcribe-app"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_transcribe_app"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "pharia-data"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-pharia"
     owner: "pharia_data"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "temporal"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-temporal"
     owner: "temporal"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50
+
   - name: "temporal-visibility"
     enabled: true
     cluster: "qs-postgresql-cluster-cluster-temporal"
     owner: "temporal_visibility"
-    extensions:
-      - "uuid-ossp"
-      - "pgcrypto"
-      - "pg_stat_statements"
-      - "pg_trgm"
-      - "btree_gin"
     connectionLimit: 50

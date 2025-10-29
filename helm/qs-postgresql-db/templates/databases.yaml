@@ -6,33 +6,68 @@ apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
   name: {{ .name }}
+  {{- with .labels }}
+  labels:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   cluster:
     name: {{ .cluster }}
   name: {{ .name }}
-  {{- if .owner }}
-  owner: {{ .owner }}
+  {{- with .owner }}
+  owner: {{ . }}
   {{- end }}
-  {{- if .template }}
-  template: {{ .template }}
+  {{- with .ensure }}
+  ensure: {{ . }}
   {{- end }}
-  {{- if .encoding }}
-  encoding: {{ .encoding }}
+  {{- with .template }}
+  template: {{ . }}
   {{- end }}
-  {{- if .locale }}
-  locale: {{ .locale }}
+  {{- with .encoding }}
+  encoding: {{ . }}
   {{- end }}
-  {{- if .tablespace }}
-  tablespace: {{ .tablespace }}
+  {{- with .locale }}
+  locale: {{ . }}
   {{- end }}
-  {{- if .connectionLimit }}
-  connectionLimit: {{ .connectionLimit }}
+  {{- with .localeProvider }}
+  localeProvider: {{ . }}
   {{- end }}
-  {{- if .isTemplate }}
+  {{- with .localeCollate }}
+  localeCollate: {{ . }}
+  {{- end }}
+  {{- with .localeCType }}
+  localeCType: {{ . }}
+  {{- end }}
+  {{- with .icuLocale }}
+  icuLocale: {{ . }}
+  {{- end }}
+  {{- with .icuRules }}
+  icuRules: {{ . }}
+  {{- end }}
+  {{- with .builtinLocale }}
+  builtinLocale: {{ . }}
+  {{- end }}
+  {{- with .collationVersion }}
+  collationVersion: {{ . }}
+  {{- end }}
+  {{- if hasKey . "isTemplate" }}
   isTemplate: {{ .isTemplate }}
   {{- end }}
-  {{- if .allowConnections }}
+  {{- if hasKey . "allowConnections" }}
   allowConnections: {{ .allowConnections }}
+  {{- end }}
+  {{- if hasKey . "connectionLimit" }}
+  connectionLimit: {{ .connectionLimit }}
+  {{- end }}
+  {{- with .tablespace }}
+  tablespace: {{ . }}
+  {{- end }}
+  {{- with .databaseReclaimPolicy }}
+  databaseReclaimPolicy: {{ . }}
   {{- end }}
 {{- end }}
 {{- end }}
