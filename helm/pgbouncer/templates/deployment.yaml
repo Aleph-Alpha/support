@@ -60,7 +60,7 @@ spec:
         - name: config
           projected:
             sources:
-              - configMap:          
+              - configMap:
                   name: {{ template "pgbouncer.configFile" . }}
               - secret:
                   name: {{ template "pgbouncer.userlist.secret" . }}
@@ -127,4 +127,3 @@ spec:
         runAsUser: {{ .Values.security.runAsUser}}
         fsGroup: {{ .Values.security.fsGroup }}
       terminationGracePeriodSeconds: {{ .Values.deployment.terminationGracePeriodSeconds }}
-

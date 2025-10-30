@@ -43,28 +43,28 @@ tests:
 pgbouncerPharia:
   # Enable or disable this PgBouncer instance
   enabled: true
-  
+
   # Name override for this instance
   nameOverride: pgbouncer-pharia
-  
+
   # Number of PgBouncer replicas
   replicaCount: 3
-  
+
   # Pod anti-affinity setting (soft or hard)
   antiAffinity: soft
-  
+
   # === Database Configuration ===
   # Database connection settings for the Pharia PostgreSQL cluster
   databases:
     "*":
       host: "qs-postgresql-cluster-cluster-pharia-rw"  # Pharia PostgreSQL read-write endpoint
       port: 5432
-  
+
   # === Authentication Configuration ===
   # User authentication list secret
   userlist:
     secret: pgbouncer-pharia-userlist
-  
+
   # === Resource Configuration ===
   # CPU and memory resource requests and limits
   resources:
@@ -74,7 +74,7 @@ pgbouncerPharia:
     requests:
       cpu: "1"
       memory: 512Mi
-  
+
   # === Monitoring Configuration ===
   # PgBouncer metrics exporter for Prometheus
   pgbouncerExporter:
@@ -117,34 +117,34 @@ pgbouncerPharia:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-  
+
   # === ServiceMonitor Configuration ===
   # Prometheus Operator ServiceMonitor for metrics collection
   serviceMonitor:
     # Enable ServiceMonitor resource creation
     enabled: false
-    
+
     # Scrape interval for metrics collection
     interval: 30s
-    
+
     # Timeout for each scrape request
     scrapeTimeout: 10s
-    
+
     # Metrics endpoint path
     path: /metrics
-    
+
     # Additional labels for ServiceMonitor
     labels: {}
-    
+
     # Additional annotations for ServiceMonitor
     annotations: {}
-    
+
     # Honor labels from scraped data
     honorLabels: false
-    
+
     # Metric relabeling configuration
     metricRelabelings: []
-    
+
     # Target relabeling configuration
     relabelings: []
 
@@ -156,28 +156,28 @@ pgbouncerPharia:
 pgbouncerTemporal:
   # Enable or disable this PgBouncer instance
   enabled: true
-  
+
   # Name override for this instance
   nameOverride: pgbouncer-temporal
-  
+
   # Number of PgBouncer replicas
   replicaCount: 3
-  
+
   # Pod anti-affinity setting (soft or hard)
   antiAffinity: soft
-  
+
   # === Database Configuration ===
   # Database connection settings for the Temporal PostgreSQL cluster
   databases:
     "*":
       host: "qs-postgresql-cluster-cluster-temporal-rw"  # Temporal PostgreSQL read-write endpoint
       port: 5432
-  
+
   # === Authentication Configuration ===
   # User authentication list secret
   userlist:
     secret: pgbouncer-temporal-userlist
-  
+
   # === Resource Configuration ===
   # CPU and memory resource requests and limits
   resources:
@@ -187,7 +187,7 @@ pgbouncerTemporal:
     requests:
       cpu: "1"
       memory: 512Mi
-  
+
   # === Monitoring Configuration ===
   # PgBouncer metrics exporter for Prometheus
   pgbouncerExporter:
@@ -230,33 +230,33 @@ pgbouncerTemporal:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-  
+
   # === ServiceMonitor Configuration ===
   # Prometheus Operator ServiceMonitor for metrics collection
   serviceMonitor:
     # Enable ServiceMonitor resource creation
     enabled: false
-    
+
     # Scrape interval for metrics collection
     interval: 30s
-    
+
     # Timeout for each scrape request
     scrapeTimeout: 10s
-    
+
     # Metrics endpoint path
     path: /metrics
-    
+
     # Additional labels for ServiceMonitor
     labels: {}
-    
+
     # Additional annotations for ServiceMonitor
     annotations: {}
-    
+
     # Honor labels from scraped data
     honorLabels: false
-    
+
     # Metric relabeling configuration
     metricRelabelings: []
-    
+
     # Target relabeling configuration
     relabelings: []

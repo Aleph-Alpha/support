@@ -54,7 +54,7 @@ spec:
             - -c
             - |
               set -e
-              
+
               echo "Waiting for PostgreSQL cluster to be ready..."
               MAX_RETRIES=30
               RETRY=0
@@ -63,22 +63,22 @@ spec:
                 sleep 10
                 RETRY=$((RETRY+1))
               done
-              
+
               if [ $RETRY -eq $MAX_RETRIES ]; then
                 echo "ERROR: PostgreSQL cluster did not become ready in time"
                 exit 1
               fi
-              
+
               echo "PostgreSQL is ready!"
               echo ""
-              
+
               # Process each database
               {{- range $databases }}
-              echo "========================================" 
+              echo "========================================"
               echo "Processing database: {{ .name }}"
               echo "========================================"
               export PGDATABASE="{{ .name }}"
-              
+
               # Check if database exists
               if psql -lqt | cut -d \| -f 1 | grep -qw "{{ .name }}"; then
                 echo "Database exists, enabling extensions..."
@@ -96,10 +96,9 @@ spec:
               fi
               echo ""
               {{- end }}
-              
+
               echo "========================================"
               echo "Extension enablement complete!"
               echo "========================================"
 {{- end }}
 {{- end }}
-

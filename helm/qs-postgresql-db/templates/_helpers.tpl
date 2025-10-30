@@ -47,4 +47,3 @@ Selector labels
 app.kubernetes.io/name: {{ include "qs-postgresql-db.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
-

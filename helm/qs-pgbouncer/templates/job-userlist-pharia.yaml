@@ -27,7 +27,7 @@ spec:
             - |
               #!/bin/bash
               set -e
-              
+
               # Set locale to avoid tr: Illegal byte sequence errors
               export LC_ALL=C
               export LANG=C
@@ -61,58 +61,58 @@ spec:
                   print_status "Creating PgBouncer userlist secret..."
                   local secret_name="{{ .Values.pgbouncerPharia.userlist.secret }}"
                   local userlist_content=""
-                  
+
                   print_status "Looking for secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-pharia..."
-                  
+
                   # Get all secrets with both labels
                   local pg_secrets=$(kubectl get secrets -l "app.kubernetes.io/name=qs-postgresql-cluster,qs-postgresql-cluster/name=cluster-pharia" -o name)
-                  
+
                   if [ -z "$pg_secrets" ]; then
                       print_warning "No secrets found with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-pharia"
                       return 1
                   fi
-                  
+
                   # Iterate over each secret and extract user and password
                   for secret in $pg_secrets; do
                       local secret_name_only=$(echo "$secret" | sed 's/secret\///')
                       print_status "Processing secret: $secret_name_only"
-                      
+
                       # Get username from the secret
                       local username=$(kubectl get secret "$secret_name_only" -o jsonpath='{.data.username}' | base64 -d 2>/dev/null)
                       if [ -z "$username" ]; then
                           # Try 'user' field as fallback
                           username=$(kubectl get secret "$secret_name_only" -o jsonpath='{.data.user}' | base64 -d 2>/dev/null)
                       fi
-                      
+
                       # Get password from the secret
                       local password=$(kubectl get secret "$secret_name_only" -o jsonpath='{.data.password}' | base64 -d 2>/dev/null)
-                      
+
                       if [ -z "$username" ]; then
                           print_error "Failed to retrieve username from secret: $secret_name_only"
                           continue
                       fi
-                      
+
                       if [ -z "$password" ]; then
                           print_error "Failed to retrieve password from secret: $secret_name_only"
                           continue
                       fi
-                      
+
                       print_success "Found credentials for user: $username from secret: $secret_name_only"
-                      
+
                       # Add user entry to userlist content
                       userlist_content+="\"$username\" \"$password\"\n"
                   done
-                  
+
                   if [ -z "$userlist_content" ]; then
                       print_error "No valid user credentials found in any secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-pharia"
                       return 1
                   fi
-                  
+
                   # Remove trailing newline
                   userlist_content=$(echo -e "$userlist_content" | sed '$d')
-                  
+
                   print_status "Creating PgBouncer userlist secret: $secret_name"
-                  
+
                   # Create the secret with userlist.txt key
                   kubectl create secret generic "$secret_name" \
                       --from-literal=userlist.txt="$userlist_content" \
@@ -120,7 +120,7 @@ spec:
                       kubectl label --local -f - \
                       app.kubernetes.io/name="{{ include "qs-pgbouncer.fullname" . }}" \
                       -o yaml | kubectl apply -f -
-                  
+
                   print_success "Created PgBouncer userlist secret: $secret_name"
               }
 
@@ -162,4 +162,3 @@ spec:
         runAsUser: 1001
         fsGroup: 1001
 {{- end }}
-

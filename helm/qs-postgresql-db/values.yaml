@@ -83,62 +83,62 @@ tests:
 #
 # - name: "advanced-example"
 #   enabled: false
-#   
+#
 #   # === Required Fields ===
 #   cluster: "my-postgres-cluster"  # Reference to the PostgreSQL cluster
-#   
+#
 #   # === Basic Configuration ===
 #   owner: "app_user"               # Database owner role
 #   ensure: "present"               # Options: "present" (default) or "absent"
-#   
+#
 #   # === Connection Settings ===
 #   connectionLimit: 100            # Max concurrent connections (-1 = no limit)
 #   allowConnections: true          # Allow connections to this database
-#   
+#
 #   # === Template and Tablespace ===
 #   template: "template0"           # Template database to clone from
 #   tablespace: "pg_default"        # Tablespace for the database
-#   
+#
 #   # === Character Set and Locale (Basic) ===
 #   encoding: "UTF8"                # Character encoding (e.g., UTF8, SQL_ASCII)
 #   locale: "en_US.UTF-8"           # Default locale (collation and ctype)
-#   
+#
 #   # === Advanced Locale Configuration ===
 #   # Note: These settings cannot be changed after database creation
-#   
+#
 #   # Locale provider: "libc" (default), "icu" (PostgreSQL 15+), "builtin" (PostgreSQL 17+)
 #   localeProvider: "libc"
-#   
+#
 #   # Individual locale components (override the 'locale' setting)
 #   localeCollate: "en_US.UTF-8"    # String sort order
 #   localeCType: "en_US.UTF-8"      # Character classification
-#   
+#
 #   # ICU Locale Settings (requires localeProvider: "icu", PostgreSQL 15+)
 #   # icuLocale: "en-US"            # ICU locale identifier
 #   # icuRules: ""                  # Custom collation rules (PostgreSQL 16+)
-#   
+#
 #   # Builtin Locale (requires localeProvider: "builtin", PostgreSQL 17+)
 #   # builtinLocale: "C.UTF-8"
-#   
+#
 #   # === Collation Version ===
 #   # collationVersion: "2.31"      # Track collation version for compatibility
-#   
+#
 #   # === Template Database Settings ===
 #   isTemplate: false               # Make this database a template for cloning
-#   
+#
 #   # === Lifecycle Management ===
 #   databaseReclaimPolicy: "retain" # Options: "retain" (default) or "delete"
-#   
+#
 #   # === Kubernetes Metadata ===
 #   labels:
 #     app: "my-application"
 #     environment: "production"
 #     team: "platform"
-#   
+#
 #   annotations:
 #     description: "Production database with advanced configuration"
 #     managed-by: "helm"
-#   
+#
 #   # === PostgreSQL Extensions ===
 #   # Extensions are enabled automatically via a post-install/upgrade Job
 #   extensions:
