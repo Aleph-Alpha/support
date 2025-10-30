@@ -37,14 +37,14 @@ spec:
         - -c
         - |
           set -e
-          
+
           echo "════════════════════════════════════════════════════════════════"
           echo "  PgBouncer Connection Test"
           echo "  Instance: {{ $instance.name }}"
           echo "  Service: {{ $instance.fullname }}"
           echo "════════════════════════════════════════════════════════════════"
           echo
-          
+
           # Function to convert username to database name
           # If username has underscores and ends with _db, convert to hyphens and remove _db
           # Otherwise use username as-is
@@ -58,7 +58,7 @@ spec:
               echo "$username"
             fi
           }
-          
+
           # Wait for PgBouncer to be ready
           echo "⏳ Waiting for PgBouncer to be ready..."
           MAX_RETRIES=30
@@ -68,48 +68,48 @@ spec:
             sleep 5
             RETRY=$((RETRY+1))
           done
-          
+
           if [ $RETRY -eq $MAX_RETRIES ]; then
             echo "❌ ERROR: PgBouncer did not become ready in time"
             exit 1
           fi
           echo "✅ PgBouncer is ready"
           echo
-          
+
           FAILED_TESTS=0
           PASSED_TESTS=0
           TESTED_USERS=0
-          
+
           # Parse userlist.txt and test each user
           if [ ! -f /secrets/userlist/userlist.txt ]; then
             echo "❌ ERROR: userlist.txt not found at /secrets/userlist/userlist.txt"
             exit 1
           fi
-          
+
           echo "📋 Parsing userlist..."
-          
+
           # Read userlist and extract credentials
           while IFS= read -r line; do
             # Skip empty lines and comments
             [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-            
+
             # Extract username and password from format: "username" "password"
             if [[ $line =~ ^\"([^\"]+)\"[[:space:]]+\"([^\"]+)\" ]]; then
               USERNAME="${BASH_REMATCH[1]}"
               PASSWORD="${BASH_REMATCH[2]}"
               DBNAME=$(get_dbname "$USERNAME")
-              
+
               echo "────────────────────────────────────────────────────────────────"
               echo "Testing User: $USERNAME"
               echo "Database: $DBNAME"
               echo "────────────────────────────────────────────────────────────────"
-              
+
               export PGPASSWORD="$PASSWORD"
               export PGUSER="$USERNAME"
               export PGDATABASE="$DBNAME"
-              
+
               TESTED_USERS=$((TESTED_USERS + 1))
-              
+
               # Test 1: Basic connectivity through PgBouncer
               echo -n "  Test 1: PgBouncer connectivity... "
               if psql -h $PGHOST -p $PGPORT -c "SELECT 1;" > /dev/null 2>&1; then
@@ -119,7 +119,7 @@ spec:
                 echo "❌ FAIL"
                 FAILED_TESTS=$((FAILED_TESTS + 1))
               fi
-              
+
               # Test 2: Verify current user
               echo -n "  Test 2: User authentication... "
               CURRENT_USER=$(psql -h $PGHOST -p $PGPORT -t -c "SELECT current_user;" 2>/dev/null | tr -d '[:space:]')
@@ -130,7 +130,7 @@ spec:
                 echo "❌ FAIL (expected: $USERNAME, got: $CURRENT_USER)"
                 FAILED_TESTS=$((FAILED_TESTS + 1))
               fi
-              
+
               # Test 3: Verify current database
               echo -n "  Test 3: Database selection... "
               CURRENT_DB=$(psql -h $PGHOST -p $PGPORT -t -c "SELECT current_database();" 2>/dev/null | tr -d '[:space:]')
@@ -141,7 +141,7 @@ spec:
                 echo "❌ FAIL (expected: $DBNAME, got: $CURRENT_DB)"
                 FAILED_TESTS=$((FAILED_TESTS + 1))
               fi
-              
+
               # Test 4: Query execution
               echo -n "  Test 4: Query execution... "
               RESULT=$(psql -h $PGHOST -p $PGPORT -t -c "SELECT 2+2 AS result;" 2>/dev/null | tr -d '[:space:]')
@@ -152,16 +152,16 @@ spec:
                 echo "❌ FAIL"
                 FAILED_TESTS=$((FAILED_TESTS + 1))
               fi
-              
+
               echo
             fi
           done < /secrets/userlist/userlist.txt
-          
+
           if [ $TESTED_USERS -eq 0 ]; then
             echo "❌ ERROR: No valid users found in userlist.txt"
             exit 1
           fi
-          
+
           echo "════════════════════════════════════════════════════════════════"
           echo "  Test Summary"
           echo "════════════════════════════════════════════════════════════════"
@@ -171,13 +171,13 @@ spec:
           echo "  Tests Passed: $PASSED_TESTS"
           echo "  Tests Failed: $FAILED_TESTS"
           echo "════════════════════════════════════════════════════════════════"
-          
+
           if [ $FAILED_TESTS -gt 0 ]; then
             echo
             echo "❌ Some tests failed"
             exit 1
           fi
-          
+
           echo
           echo "✅ All tests passed successfully!"
           exit 0
@@ -193,4 +193,3 @@ spec:
           - key: userlist.txt
             path: userlist.txt
 {{- end }}
-

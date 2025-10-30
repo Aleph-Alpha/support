@@ -42,4 +42,3 @@ Selector labels
 app: {{ include "pgbouncer.fullname" . }}
 release: {{ .Release.Name }}
 {{- end }}
-

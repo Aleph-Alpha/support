@@ -178,4 +178,3 @@ helm uninstall qs-pgbouncer -n <namespace>
 ## License
 
 See [LICENSE](../../LICENSE) file.
-

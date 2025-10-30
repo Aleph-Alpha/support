@@ -240,16 +240,16 @@ pgbouncer:
   min_pool_size: 5
   reserve_pool_size: 5
   reserve_pool_timeout: 3
-  
+
   # Timeouts
   server_idle_timeout: 600
   query_wait_timeout: 120
-  
+
   # Logging
   log_connections: 1
   log_disconnections: 1
   log_pooler_errors: 1
-  
+
   # Authentication
   auth_type: scram-sha-256
   auth_file: /etc/pgbouncer/userlist.txt
@@ -366,4 +366,3 @@ helm uninstall my-pgbouncer -n <namespace>
 ## License
 
 See [LICENSE](../../LICENSE) file.
-
