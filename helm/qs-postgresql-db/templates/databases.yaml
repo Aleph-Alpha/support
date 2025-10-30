@@ -5,7 +5,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
-  name: {{ .name }}
+  name: {{ .cluster }}-{{ .name }}
   {{- with .labels }}
   labels:
     {{- toYaml . | nindent 4 }}
