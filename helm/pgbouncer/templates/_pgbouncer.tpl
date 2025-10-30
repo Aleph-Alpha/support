@@ -18,7 +18,6 @@ For further information, refer to https://www.pgbouncer.org/config.html
 */}}
 
 {{ define "pgbouncer.ini" }}
-
 {{/* [databases] section */}}
 {{- if $.Values.databases }}
   {{ printf "[databases]" }}

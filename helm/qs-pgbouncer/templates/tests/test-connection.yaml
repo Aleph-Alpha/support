@@ -1,0 +1,196 @@
+{{- $instances := list }}
+{{- if and (hasKey .Values "pgbouncerPharia") (.Values.pgbouncerPharia.enabled) }}
+{{- $instances = append $instances (dict "name" "pharia" "values" .Values.pgbouncerPharia "fullname" (printf "%s-pgbouncer-pharia" (include "qs-pgbouncer.fullname" $))) }}
+{{- end }}
+{{- if and (hasKey .Values "pgbouncerTemporal") (.Values.pgbouncerTemporal.enabled) }}
+{{- $instances = append $instances (dict "name" "temporal" "values" .Values.pgbouncerTemporal "fullname" (printf "%s-pgbouncer-temporal" (include "qs-pgbouncer.fullname" $))) }}
+{{- end }}
+{{- range $instance := $instances }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "qs-pgbouncer.fullname" $ }}-test-{{ $instance.name }}
+  labels:
+    {{- include "qs-pgbouncer.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: test
+    instance: {{ $instance.name }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test-connection
+      image: {{ $.Values.tests.image | default "postgres:17" }}
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: PGHOST
+          value: "{{ $instance.fullname }}"
+        - name: PGPORT
+          value: "5432"
+        - name: PGSSLMODE
+          value: {{ $.Values.tests.sslMode | default "prefer" | quote }}
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  PgBouncer Connection Test"
+          echo "  Instance: {{ $instance.name }}"
+          echo "  Service: {{ $instance.fullname }}"
+          echo "════════════════════════════════════════════════════════════════"
+          echo
+          
+          # Function to convert username to database name
+          # If username has underscores and ends with _db, convert to hyphens and remove _db
+          # Otherwise use username as-is
+          get_dbname() {
+            local username=$1
+            if [[ "$username" == *"_"* ]]; then
+              # Has underscores - convert to hyphens and remove _db suffix
+              echo "$username" | sed 's/_/-/g' | sed 's/-db$//'
+            else
+              # No underscores - use as-is
+              echo "$username"
+            fi
+          }
+          
+          # Wait for PgBouncer to be ready
+          echo "⏳ Waiting for PgBouncer to be ready..."
+          MAX_RETRIES=30
+          RETRY=0
+          until pg_isready -h $PGHOST -p $PGPORT || [ $RETRY -eq $MAX_RETRIES ]; do
+            echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
+            sleep 5
+            RETRY=$((RETRY+1))
+          done
+          
+          if [ $RETRY -eq $MAX_RETRIES ]; then
+            echo "❌ ERROR: PgBouncer did not become ready in time"
+            exit 1
+          fi
+          echo "✅ PgBouncer is ready"
+          echo
+          
+          FAILED_TESTS=0
+          PASSED_TESTS=0
+          TESTED_USERS=0
+          
+          # Parse userlist.txt and test each user
+          if [ ! -f /secrets/userlist/userlist.txt ]; then
+            echo "❌ ERROR: userlist.txt not found at /secrets/userlist/userlist.txt"
+            exit 1
+          fi
+          
+          echo "📋 Parsing userlist..."
+          
+          # Read userlist and extract credentials
+          while IFS= read -r line; do
+            # Skip empty lines and comments
+            [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+            
+            # Extract username and password from format: "username" "password"
+            if [[ $line =~ ^\"([^\"]+)\"[[:space:]]+\"([^\"]+)\" ]]; then
+              USERNAME="${BASH_REMATCH[1]}"
+              PASSWORD="${BASH_REMATCH[2]}"
+              DBNAME=$(get_dbname "$USERNAME")
+              
+              echo "────────────────────────────────────────────────────────────────"
+              echo "Testing User: $USERNAME"
+              echo "Database: $DBNAME"
+              echo "────────────────────────────────────────────────────────────────"
+              
+              export PGPASSWORD="$PASSWORD"
+              export PGUSER="$USERNAME"
+              export PGDATABASE="$DBNAME"
+              
+              TESTED_USERS=$((TESTED_USERS + 1))
+              
+              # Test 1: Basic connectivity through PgBouncer
+              echo -n "  Test 1: PgBouncer connectivity... "
+              if psql -h $PGHOST -p $PGPORT -c "SELECT 1;" > /dev/null 2>&1; then
+                echo "✅ PASS"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+              else
+                echo "❌ FAIL"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+              
+              # Test 2: Verify current user
+              echo -n "  Test 2: User authentication... "
+              CURRENT_USER=$(psql -h $PGHOST -p $PGPORT -t -c "SELECT current_user;" 2>/dev/null | tr -d '[:space:]')
+              if [ "$CURRENT_USER" = "$USERNAME" ]; then
+                echo "✅ PASS"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+              else
+                echo "❌ FAIL (expected: $USERNAME, got: $CURRENT_USER)"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+              
+              # Test 3: Verify current database
+              echo -n "  Test 3: Database selection... "
+              CURRENT_DB=$(psql -h $PGHOST -p $PGPORT -t -c "SELECT current_database();" 2>/dev/null | tr -d '[:space:]')
+              if [ "$CURRENT_DB" = "$DBNAME" ]; then
+                echo "✅ PASS"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+              else
+                echo "❌ FAIL (expected: $DBNAME, got: $CURRENT_DB)"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+              
+              # Test 4: Query execution
+              echo -n "  Test 4: Query execution... "
+              RESULT=$(psql -h $PGHOST -p $PGPORT -t -c "SELECT 2+2 AS result;" 2>/dev/null | tr -d '[:space:]')
+              if [ "$RESULT" = "4" ]; then
+                echo "✅ PASS"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+              else
+                echo "❌ FAIL"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+              
+              echo
+            fi
+          done < /secrets/userlist/userlist.txt
+          
+          if [ $TESTED_USERS -eq 0 ]; then
+            echo "❌ ERROR: No valid users found in userlist.txt"
+            exit 1
+          fi
+          
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Test Summary"
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Instance: {{ $instance.name }}"
+          echo "  Service: {{ $instance.fullname }}"
+          echo "  Users Tested: $TESTED_USERS"
+          echo "  Tests Passed: $PASSED_TESTS"
+          echo "  Tests Failed: $FAILED_TESTS"
+          echo "════════════════════════════════════════════════════════════════"
+          
+          if [ $FAILED_TESTS -gt 0 ]; then
+            echo
+            echo "❌ Some tests failed"
+            exit 1
+          fi
+          
+          echo
+          echo "✅ All tests passed successfully!"
+          exit 0
+      volumeMounts:
+        - name: userlist-secret
+          mountPath: /secrets/userlist
+          readOnly: true
+  volumes:
+    - name: userlist-secret
+      secret:
+        secretName: {{ $instance.values.userlist.secret }}
+        items:
+          - key: userlist.txt
+            path: userlist.txt
+{{- end }}
+

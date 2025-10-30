@@ -81,11 +81,11 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: pgbouncer
-              containerPort: {{ .Values.internalPort }}
+              containerPort: {{ .Values.deployment.containerPort }}
           {{- if .Values.deployment.readinessProbe.enabled }}
           readinessProbe:
             tcpSocket:
-              port: {{ .Values.internalPort }}
+              port: {{ .Values.deployment.containerPort }}
             initialDelaySeconds: {{ .Values.deployment.readinessProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.deployment.readinessProbe.periodSeconds }}
             timeoutSeconds: {{ .Values.deployment.readinessProbe.timeoutSeconds }}
@@ -95,7 +95,7 @@ spec:
           {{- if .Values.deployment.livenessProbe.enabled }}
           livenessProbe:
             tcpSocket:
-              port: {{ .Values.internalPort }}
+              port: {{ .Values.deployment.containerPort }}
             initialDelaySeconds: {{ .Values.deployment.livenessProbe.initialDelaySeconds }}
             periodSeconds: {{ .Values.deployment.livenessProbe.periodSeconds }}
             timeoutSeconds: {{ .Values.deployment.livenessProbe.timeoutSeconds }}

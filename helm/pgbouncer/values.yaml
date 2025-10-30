@@ -1,60 +1,108 @@
+# ============================================================================
+# PgBouncer Helm Chart Configuration
+# ============================================================================
+#
+# This Helm chart deploys PgBouncer as a connection pooler for PostgreSQL.
+# It is optimized for use with CloudNativePG clusters.
+#
+# For more details, see:
+# - https://www.pgbouncer.org/config.html
+# - https://github.com/cloudnative-pg/pgbouncer-containers
+# - https://www.pgbouncer.org/usage.html
 
+# ============================================================================
+# Basic Configuration
+# ============================================================================
+
+# Name override for Kubernetes resources
 nameOverride: "pgbouncer"
 
+# Number of PgBouncer replicas to run
 replicaCount: 1
-internalPort: 6432
-servicePort: 5432
-antiAffinity: hard
-nodeAffinity: {} # optionally define nodeAffinity
-tolerations: [] # optionally define tolerations
 
-## Node labels for pod assignment
-## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
-nodeSelector: {} # optionally define nodeSelector
-
-# PodDisruptionBudget spec.maxUnavailable
-maxUnavailable: 1
-
-## CloudNativePG specific configuration
-## ref: https://github.com/cloudnative-pg/pgbouncer-containers/pkgs/container/pgbouncer
+# ============================================================================
+# Container Image Configuration
+# ============================================================================
+# CloudNativePG PgBouncer container image
+# ref: https://github.com/cloudnative-pg/pgbouncer-containers/pkgs/container/pgbouncer
 image:
   repository: ghcr.io/cloudnative-pg/pgbouncer
   tag: 1.24.0-14
   pullPolicy: IfNotPresent
 
+# Secrets for pulling images from private registries
 imagePullSecrets: []
 
+# ============================================================================
+# High Availability Configuration
+# ============================================================================
+
+# Pod anti-affinity setting (soft or hard)
+antiAffinity: hard
+
+# PodDisruptionBudget maximum unavailable pods
+maxUnavailable: 1
+
+# ============================================================================
+# Kubernetes Scheduling Configuration
+# ============================================================================
+# Node affinity configuration
+# ref: https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node/
+nodeAffinity: {}
+
+# Tolerations for node taints
+# ref: https://kubernetes.io/docs/concepts/scheduling-eviction/taint-and-toleration/
+tolerations: []
+
+# Node selector for pod assignment
+# ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#nodeselector
+nodeSelector: {}
+
+# Pod affinity/anti-affinity configuration
+affinity:
+  podAntiAffinity:
+    topologyKey: kubernetes.io/hostname
+
+# ============================================================================
+# Deployment Configuration
+# ============================================================================
+
 deployment:
+  # Port PgBouncer container listens on
+  containerPort: 6432
+  
+  # Graceful shutdown timeout
   terminationGracePeriodSeconds: 120
+  
+  # Readiness probe configuration
   readinessProbe:
     enabled: true
-    # defaults to the internalPort port
-    port:
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 1
     successThreshold: 1
     failureThreshold: 3
+  
+  # Liveness probe configuration
   livenessProbe:
     enabled: true
-    # defaults to the internalPort port
-    port:
     initialDelaySeconds: 5
     periodSeconds: 10
     timeoutSeconds: 1
     successThreshold: 1
     failureThreshold: 3
-
-  # Strategy is utilized to configure the desired upgrade approach and
-  # configuration for the deployment.  See the Kubernetes documentation
-  # related to this subject.
-  # https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
+  
+  # Deployment update strategy
+  # ref: https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#strategy
   strategy:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 1
 
-# Service configuration
+# ============================================================================
+# Service Configuration
+# ============================================================================
+
 service:
   type: ClusterIP
   ports:
@@ -67,408 +115,415 @@ service:
     port: 9127
     targetPort: 9127
     protocol: TCP
-## Labels to add to the pod metadata
-##
+
+# ============================================================================
+# Pod Metadata Configuration
+# ============================================================================
+
+# Custom labels to add to pods
 podLabels: {}
-# key: value
+# Example:
+#   app: my-application
+#   environment: production
 
-## Annotations to add to the pod metadata
+# Custom annotations to add to pods
 podAnnotations: {}
-  # prometheus.io/scrape: "true"
-  # prometheus.io/port: "9127"
-  # prometheus.io/path: "/metrics"
+# Example for Prometheus monitoring:
+#   prometheus.io/scrape: "true"
+#   prometheus.io/port: "9127"
+#   prometheus.io/path: "/metrics"
 
-affinity:
-  podAntiAffinity:
-    topologyKey: kubernetes.io/hostname
+# ============================================================================
+# PgBouncer Database Configuration
+# ============================================================================
+# Database connection configuration
+# ref: https://www.pgbouncer.org/config.html
+# ref: https://github.com/pgbouncer/pgbouncer/blob/pgbouncer_1_24_0/etc/pgbouncer.ini
+#
+# Each database can be configured with the following parameters:
+# - dbname: Target database name
+# - host: PostgreSQL server hostname
+# - port: PostgreSQL server port (default: 5432)
+# - user: Username for connecting to the database
+# - password: Password for the user
+# - auth_user: User for authentication queries
+# - pool_size: Maximum number of server connections per user/database pair
+# - min_pool_size: Minimum pool size
+# - reserve_pool: Additional connections for high load
+# - connect_query: Query to execute after connecting
+# - pool_mode: Pooling mode (session, transaction, statement)
+# - max_db_connections: Maximum connections to this database
+# - client_encoding: Character encoding (e.g., UTF8)
+# - datestyle: Date format style
+# - timezone: Timezone setting (e.g., UTC)
 
-###
-### pgbouncer configuration
-### - https://www.pgbouncer.org/config.html
-### - https://github.com/pgbouncer/pgbouncer/blob/pgbouncer_1_24_0/etc/pgbouncer.ini
 databases: {}
-  # <dbname>:
-  #   dbname: foo
-  #   host: "dbod-foo.cern.ch"
-  #   port: 5432
-  #   user: bar
-  #   password: xxx
-  #   auth_user: pgbouncer
-  #   pool_size: 20
-  #   min_pool_size: 0
-  #   reserve_pool: 0
-  #   connect_query:
-  #   pool_mode: transaction
-  #   max_db_connections: 20
-  #   client_encoding: UTF8
-  #   datestyle:
-  #   timezone: UTC
+# Example configuration:
+#   my-database:
+#     dbname: foo
+#     host: "postgres.example.com"
+#     port: 5432
+#     user: app_user
+#     password: secret
+#     auth_user: pgbouncer
+#     pool_size: 20
+#     min_pool_size: 0
+#     reserve_pool: 0
+#     connect_query:
+#     pool_mode: transaction
+#     max_db_connections: 20
+#     client_encoding: UTF8
+#     datestyle:
+#     timezone: UTC
 
-## User specific configuration
+# User-specific configuration overrides
 users: {}
-  # pool_mode:
-  # max_user_connections:
+# Example configuration:
+#   user1:
+#     pool_mode: transaction
+#     max_user_connections: 10
 
-## Configuration section
+# ============================================================================
+# PgBouncer Configuration
+# ============================================================================
+# Main PgBouncer settings
+# ref: https://www.pgbouncer.org/config.html
+# ref: https://github.com/pgbouncer/pgbouncer/blob/pgbouncer_1_24_0/etc/pgbouncer.ini
+#
+# Note: Only enabled values represent the minimal required configuration.
+# Commented values show available options with their defaults.
+
 pgbouncer:
-  ### Enabled values are the minimal configuration.
-
-  ##
-  ## Administrative settings
-  ##
-
-  logfile: /dev/stdout  
+  # === Administrative Settings ===
+  
+  # Log file location (stdout for container logs)
+  logfile: /dev/stdout
   # pidfile:
-
-  ##
-  ## Where to wait for clients
-  ##
-
-  ## IP address or * which means all IPs
+  
+  # === Network Configuration ===
+  
+  # IP address to listen on (* = all IPs, 0.0.0.0 = all IPv4)
   listen_addr: 0.0.0.0
+  
+  # Port for PgBouncer to listen on
   listen_port: 6432
-
-  ## Unix socket is also used for -R.
-  ## On Debian it should be /var/run/postgresql
-  unix_socket_dir: "" # Set to empty to disable
+  
+  # Unix socket directory (empty to disable)
+  # On Debian/Ubuntu typically /var/run/postgresql
+  unix_socket_dir: ""
   # unix_socket_mode: 0777
   # unix_socket_group:
-
-  ## The peer id used to identify this pgbouncer process in a group of pgbouncer
-  ## processes that are peered together. When set to 0 pgbouncer peering is disabled
-  # peer_id = 0
-
-  ###
-  ### TLS settings for accepting clients
-  ###
-
-  ## disable, allow, require, verify-ca, verify-full
+  
+  # Peer ID for PgBouncer clustering (0 = peering disabled)
+  # peer_id: 0
+  
+  # === TLS Settings for Client Connections ===
+  # Configuration for TLS encryption from clients to PgBouncer
+  
+  # Client TLS mode: disable, allow, require, verify-ca, verify-full
   # client_tls_sslmode: disable
-
-  ## Path to file that contains trusted CA certs
+  
+  # Path to trusted CA certificates file
   # client_tls_ca_file:
-
-  ## Private key and cert to present to clients.
-  ## Required for accepting TLS connections from clients.
+  
+  # Private key and certificate for TLS (required for client TLS)
   # client_tls_key_file:
   # client_tls_cert_file:
-
-  ## fast, normal, secure, legacy, <ciphersuite string>
+  
+  # Cipher suite: fast, normal, secure, legacy, or custom string
   # client_tls_ciphers: fast
-
-  ## all, secure, tlsv1.0, tlsv1.1, tlsv1.2, tlsv1.3
+  
+  # TLS protocol versions: all, secure, tlsv1.0, tlsv1.1, tlsv1.2, tlsv1.3
   # client_tls_protocols: secure
-
-  ## none, auto, legacy
+  
+  # Diffie-Hellman parameters: none, auto, legacy
   # client_tls_dheparams: auto
-
-  ## none, auto, <curve name>
+  
+  # Elliptic curve: none, auto, or curve name
   # client_tls_ecdhcurve: auto
-
-  ###
-  ### TLS settings for connecting to backend databases
-  ###
-
-  ## disable, allow, require, verify-ca, verify-full
+  
+  # === TLS Settings for Backend Connections ===
+  # Configuration for TLS encryption from PgBouncer to PostgreSQL
+  
+  # Server TLS mode: disable, allow, require, verify-ca, verify-full
   # server_tls_sslmode: disable
-
-  ## Path to that contains trusted CA certs
+  
+  # Path to trusted CA certificates file
   # server_tls_ca_file:
-
-  ## Private key and cert to present to backend.
-  ## Needed only if backend server require client cert.
+  
+  # Client certificate for backend (only if backend requires it)
   # server_tls_key_file:
   # server_tls_cert_file:
-
-  ## all, secure, tlsv1.0, tlsv1.1, tlsv1.2, tlsv1.3
+  
+  # TLS protocol versions: all, secure, tlsv1.0, tlsv1.1, tlsv1.2, tlsv1.3
   # server_tls_protocols: secure
-
-  ## fast, normal, secure, legacy, <ciphersuite string>
+  
+  # Cipher suite: fast, normal, secure, legacy, or custom string
   # server_tls_ciphers: default
-
-  ###
-  ### Authentication settings
-  ###
-
-  ## cert, md5, scram-sha-256, plain, trust, any, hba, pam
+  
+  # === Authentication Settings ===
+  # User authentication configuration
+  
+  # Authentication type: cert, md5, scram-sha-256, plain, trust, any, hba, pam
   auth_type: scram-sha-256
-  ## consider adding users under userlist element when this is enabled
+  
+  # Path to authentication file (userlist)
   auth_file: /etc/pgbouncer/userlist.txt
-
-  ## Path to HBA-style auth config
+  
+  # Path to HBA-style authentication configuration
   # auth_hba_file:
-
-  # Path to Pg-ident-style map file
-  # auth_ident_file 
-
-  ## Query to use to fetch password from database.  Result
-  ## must have 2 columns - username and password hash.
+  
+  # Path to pg_ident-style user mapping file
+  # auth_ident_file:
+  
+  # Query to fetch passwords from database (must return username and password)
   # auth_query: select uname, password FROM pgbouncer.get_auth($1)
-
-  ## Authentication database that can be set globally to run "auth_query".
+  
+  # Database to run auth_query against
   # auth_dbname:
-
-  ###
-  ### Users allowed into database 'pgbouncer'
-  ###
-
-  ## comma-separated list of users who are allowed to change settings
+  
+  # === Administrative Access ===
+  # Control access to PgBouncer administrative functions
+  
+  # Comma-separated list of users allowed to change settings
   # admin_users: user2, someadmin, otheradmin
-
-  ## comma-separated list of users who are just allowed to use SHOW command
+  
+  # Comma-separated list of users allowed to use SHOW commands
   # stats_users: stats, root
-
-  ###
-  ### Pooler personality questions
-  ###
-
-  ## When server connection is released back to pool:
-  ##   session      - after client disconnects (default)
-  ##   transaction  - after transaction finishes
-  ##   statement    - after statement finishes
+  
+  # === Pooling Behavior ===
+  # Control when server connections are released back to the pool
+  
+  # Pool mode (when connections are returned to pool):
+  # - session: After client disconnects (default)
+  # - transaction: After transaction finishes (recommended)
+  # - statement: After each statement finishes
   pool_mode: transaction
-
-  ## Number of prepared statements to cache on a server connection (zero value
-  ## disables support of prepared statements).
+  
+  # Maximum prepared statements to cache per connection (0 = disabled)
   # max_prepared_statements: 0
-
-  ## Query for cleaning connection immediately after releasing from
-  ## client. No need to put ROLLBACK here, pgbouncer does not reuse
-  ## connections where transaction is left open.
+  
+  # Query to clean connection after release (ROLLBACK handled automatically)
   # server_reset_query: DISCARD ALL
-
-  ## Whether server_reset_query should run in all pooling modes. If it
-  ## is off, server_reset_query is used only for session-pooling.
+  
+  # Whether server_reset_query runs in all modes (false = session mode only)
   # server_reset_query_always: 0
-
-  ## Comma-separated list of parameters to track per client.  The
-  ## Postgres parameters listed here will be cached per client by
-  ## pgbouncer and restored in server every time the client runs a query.
-  # track_extra_parameters = IntervalStyle
-
-  ## Comma-separated list of parameters to ignore when given in startup
-  ## packet. Newer JDBC versions require the extra_float_digits here.
+  
+  # Comma-separated PostgreSQL parameters to track per client
+  # Parameters are cached and restored when client uses a server connection
+  # track_extra_parameters: IntervalStyle
+  
+  # Startup parameters to ignore (e.g., extra_float_digits for newer JDBC)
   # ignore_startup_parameters: extra_float_digits
-
-  ## When taking idle server into use, this query is run first.
+  
+  # Query to run when taking idle server connection into use
   # server_check_query: select 1
-
-  ## If server was used more recently that this many seconds ago,
-  ## skip the check query. Value 0 may or may not run in immediately.
+  
+  # Skip check query if server was used recently (seconds, 0 = always run)
   # server_check_delay: 30
-
-  ## Close servers in session pooling mode after a RECONNECT, RELOAD,
-  ## etc. when they are idle instead of at the end of the session.
+  
+  # Close idle servers immediately in session mode during RECONNECT/RELOAD
   # server_fast_close: 0
-
-  ## Use <appname - host> as application_name on server.
+  
+  # Add host to application_name on server connection
   # application_name_add_host: 0
-
-  ## Period for updating aggregated stats.
+  
+  # Stats update period in seconds
   # stats_period: 60
-
-  ###
-  ### Connection limits
-  ###
-
-  ## Total number of clients that can connect
+  
+  # === Connection Limits ===
+  # Control maximum connections and pool sizes
+  
+  # Maximum number of client connections
   max_client_conn: 300
-
-  ## Default pool size. 20 is good number when transaction pooling
-  ## is in use, in session pooling it needs to be the number of
-  ## max clients you want to handle at any moment
+  
+  # Default pool size per user/database pair
+  # - Transaction pooling: 20 is a good default
+  # - Session pooling: Set to max concurrent clients
   default_pool_size: 20
-
-  ## Minimum number of server connections to keep in pool.
+  
+  # Minimum number of server connections to maintain in pool
   # min_pool_size: 0
-
-  ## How many additional connection to allow in case of trouble
+  
+  # Additional connections to allow under high load
   # reserve_pool_size: 0
-
-  ## If a clients needs to wait more than this many seconds, use reserve pool.
+  
+  # Client wait time (seconds) before using reserve pool
   # reserve_pool_timeout: 5
-
-  ## Maximum number of server connections for a database
+  
+  # Maximum server connections per database (0 = unlimited)
   # max_db_connections: 0
-
-  ## Maximum number of server connections for a user
+  
+  # Maximum server connections per user (0 = unlimited)
   # max_user_connections: 0
-
-  ## If off, then server connections are reused in LIFO manner
+  
+  # Connection reuse strategy (false = LIFO, true = round-robin)
   # server_round_robin: 0
-
-  ###
-  ### Logging
-  ###
-
-  ## Syslog settings
+  
+  # === Logging Configuration ===
+  # Control what PgBouncer logs
+  
+  # Syslog configuration (0 = disabled, 1 = enabled)
   # syslog: 0
   # syslog_ident: pgbouncer
   # syslog_facility: daemon
-
-  ## log if client connects or server connection is made
+  
+  # Log client connections and server connections (0 = disabled)
   log_connections: 0
-
-  ## log if and why connection was closed
+  
+  # Log connection closures with reasons (0 = disabled)
   log_disconnections: 0
-
-  ## log error messages pooler sends to clients
+  
+  # Log error messages sent to clients (1 = enabled)
   log_pooler_errors: 1
-
-  ## write aggregated stats into log
+  
+  # Log aggregated statistics (1 = enabled)
   log_stats: 1
-
-  ## Logging verbosity.  Same as -v switch on command line.
+  
+  # Logging verbosity level (0 = normal, increase for more detail)
   # verbose: 0
-
-  ###
-  ### Timeouts
-  ###
-
-  ## Close server connection if its been connected longer.
+  
+  # === Timeout Configuration ===
+  # Connection and query timeout settings (in seconds)
+  
+  # Maximum lifetime of a server connection (seconds)
   # server_lifetime: 3600
-
-  ## Close server connection if its not been used in this time. Allows
-  ## to clean unnecessary connections from pool after peak.
+  
+  # Close idle server connections after this time (helps cleanup after peak load)
   # server_idle_timeout: 600
-
-  ## Cancel connection attempt if server does not answer takes longer.
+  
+  # Timeout for establishing server connection (seconds)
   # server_connect_timeout: 15
-
-  ## If server login failed (server_connect_timeout or auth failure)
-  ## then wait this many second before trying again.
+  
+  # Wait time after failed login before retry (seconds)
   # server_login_retry: 15
-
-  ## Dangerous. Server connection is closed if query does not return in
-  ## this time. Should be used to survive network problems, _not_ as
-  ## statement_timeout. (default: 0)
+  
+  # Query timeout - close server connection if query runs too long
+  # WARNING: Use for network issues, not as statement_timeout (0 = disabled)
   # query_timeout: 0
-
-  ## Dangerous. Client connection is closed if the query is not
-  ## assigned to a server in this time.  Should be used to limit the
-  ## number of queued queries in case of a database or network
-  ## failure. (default: 120)
+  
+  # Maximum time query can wait for server assignment
+  # WARNING: Use to handle database failures gracefully (default: 120)
   # query_wait_timeout: 120
-
-  ## Maximum time cancellation requests are allowed to spend waiting for execution.
-  ## If the cancel request is not assigned to a server during that time,
-  ## the client is disconnected. 0 disables.
-  ## If this is disabled, cancel requests will be queued indefinitely. [seconds]
-  ## This setting is used to prevent a client locking up when a cancel cannot be forwarded due to the server being down. (default: 10)
+  
+  # Maximum time for cancel request to wait for execution
+  # Prevents client lockup when server is down (0 = disabled, default: 10)
   # cancel_wait_timeout: 10
-
-  ## Dangerous. Client connection is closed if no activity in this
-  ## time.  Should be used to survive network problems. (default: 0)
+  
+  # Close idle client connections after this time
+  # WARNING: Use for network issues (0 = disabled, default: 0)
   # client_idle_timeout: 0
-
-  ## Disconnect clients who have not managed to log in after connecting
-  ## in this many seconds.
+  
+  # Disconnect clients that don't complete login in time (seconds)
   # client_login_timeout: 60
-
-  ##Clean automatically created database entries (via "*") if they stay
-  ## unused in this many seconds.
+  
+  # Clean auto-created database entries (via "*") after idle time (seconds)
   # autodb_idle_timeout: 3600
-
-  ## Close connections which are in "IDLE in transaction" state longer
-  ## than this many seconds.
+  
+  # Close connections idle in transaction longer than this (seconds)
   # idle_transaction_timeout: 0
-
-  ## How long SUSPEND/-R waits for buffer flush before closing connection.
+  
+  # Buffer flush timeout during SUSPEND/-R (seconds)
   # suspend_timeout: 10
-
-  ###
-  ### Low-level tuning options
-  ###
-
-  ## buffer for streaming packets
+  
+  # === Low-Level Network Tuning ===
+  # Advanced networking and performance tuning options
+  
+  # Buffer size for streaming packets (bytes)
   # pkt_buf: 4096
-
-  ## man 2 listen
+  
+  # Socket listen backlog (see man 2 listen)
   # listen_backlog: 128
-
-  ## Max number pkt_buf to process in one event loop.
+  
+  # Max packet buffers to process per event loop iteration
   # sbuf_loopcnt: 5
-
-  ## Maximum PostgreSQL protocol packet size.
+  
+  # Maximum PostgreSQL protocol packet size (bytes)
   # max_packet_size: 2147483647
-
-  ## Set SO_REUSEPORT socket option
+  
+  # Enable SO_REUSEPORT socket option (0 = disabled, 1 = enabled)
   # so_reuseport: 0
-
-  ## networking options, for info: man 7 tcp
-
-  ## Linux: Notify program about new connection only if there is also
-  ## data received. (Seconds to wait.) On Linux the default is 45, on
-  ## other OS'es 0.
+  
+  # === TCP Configuration ===
+  # Low-level TCP tuning options (see man 7 tcp)
+  
+  # TCP_DEFER_ACCEPT: Wait for data before notifying (Linux default: 45, other OS: 0)
   # tcp_defer_accept: 0
-
-  ## In-kernel buffer size (Linux default: 4096)
+  
+  # In-kernel TCP buffer size in bytes (Linux default: 4096)
   # tcp_socket_buffer: 0
-
-  ## whether tcp keepalive should be turned on (0/1)
+  
+  # Enable TCP keepalive (0 = disabled, 1 = enabled)
   # tcp_keepalive: 1
-
-  # The following options are Linux-specific. They also require tcp_keepalive: 1
-
-  ## Count of keepalive packets
+  
+  # === TCP Keepalive Settings (Linux-specific, requires tcp_keepalive: 1) ===
+  
+  # Number of keepalive packets to send
   # tcp_keepcnt: 0
-
-  ## How long the connection can be idle before sending keepalive packets
+  
+  # Idle time before sending keepalive packets (seconds)
   # tcp_keepidle: 0
-
-  ## The time between individual keepalive probes
+  
+  # Interval between keepalive probes (seconds)
   # tcp_keepintvl: 0
-
-  ## How long may transmitted data remain unacknowledged before TCP
-  ## connection is closed (in milliseconds)
+  
+  # Maximum time for unacknowledged data before closing (milliseconds)
   # tcp_user_timeout: 0
-
-  ## DNS lookup caching time
+  
+  # === DNS Configuration ===
+  # DNS lookup and caching settings
+  
+  # DNS lookup cache time (seconds)
   # dns_max_ttl: 15
-
-  ## DNS zone SOA lookup period
+  
+  # DNS zone SOA lookup period (seconds)
   # dns_zone_check_period: 0
-
-  ## DNS negative result caching time
+  
+  # DNS negative result (NXDOMAIN) cache time (seconds)
   # dns_nxdomain_ttl: 15
-
-  ## Custom resolv.conf file, to set custom DNS servers or other options
-  ## (default: empty = use OS settings)
+  
+  # Custom resolv.conf file path (empty = use OS settings)
   # resolv_conf: /etc/pgbouncer/resolv.conf
-
-  ###
-  ### Random stuff
-  ###
-
-  ## Hackish security feature. Helps against SQL injection: when PQexec
-  ## is disabled, multi-statement cannot be made.
+  
+  # === Miscellaneous Settings ===
+  
+  # Disable PQexec to prevent multi-statement queries (security feature)
   # disable_pqexec: 0
-
-  ## Config file to use for next RELOAD/SIGHUP
-  ## By default contains config file from command line.
+  
+  # Configuration file for next RELOAD/SIGHUP (default: from command line)
   # conffile:
-
-  ## Windows service name to register as. job_name is alias for
-  ## service_name, used by some Skytools scripts.
+  
+  # Windows service registration name (job_name is Skytools alias)
   # service_name: pgbouncer
   # job_name: pgbouncer
+  
+  # Include additional configuration files
+  # include: /etc/pgbouncer.d/extra-pgbouncer.ini
 
-###
-### Include directive
-###
-## Read additional config from other file
-# include: /etc/pgbouncer.d/extra-pgbouncer.ini
+# ============================================================================
+# Authentication Userlist Configuration
+# ============================================================================
+# User authentication list configuration
+# 
+# The userlist contains username and password hash pairs for authentication.
+# Format: "username" "password_hash"
+# 
+# To generate userlist from PostgreSQL:
+# psql -Atq -U postgres -d postgres -c \
+#   "SELECT concat('\"', usename, '\" \"', passwd, '\"') FROM pg_shadow;"
+#
+# Note: The userlist secret is typically created by a Kubernetes Job
 
-## Authentication file format
-## list of users to connect to database, You can get by running this query
-## psql -Atq -U postgres -d postgres -c "SELECT concat('\"', usename, '\" \"', passwd, '\"') FROM pg_shadow;"
-
-# Job will create this secret
 userlist: {}
-  # secret: pgbouncer-userlist
+# Example:
+#   secret: pgbouncer-userlist
 
-## Containers, which are run before the app containers are started
-##
+# ============================================================================
+# Init Containers Configuration
+# ============================================================================
+# Containers that run before the main PgBouncer container starts
+# Used for setup tasks like waiting for configuration files
+
 extraInitContainers:
   - name: config-updater
     image: "ghcr.io/cloudnative-pg/pgbouncer:1.24.0-14"
@@ -505,27 +560,39 @@ extraInitContainers:
       - name: config-updated
         mountPath: /etc/pgbouncer
 
-## Additional volumeMounts to the main container
-##
+# ============================================================================
+# Volume Mounts Configuration
+# ============================================================================
+# Additional volume mounts for the main PgBouncer container
+
 extraVolumeMounts:
 - mountPath: /original/pgbouncer
   name: config
+# Additional mount examples:
 # - mountPath: /etc/pgbouncer
 #   name: config-updated
 
-## Additional volumes to the pods
-##
+# ============================================================================
+# Volumes Configuration
+# ============================================================================
+# Additional volumes to attach to the pod
+
 extraVolumes:
 - name: config-updated
   emptyDir: {}
+# Additional volume examples:
 # - name: extra-pgbouncer-ini
 #   mountPath: /etc/pgbouncer.d
 #   subPath: ""
 #   configMap: extra-configmap-ini
 #   readOnly: true
 
-# Main pgbouncer container resources
-## ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+# ============================================================================
+# Resource Limits Configuration
+# ============================================================================
+# CPU and memory resource requests and limits
+# ref: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+
 resources:
   limits:
     cpu: "1"
@@ -533,12 +600,19 @@ resources:
     cpu: "1"
     memory: 20Mi
 
+# ============================================================================
+# Security Configuration
+# ============================================================================
+# Pod and container security settings
+
+# Pod security context
 security:
-  # 998 is the default user ID for pgbouncer.
+  # User ID for PgBouncer (998 is default)
   runAsUser: 998
+  # Group ID for filesystem access
   fsGroup: 996
 
-## Allow to overwrite the specific security context under which the gitaly container is running.
+# Container security context
 containerSecurityContext:
   runAsUser: 998
   allowPrivilegeEscalation: false
@@ -546,59 +620,84 @@ containerSecurityContext:
   capabilities:
     drop: ["ALL"]
 
-###
-### pgbouncer Exporter container image and configuration
-###
-### When enabling, make sure to update podAnnotations: {} accordingly
+# ============================================================================
+# Monitoring Configuration
+# ============================================================================
+# PgBouncer metrics exporter for Prometheus monitoring
+# 
+# When enabling the exporter, remember to configure podAnnotations for Prometheus:
+# podAnnotations:
+#   prometheus.io/scrape: "true"
+#   prometheus.io/port: "9127"
+#   prometheus.io/path: "/metrics"
+
 pgbouncerExporter: []
-  # - name: metrics-exporter
-  #   image: quay.io/prometheuscommunity/pgbouncer-exporter:v0.11.0
-  #   ports:
-  #     - name: metrics
-  #       containerPort: 9127
-  #   args:
-  #     - --web.listen-address=:9127
-  #     - --web.telemetry-path=/metrics
-  #     - --log.level=error
-  #     - --pgBouncer.connectionString=postgres://$(PGBOUNCER_USER):$(PGBOUNCER_PWD)@localhost:6432/pgbouncer?sslmode=disable&connect_timeout=10
-  #   env:
-  #     - name: PGBOUNCER_USER
-  #       valueFrom:
-  #         secretKeyRef:
-  #           name: "pgbouncer-cred" # Name of the secret containing PgBouncer credentials
-  #           key:  user
-  #     - name: PGBOUNCER_PWD
-  #       valueFrom:
-  #         secretKeyRef:
-  #           name: "pgbouncer-cred" # Name of the secret containing PgBouncer credentials
-  #           key:  password
-  #   livenessProbe:
-  #     initialDelaySeconds: 3
-  #     timeoutSeconds: 3
-  #     httpGet:
-  #       path: /
-  #       port: metrics
-  #   readinessProbe:
-  #     initialDelaySeconds: 5
-  #     timeoutSeconds: 10
-  #     httpGet:
-  #       path: /
-  #       port: metrics
-  #   securityContext:
-  #     runAsUser: 1001
-  #     runAsGroup: 1001
-  #     runAsNonRoot: true
-  #     seccompProfile:
-  #       type: RuntimeDefault
-  
-  # ServiceMonitor configuration for Prometheus monitoring
+# Example exporter configuration:
+#   - name: metrics-exporter
+#     image: quay.io/prometheuscommunity/pgbouncer-exporter:v0.11.0
+#     ports:
+#       - name: metrics
+#         containerPort: 9127
+#     args:
+#       - --web.listen-address=:9127
+#       - --web.telemetry-path=/metrics
+#       - --log.level=error
+#       - --pgBouncer.connectionString=postgres://$(PGBOUNCER_USER):$(PGBOUNCER_PWD)@localhost:6432/pgbouncer?sslmode=disable&connect_timeout=10
+#     env:
+#       - name: PGBOUNCER_USER
+#         valueFrom:
+#           secretKeyRef:
+#             name: "pgbouncer-cred"
+#             key: user
+#       - name: PGBOUNCER_PWD
+#         valueFrom:
+#           secretKeyRef:
+#             name: "pgbouncer-cred"
+#             key: password
+#     livenessProbe:
+#       initialDelaySeconds: 3
+#       timeoutSeconds: 3
+#       httpGet:
+#         path: /
+#         port: metrics
+#     readinessProbe:
+#       initialDelaySeconds: 5
+#       timeoutSeconds: 10
+#       httpGet:
+#         path: /
+#         port: metrics
+#     securityContext:
+#       runAsUser: 1001
+#       runAsGroup: 1001
+#       runAsNonRoot: true
+#       seccompProfile:
+#         type: RuntimeDefault
+
+# ServiceMonitor for Prometheus Operator integration
 serviceMonitor:
+  # Enable ServiceMonitor resource creation
   enabled: false
+  
+  # Scrape interval for metrics collection
   interval: 30s
+  
+  # Timeout for each scrape request
   scrapeTimeout: 10s
+  
+  # Metrics endpoint path
   path: /metrics
+  
+  # Additional labels for ServiceMonitor
   labels: {}
+  
+  # Additional annotations for ServiceMonitor
   annotations: {}
+  
+  # Honor labels from scraped data
   honorLabels: false
+  
+  # Metric relabeling configuration
   metricRelabelings: []
+  
+  # Target relabeling configuration
   relabelings: []

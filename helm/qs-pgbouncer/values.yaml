@@ -1,17 +1,72 @@
-# Default values for qs-pgbouncer.
+# ============================================================================
+# QS PgBouncer Helm Chart Configuration
+# ============================================================================
+#
+# This Helm chart deploys multiple PgBouncer instances for different PostgreSQL clusters.
+# It is a wrapper chart that uses the pgbouncer subchart to deploy:
+# - PgBouncer for Pharia cluster
+# - PgBouncer for Temporal cluster
+#
+# Each PgBouncer instance can be configured independently with its own:
+# - Database connections
+# - Resource limits
+# - Monitoring/metrics
+# - High availability settings
+#
+# For more details, see:
+# - https://www.pgbouncer.org/config.html
+# - https://github.com/cloudnative-pg/pgbouncer-containers
+
+# ============================================================================
+# Basic Configuration
+# ============================================================================
+
+# Name override for Kubernetes resources
 nameOverride: ""
 
+# ============================================================================
+# Helm Test Configuration
+# ============================================================================
+# Configuration for Helm tests that verify PgBouncer connectivity
+# Note: Tests are only executed when you run 'helm test <release-name>'
+tests:
+  # Container image to use for tests
+  image: "postgres:17"
+  # SSL mode for PgBouncer connections during tests
+  sslMode: "prefer"
+
+# ============================================================================
+# PgBouncer Pharia Instance Configuration
+# ============================================================================
+# PgBouncer instance for the Pharia PostgreSQL cluster
+
 pgbouncerPharia:
+  # Enable or disable this PgBouncer instance
   enabled: true
+  
+  # Name override for this instance
   nameOverride: pgbouncer-pharia
+  
+  # Number of PgBouncer replicas
   replicaCount: 3
+  
+  # Pod anti-affinity setting (soft or hard)
   antiAffinity: soft
+  
+  # === Database Configuration ===
+  # Database connection settings for the Pharia PostgreSQL cluster
   databases:
     "*":
-      host: "qs-postgresql-cluster-cluster-pharia-rw" # pharia postgresql endpoint
+      host: "qs-postgresql-cluster-cluster-pharia-rw"  # Pharia PostgreSQL read-write endpoint
       port: 5432
+  
+  # === Authentication Configuration ===
+  # User authentication list secret
   userlist:
     secret: pgbouncer-pharia-userlist
+  
+  # === Resource Configuration ===
+  # CPU and memory resource requests and limits
   resources:
     limits:
       cpu: "4"
@@ -19,7 +74,9 @@ pgbouncerPharia:
     requests:
       cpu: "1"
       memory: 512Mi
-
+  
+  # === Monitoring Configuration ===
+  # PgBouncer metrics exporter for Prometheus
   pgbouncerExporter:
     - name: metrics-exporter
       image: quay.io/prometheuscommunity/pgbouncer-exporter:v0.11.0
@@ -35,13 +92,13 @@ pgbouncerPharia:
         - name: PGBOUNCER_USER
           valueFrom:
             secretKeyRef:
-              name: "pgbouncer-pharia-pg-secret-qs" # Name of the secret containing PgBouncer credentials
-              key:  user
+              name: "pgbouncer-pharia-pg-secret-qs"
+              key: user
         - name: PGBOUNCER_PWD
           valueFrom:
             secretKeyRef:
-              name: "pgbouncer-pharia-pg-secret-qs" # Name of the secret containing PgBouncer credentials
-              key:  password
+              name: "pgbouncer-pharia-pg-secret-qs"
+              key: password
       livenessProbe:
         initialDelaySeconds: 3
         timeoutSeconds: 3
@@ -60,29 +117,69 @@ pgbouncerPharia:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-
+  
+  # === ServiceMonitor Configuration ===
+  # Prometheus Operator ServiceMonitor for metrics collection
   serviceMonitor:
+    # Enable ServiceMonitor resource creation
     enabled: false
+    
+    # Scrape interval for metrics collection
     interval: 30s
+    
+    # Timeout for each scrape request
     scrapeTimeout: 10s
+    
+    # Metrics endpoint path
     path: /metrics
+    
+    # Additional labels for ServiceMonitor
     labels: {}
+    
+    # Additional annotations for ServiceMonitor
     annotations: {}
+    
+    # Honor labels from scraped data
     honorLabels: false
+    
+    # Metric relabeling configuration
     metricRelabelings: []
+    
+    # Target relabeling configuration
     relabelings: []
 
+# ============================================================================
+# PgBouncer Temporal Instance Configuration
+# ============================================================================
+# PgBouncer instance for the Temporal PostgreSQL cluster
+
 pgbouncerTemporal:
+  # Enable or disable this PgBouncer instance
   enabled: true
+  
+  # Name override for this instance
   nameOverride: pgbouncer-temporal
+  
+  # Number of PgBouncer replicas
   replicaCount: 3
+  
+  # Pod anti-affinity setting (soft or hard)
   antiAffinity: soft
+  
+  # === Database Configuration ===
+  # Database connection settings for the Temporal PostgreSQL cluster
   databases:
     "*":
-      host: "qs-postgresql-cluster-cluster-temporal-rw" # temporal postgresql endpoint
+      host: "qs-postgresql-cluster-cluster-temporal-rw"  # Temporal PostgreSQL read-write endpoint
       port: 5432
+  
+  # === Authentication Configuration ===
+  # User authentication list secret
   userlist:
     secret: pgbouncer-temporal-userlist
+  
+  # === Resource Configuration ===
+  # CPU and memory resource requests and limits
   resources:
     limits:
       cpu: "4"
@@ -90,7 +187,9 @@ pgbouncerTemporal:
     requests:
       cpu: "1"
       memory: 512Mi
-
+  
+  # === Monitoring Configuration ===
+  # PgBouncer metrics exporter for Prometheus
   pgbouncerExporter:
     - name: metrics-exporter
       image: quay.io/prometheuscommunity/pgbouncer-exporter:v0.11.0
@@ -106,13 +205,13 @@ pgbouncerTemporal:
         - name: PGBOUNCER_USER
           valueFrom:
             secretKeyRef:
-              name: "pgbouncer-temporal-pg-secret-qs" # Name of the secret containing PgBouncer credentials
-              key:  user
+              name: "pgbouncer-temporal-pg-secret-qs"
+              key: user
         - name: PGBOUNCER_PWD
           valueFrom:
             secretKeyRef:
-              name: "pgbouncer-temporal-pg-secret-qs" # Name of the secret containing PgBouncer credentials
-              key:  password
+              name: "pgbouncer-temporal-pg-secret-qs"
+              key: password
       livenessProbe:
         initialDelaySeconds: 3
         timeoutSeconds: 3
@@ -131,14 +230,33 @@ pgbouncerTemporal:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-
+  
+  # === ServiceMonitor Configuration ===
+  # Prometheus Operator ServiceMonitor for metrics collection
   serviceMonitor:
+    # Enable ServiceMonitor resource creation
     enabled: false
+    
+    # Scrape interval for metrics collection
     interval: 30s
+    
+    # Timeout for each scrape request
     scrapeTimeout: 10s
+    
+    # Metrics endpoint path
     path: /metrics
+    
+    # Additional labels for ServiceMonitor
     labels: {}
+    
+    # Additional annotations for ServiceMonitor
     annotations: {}
+    
+    # Honor labels from scraped data
     honorLabels: false
+    
+    # Metric relabeling configuration
     metricRelabelings: []
+    
+    # Target relabeling configuration
     relabelings: []

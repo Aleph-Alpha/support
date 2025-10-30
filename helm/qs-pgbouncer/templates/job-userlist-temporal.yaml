@@ -1,8 +1,8 @@
-{{- if .Values.pgbouncerPharia.enabled }}
+{{- if and (hasKey .Values "pgbouncerTemporal") (.Values.pgbouncerTemporal.enabled) }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "qs-pgbouncer.fullname" . }}-create-secrets-userlist-pharia
+  name: {{ include "qs-pgbouncer.fullname" . }}-userlist-temporal
   labels:
     {{- include "qs-pgbouncer.labels" . | nindent 4 }}
     app.kubernetes.io/component: create-secrets-userlist
@@ -59,16 +59,16 @@ spec:
               # Function to create PGbouncer secrets
               create_pgbouncer_userlist_secret() {
                   print_status "Creating PgBouncer userlist secret..."
-                  local secret_name="{{ .Values.pgbouncerPharia.userlist.secret }}"
+                  local secret_name="{{ .Values.pgbouncerTemporal.userlist.secret}}"
                   local userlist_content=""
                   
-                  print_status "Looking for secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-pharia..."
+                  print_status "Looking for secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-temporal..."
                   
                   # Get all secrets with both labels
-                  local pg_secrets=$(kubectl get secrets -l "app.kubernetes.io/name=qs-postgresql-cluster,qs-postgresql-cluster/name=cluster-pharia" -o name)
+                  local pg_secrets=$(kubectl get secrets -l "app.kubernetes.io/name=qs-postgresql-cluster,qs-postgresql-cluster/name=cluster-temporal" -o name)
                   
                   if [ -z "$pg_secrets" ]; then
-                      print_warning "No secrets found with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-pharia"
+                      print_warning "No secrets found with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-temporal"
                       return 1
                   fi
                   
@@ -104,7 +104,7 @@ spec:
                   done
                   
                   if [ -z "$userlist_content" ]; then
-                      print_error "No valid user credentials found in any secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-pharia"
+                      print_error "No valid user credentials found in any secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-temporal"
                       return 1
                   fi
                   
@@ -162,3 +162,4 @@ spec:
         runAsUser: 1001
         fsGroup: 1001
 {{- end }}
+
