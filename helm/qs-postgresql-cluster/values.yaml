@@ -53,6 +53,9 @@ clusterPharia:
         cpu: "4000m"
     roles:
       - name: "pgbouncer_pharia"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
         passwordSecret:
           name: "pgbouncer-pharia-pg-secret-qs"
@@ -60,6 +63,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "document_index"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
         passwordSecret:
           name: "document-index-pg-secret-qs"
@@ -67,6 +73,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_os"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_os)
         passwordSecret:
           name: "pharia-os-pg-secret-qs"
@@ -74,6 +83,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "inference_api"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (inference_api)
         passwordSecret:
           name: "inference-api-pg-secret-qs"
@@ -81,6 +93,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_studio"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_studio)
         passwordSecret:
           name: "pharia-studio-pg-secret-qs"
@@ -88,6 +103,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_oauth_gateway"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_oauth_gateway)
         passwordSecret:
           name: "pharia-oauth-gateway-pg-secret-qs"
@@ -95,6 +113,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_assistant"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_assistant)
         passwordSecret:
           name: "pharia-assistant-pg-secret-qs"
@@ -102,6 +123,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_chat"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_chat)
         passwordSecret:
           name: "pharia-chat-pg-secret-qs"
@@ -109,6 +133,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_catch"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_catch)
         passwordSecret:
           name: "pharia-catch-pg-secret-qs"
@@ -116,6 +143,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "zitadel"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (zitadel)
         passwordSecret:
           name: "zitadel-pg-secret-qs"
@@ -123,6 +153,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "openfga"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (openfga)
         passwordSecret:
           name: "openfga-pg-secret-qs"
@@ -130,6 +163,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "dex"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (dex)
         passwordSecret:
           name: "dex-pg-secret-qs"
@@ -137,6 +173,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_conductor"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_conductor)
         passwordSecret:
           name: "pharia-conductor-pg-secret-qs"
@@ -144,6 +183,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_numinous"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_numinous)
         passwordSecret:
           name: "pharia-numinous-pg-secret-qs"
@@ -151,6 +193,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_transcribe_app"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_transcribe_app)
         passwordSecret:
           name: "pharia-transcribe-app-pg-secret-qs"
@@ -158,6 +203,9 @@ clusterPharia:
         superuser: false
         replication: false
       - name: "pharia_data"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_data)
         passwordSecret:
           name: "pharia-data-pg-secret-qs"
@@ -234,6 +282,9 @@ clusterTemporal:
         cpu: "4000m"
     roles:
       - name: "pgbouncer_temporal"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
         passwordSecret:
           name: "pgbouncer-temporal-pg-secret-qs"
@@ -241,6 +292,9 @@ clusterTemporal:
         superuser: false
         replication: false
       - name: "temporal"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # password and username key should exist in secret. username key should be the same as the name of the user
         passwordSecret:
           name: "temporal-pg-secret-qs"
@@ -248,6 +302,9 @@ clusterTemporal:
         superuser: false
         replication: false
       - name: "temporal_visibility"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
         # password and username key should exist in secret. username key should be the same as the name of the user
         passwordSecret:
           name: "temporal-visibility-pg-secret-qs"
