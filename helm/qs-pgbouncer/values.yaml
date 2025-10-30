@@ -57,7 +57,7 @@ pgbouncerPharia:
   # Database connection settings for the Pharia PostgreSQL cluster
   databases:
     "*":
-      host: "qs-postgresql-cluster-cluster-pharia-rw"  # Pharia PostgreSQL read-write endpoint
+      host: "cluster-pharia-rw"  # Pharia PostgreSQL read-write endpoint
       port: 5432
 
   # === Authentication Configuration ===
@@ -170,7 +170,7 @@ pgbouncerTemporal:
   # Database connection settings for the Temporal PostgreSQL cluster
   databases:
     "*":
-      host: "qs-postgresql-cluster-cluster-temporal-rw"  # Temporal PostgreSQL read-write endpoint
+      host: "cluster-temporal-rw"  # Temporal PostgreSQL read-write endpoint
       port: 5432
 
   # === Authentication Configuration ===
