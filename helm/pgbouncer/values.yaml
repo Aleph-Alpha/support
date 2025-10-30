@@ -110,7 +110,6 @@ service:
     port: 5432
     targetPort: 6432
     protocol: TCP
-  extraPorts:
   - name: metrics
     port: 9127
     targetPort: 9127
