@@ -52,7 +52,7 @@ clusterPharia:
         memory: "16Gi"
         cpu: "4"
     roles:
-      - name: "pgbouncer"
+      - name: "pgbouncer_pharia"
         connectionLimit: -1
         ensure: present
         inherit: true
@@ -281,7 +281,7 @@ clusterTemporal:
         memory: "16Gi"
         cpu: "4"
     roles:
-      - name: "pgbouncer"
+      - name: "pgbouncer_temporal"
         connectionLimit: -1
         ensure: present
         inherit: true

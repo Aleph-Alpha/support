@@ -156,10 +156,10 @@ fullnameOverride: "qs-postgresql-db"
 # ============================================================================
 
 databases:
-  - name: "pgbouncer"
+  - name: "pgbouncer-pharia"
     enabled: true
     cluster: "cluster-pharia"
-    owner: "pgbouncer"
+    owner: "pgbouncer_pharia"
     connectionLimit: 50
     extensions:
       - uuid-ossp
@@ -168,10 +168,10 @@ databases:
       - pg_trgm
       - btree_gin
 
-  - name: "pgbouncer"
+  - name: "pgbouncer-temporal"
     enabled: true
     cluster: "cluster-temporal"
-    owner: "pgbouncer"
+    owner: "pgbouncer_temporal"
     connectionLimit: 50
     extensions:
       - uuid-ossp
