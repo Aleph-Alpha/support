@@ -246,7 +246,7 @@ pgbouncer:
   # Configuration for TLS encryption from PgBouncer to PostgreSQL
 
   # Server TLS mode: disable, allow, require, verify-ca, verify-full
-  # server_tls_sslmode: disable
+  server_tls_sslmode: require
 
   # Path to trusted CA certificates file
   # server_tls_ca_file:
