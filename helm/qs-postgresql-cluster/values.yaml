@@ -45,11 +45,11 @@ clusterPharia:
         min_wal_size: "1GB"
     resources:
       requests:
-        memory: "48Gi"
-        cpu: "16000m"
+        memory: "32Gi"
+        cpu: "8000m"
       limits:
-        memory: "64Gi"
-        cpu: "16000m"
+        memory: "48Gi"
+        cpu: "8000m"
     roles:
       - name: "pgbouncer_pharia"
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
