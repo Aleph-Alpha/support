@@ -299,6 +299,7 @@ clusterTemporal:
         passwordSecret:
           name: "temporal-pg-secret-qs"
         login: true
+        createdb: true
         superuser: false
         replication: false
       - name: "temporal_visibility"
@@ -309,6 +310,7 @@ clusterTemporal:
         passwordSecret:
           name: "temporal-visibility-pg-secret-qs"
         login: true
+        createdb: true
         superuser: false
         replication: false
   backups:
