@@ -47,10 +47,10 @@ clusterPharia:
     resources:
       requests:
         memory: "16Gi"
-        cpu: "4000m"
+        cpu: "4"
       limits:
         memory: "16Gi"
-        cpu: "4000m"
+        cpu: "4"
     roles:
       - name: "pgbouncer_pharia"
         connectionLimit: -1
@@ -276,10 +276,10 @@ clusterTemporal:
     resources:
       requests:
         memory: "16Gi"
-        cpu: "4000m"
+        cpu: "4"
       limits:
         memory: "16Gi"
-        cpu: "4000m"
+        cpu: "4"
     roles:
       - name: "pgbouncer_temporal"
         connectionLimit: -1
