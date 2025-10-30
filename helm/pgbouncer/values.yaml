@@ -285,7 +285,7 @@ pgbouncer:
   # Control access to PgBouncer administrative functions
 
   # Comma-separated list of users allowed to change settings
-  # admin_users: user2, someadmin, otheradmin
+  admin_users: pgbouncer
 
   # Comma-separated list of users allowed to use SHOW commands
   # stats_users: stats, root
