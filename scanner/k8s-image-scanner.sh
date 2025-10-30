@@ -1476,8 +1476,12 @@ generate_cve_summary_table() {
 
     done < <(jq -c '.cve_analysis[]' "$json_file")
 
-    # Print table using column utility
-    echo -e "$table_data" | column -t -s '|'
+    # Print table sorted alphabetically by Image (keep header at top)
+    echo -e "$table_data" | {
+        IFS= read -r header
+        echo "$header"
+        sort -t '|' -k1,1
+    } | column -t -s '|'
 
     # Print summary statistics (calculated from JSON)
     local total_unaddressed=$(jq '[.cve_analysis[].unaddressed_cves] | add' "$json_file")
