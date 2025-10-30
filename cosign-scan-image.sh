@@ -897,7 +897,10 @@ generate_summary_table() {
 
                 local json_report="$image_dir/trivy-report.json"
                 if [[ -f "$json_report" ]]; then
-                    # Extract CVEs from JSON report and format as table
+                    # Create table data using column utility
+                    local table_data="CVE ID|SEVERITY|PACKAGE|INSTALLED|FIXED|TITLE\n"
+
+                    # Extract CVEs from JSON report and add to table data
                     local cve_data=$(jq -r '
                         [.Results[]?.Vulnerabilities[]? |
                         {
@@ -916,11 +919,7 @@ generate_summary_table() {
                     ' "$json_report" 2>/dev/null)
 
                     if [[ -n "$cve_data" ]]; then
-                        # Build the table header
-                        printf "  %-18s %-10s %-20s %-15s %-15s %s\n" "CVE ID" "SEVERITY" "PACKAGE" "INSTALLED" "FIXED" "TITLE"
-                        printf "  %-18s %-10s %-20s %-15s %-15s %s\n" "──────────────────" "──────────" "────────────────────" "───────────────" "───────────────" "─────────────────────────────"
-
-                        # Display CVEs (limit if MAX_CVES is set)
+                        # Process CVEs and add to table data
                         local count=0
                         while IFS=$'\t' read -r cve_id severity pkg installed fixed title; do
                             # Add severity emoji
@@ -939,7 +938,8 @@ generate_summary_table() {
                             fixed=$(echo "$fixed" | cut -c1-15)
                             title=$(echo "$title" | cut -c1-30)
 
-                            printf "  %-18s %-10s %-20s %-15s %-15s %s\n" "$cve_id" "$severity_display" "$pkg" "$installed" "$fixed" "$title"
+                            # Add row to table data
+                            table_data+="$cve_id|$severity_display|$pkg|$installed|$fixed|$title\n"
 
                             ((count++))
 
@@ -947,12 +947,14 @@ generate_summary_table() {
                             if [[ $MAX_CVES -gt 0 && $count -ge $MAX_CVES ]]; then
                                 local remaining=$((total - count))
                                 if [[ $remaining -gt 0 ]]; then
-                                    echo ""
-                                    printf "  ... and %d more (use --max-cves 0 to show all)\n" "$remaining"
+                                    table_data+="... and $remaining more (use --max-cves 0 to show all)|||||\n"
                                 fi
                                 break
                             fi
                         done <<< "$cve_data"
+
+                        # Print table using column utility
+                        echo -e "$table_data" | column -t -s '|'
                     fi
                 fi
             fi
