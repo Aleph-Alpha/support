@@ -41,6 +41,7 @@ A comprehensive Kubernetes image scanning script that automatically discovers co
 - **Triage Integration**: Automatically applies Cosign triage attestations to filter known false positives
 - **Flexible Configuration**: Support for custom Trivy configurations and severity filtering
 - **Dry Run Mode**: Preview what would be scanned without executing actual scans
+ - **Chainguard Base Verification (NEW)**: Verifies if images are based on Chainguard base images and shows the result in the final table
 
 #### Image Processing Logic
 
@@ -194,6 +195,15 @@ The scanner leverages the existing `cosign-extract.sh` script for Cosign attesta
 8. **Applies triage filtering** to Trivy scans automatically
 9. **Analyzes CVE results** categorizing them as unaddressed, addressed, or irrelevant
 10. **Generates comprehensive reports** with detailed CVE analysis and actual CVE IDs
+11. **Verifies Chainguard base images** per image using `verify-chainguard-base-image.sh` and reports results
+
+#### Final Table Columns (NEW)
+
+The CVE analysis table now includes a new column:
+
+- **Chainguard Base**: Shows whether the image is based on a Chainguard base image
+  - ✅ Yes: Verified Chainguard base image
+  - ➖ No: Not a Chainguard base (or could not be verified)
 
 #### Prerequisites
 
@@ -360,6 +370,38 @@ The scanner leverages existing scripts for consistent behavior:
 - **cosign-verify-image.sh** (for verifying image signatures)
 
 ### Cosign Scripts
+
+#### verify-chainguard-base-image.sh (NEW)
+
+Verifies whether a Docker image was built using a Chainguard base image by checking signatures. Works in two modes:
+
+- Starter images (default): Public verification using GitHub Actions OIDC issuer. No authentication required.
+- Production images: Uses a Chainguard organization with `chainctl` for verification (requires token or identity).
+
+##### Usage
+
+```bash
+# Starter image verification (no org)
+./verify-chainguard-base-image.sh --image cgr.dev/chainguard/alpine:latest
+
+# Production image verification (with org)
+./verify-chainguard-base-image.sh --image registry.example.com/app:latest \
+  --chainguard-org my-org \
+  --chainctl-token "$CHAINCTL_TOKEN"
+
+# Silent mode for automation (prints only variables)
+./verify-chainguard-base-image.sh --image myimage:tag --output-level none
+```
+
+Outputs (silent mode):
+
+```
+IS_CHAINGUARD=true|false
+BASE_IMAGE="<detected base image or unknown>"
+SIGNATURE_VERIFIED=true|false
+```
+
+This script is also invoked automatically by `scanner/k8s-image-scanner.sh` for each image; results appear in the final table and in per-image JSON (`chainguard_verification.json`).
 
 #### cosign-extract.sh
 
@@ -700,7 +742,7 @@ curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/inst
 
 2. Make the scripts executable:
    ```bash
-   chmod +x scanner/k8s-image-scanner.sh cosign-scan-image.sh cosign-extract.sh cosign-verify-image.sh
+   chmod +x scanner/k8s-image-scanner.sh cosign-scan-image.sh cosign-extract.sh cosign-verify-image.sh verify-chainguard-base-image.sh
    ```
 
 3. Optionally, add the scripts to your PATH or create symlinks in `/usr/local/bin/` for system-wide access.

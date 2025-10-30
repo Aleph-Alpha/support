@@ -179,6 +179,62 @@ convert_triage_to_trivyignore() {
     fi
 }
 
+# Check if image is based on Chainguard base image
+check_chainguard_base_image() {
+    local image="$1"
+    local output_file="$2"
+
+    log_verbose "Checking Chainguard base image for: $image"
+
+    # Use the verify-chainguard-base-image.sh script
+    local verify_script="$SCRIPT_DIR/../verify-chainguard-base-image.sh"
+    if [[ ! -f "$verify_script" ]]; then
+        log_error "verify-chainguard-base-image.sh not found at: $verify_script"
+        return 1
+    fi
+
+    # Run the verification script in silent mode and capture output
+    local verify_output
+    if verify_output=$("$verify_script" --image "$image" --output-level none --no-error 2>/dev/null); then
+        # Parse the output to extract variables
+        local is_chainguard="false"
+        local base_image="unknown"
+        local signature_verified="false"
+
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^IS_CHAINGUARD=(.*)$ ]]; then
+                is_chainguard="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^BASE_IMAGE=\"(.*)\"$ ]]; then
+                base_image="${BASH_REMATCH[1]}"
+            elif [[ "$line" =~ ^SIGNATURE_VERIFIED=(.*)$ ]]; then
+                signature_verified="${BASH_REMATCH[1]}"
+            fi
+        done <<< "$verify_output"
+
+        # Save results to file
+        cat > "$output_file" <<EOF
+{
+  "is_chainguard": $is_chainguard,
+  "base_image": "$base_image",
+  "signature_verified": $signature_verified
+}
+EOF
+        log_verbose "Chainguard verification completed for: $image (is_chainguard: $is_chainguard)"
+        return 0
+    else
+        log_verbose "Chainguard verification failed for: $image"
+        # Create empty results
+        cat > "$output_file" <<EOF
+{
+  "is_chainguard": false,
+  "base_image": "unknown",
+  "signature_verified": false
+}
+EOF
+        return 1
+    fi
+}
+
 # Analyze CVEs from Trivy JSON output and categorize them
 analyze_cves() {
     local image="$1"
@@ -321,6 +377,20 @@ analyze_cves() {
         irrelevant_json="[$(printf '"%s",' "${irrelevant_cve_list[@]}" | sed 's/,$//')]"
     fi
 
+    # Check Chainguard base image
+    local chainguard_file="$image_dir/chainguard_verification.json"
+    check_chainguard_base_image "$image" "$chainguard_file"
+
+    # Read Chainguard verification results
+    local is_chainguard="false"
+    local base_image="unknown"
+    local signature_verified="false"
+    if [[ -f "$chainguard_file" ]]; then
+        is_chainguard=$(jq -r '.is_chainguard' "$chainguard_file" 2>/dev/null || echo "false")
+        base_image=$(jq -r '.base_image' "$chainguard_file" 2>/dev/null || echo "unknown")
+        signature_verified=$(jq -r '.signature_verified' "$chainguard_file" 2>/dev/null || echo "false")
+    fi
+
     cat > "$cve_details_file" <<EOF
 {
   "image": "$image",
@@ -331,7 +401,10 @@ analyze_cves() {
   "unaddressed_cve_list": $unaddressed_json,
   "addressed_cve_list": $addressed_json,
   "irrelevant_cve_list": $irrelevant_json,
-  "min_cve_level": "$MIN_CVE_LEVEL"
+  "min_cve_level": "$MIN_CVE_LEVEL",
+  "is_chainguard": $is_chainguard,
+  "base_image": "$base_image",
+  "signature_verified": $signature_verified
 }
 EOF
 }
@@ -1363,7 +1436,7 @@ generate_cve_summary_table() {
     fi
 
     # Create table data using column utility
-    local table_data="Image|Unaddressed CVEs|Addressed CVEs|Irrelevant CVEs|Triage File\n"
+    local table_data="Image|Unaddressed CVEs|Addressed CVEs|Irrelevant CVEs|Triage File|Chainguard Base\n"
 
     # Read data from JSON and build table
     while IFS= read -r line; do
@@ -1372,6 +1445,8 @@ generate_cve_summary_table() {
         local addressed=$(echo "$line" | jq -r '.addressed_cves')
         local irrelevant=$(echo "$line" | jq -r '.irrelevant_cves')
         local has_triage=$(echo "$line" | jq -r '.has_triage_file')
+        local is_chainguard=$(echo "$line" | jq -r '.is_chainguard')
+        local base_image=$(echo "$line" | jq -r '.base_image')
 
         # Extract just image name and version (last component)
         local image_name=$(echo "$image" | sed 's|.*/||')
@@ -1390,8 +1465,14 @@ generate_cve_summary_table() {
             triage_display="✅ Yes"
         fi
 
+        # Add color coding for Chainguard base image status (use grey minus for No)
+        local chainguard_display="➖ No"
+        if [[ "$is_chainguard" == "true" ]]; then
+            chainguard_display="✅ Yes"
+        fi
+
         # Add row to table data
-        table_data+="$image_name|$unaddressed_display|$addressed|$irrelevant|$triage_display\n"
+        table_data+="$image_name|$unaddressed_display|$addressed|$irrelevant|$triage_display|$chainguard_display\n"
 
     done < <(jq -c '.cve_analysis[]' "$json_file")
 
@@ -1403,6 +1484,7 @@ generate_cve_summary_table() {
     local total_addressed=$(jq '[.cve_analysis[].addressed_cves] | add' "$json_file")
     local total_irrelevant=$(jq '[.cve_analysis[].irrelevant_cves] | add' "$json_file")
     local images_with_triage=$(jq '[.cve_analysis[] | select(.has_triage_file == true)] | length' "$json_file")
+    local images_with_chainguard=$(jq '[.cve_analysis[] | select(.is_chainguard == true)] | length' "$json_file")
     local total_images=$(jq '.cve_analysis | length' "$json_file")
 
     echo ""
@@ -1412,6 +1494,7 @@ generate_cve_summary_table() {
     echo "Total addressed CVEs: $total_addressed"
     echo "Total irrelevant CVEs (<$min_cve_level): $total_irrelevant"
     echo "Images with triage files: $images_with_triage/$total_images"
+    echo "Images with Chainguard base: $images_with_chainguard/$total_images"
 
     if [[ $total_unaddressed -eq 0 ]]; then
         echo "🎉 All relevant CVEs have been addressed!"
