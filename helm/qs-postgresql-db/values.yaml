@@ -150,6 +150,7 @@ tests:
 #     # - postgis         # For spatial data
 #     # - pgvector        # For vector embeddings (requires ImageVolume in PG 18+)
 
+fullnameOverride: "qs-postgresql-db"
 # ============================================================================
 # Database Configurations
 # ============================================================================
@@ -157,7 +158,7 @@ tests:
 databases:
   - name: "pgbouncer-pharia"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pgbouncer_pharia"
     connectionLimit: 50
     extensions:
@@ -169,7 +170,7 @@ databases:
 
   - name: "pgbouncer-temporal"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-temporal"
+    cluster: "cluster-temporal"
     owner: "pgbouncer_temporal"
     connectionLimit: 50
     extensions:
@@ -181,7 +182,7 @@ databases:
 
   - name: "document-index"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "document_index"
     connectionLimit: 50
     extensions:
@@ -193,7 +194,7 @@ databases:
 
   - name: "pharia-os"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_os"
     connectionLimit: 50
     extensions:
@@ -205,7 +206,7 @@ databases:
 
   - name: "inference-api"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "inference_api"
     connectionLimit: 50
     extensions:
@@ -217,7 +218,7 @@ databases:
 
   - name: "pharia-studio"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_studio"
     connectionLimit: 50
     extensions:
@@ -229,7 +230,7 @@ databases:
 
   - name: "pharia-oauth-gateway"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_oauth_gateway"
     connectionLimit: 50
     extensions:
@@ -241,7 +242,7 @@ databases:
 
   - name: "pharia-assistant"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_assistant"
     connectionLimit: 50
     extensions:
@@ -253,7 +254,7 @@ databases:
 
   - name: "pharia-chat"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_chat"
     connectionLimit: 100
     extensions:
@@ -265,7 +266,7 @@ databases:
 
   - name: "pharia-catch"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_catch"
     connectionLimit: 50
     extensions:
@@ -277,7 +278,7 @@ databases:
 
   - name: "zitadel"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "zitadel"
     connectionLimit: 50
     extensions:
@@ -289,7 +290,7 @@ databases:
 
   - name: "openfga"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "openfga"
     connectionLimit: 50
     extensions:
@@ -301,7 +302,7 @@ databases:
 
   - name: "dex"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "dex"
     connectionLimit: 50
     extensions:
@@ -313,7 +314,7 @@ databases:
 
   - name: "pharia-conductor"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_conductor"
     connectionLimit: 50
     extensions:
@@ -325,7 +326,7 @@ databases:
 
   - name: "pharia-numinous"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_numinous"
     connectionLimit: 50
     extensions:
@@ -337,7 +338,7 @@ databases:
 
   - name: "pharia-transcribe-app"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_transcribe_app"
     connectionLimit: 50
     extensions:
@@ -349,7 +350,7 @@ databases:
 
   - name: "pharia-data"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-pharia"
+    cluster: "cluster-pharia"
     owner: "pharia_data"
     connectionLimit: 50
     extensions:
@@ -361,7 +362,7 @@ databases:
 
   - name: "temporal"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-temporal"
+    cluster: "cluster-temporal"
     owner: "temporal"
     connectionLimit: 50
     extensions:
@@ -373,7 +374,7 @@ databases:
 
   - name: "temporal-visibility"
     enabled: true
-    cluster: "qs-postgresql-cluster-cluster-temporal"
+    cluster: "cluster-temporal"
     owner: "temporal_visibility"
     connectionLimit: 50
     extensions:

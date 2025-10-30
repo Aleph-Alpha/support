@@ -21,8 +21,8 @@
 # Basic Configuration
 # ============================================================================
 
-# Name override for Kubernetes resources
-nameOverride: ""
+# Full Name override for Kubernetes resources
+fullnameOverride: "qs-pgbouncer"
 
 # ============================================================================
 # Helm Test Configuration
@@ -44,8 +44,8 @@ pgbouncerPharia:
   # Enable or disable this PgBouncer instance
   enabled: true
 
-  # Name override for this instance
-  nameOverride: pgbouncer-pharia
+  # Full Name override for this instance
+  fullnameOverride: pgbouncer-pharia
 
   # Number of PgBouncer replicas
   replicaCount: 3
@@ -157,8 +157,8 @@ pgbouncerTemporal:
   # Enable or disable this PgBouncer instance
   enabled: true
 
-  # Name override for this instance
-  nameOverride: pgbouncer-temporal
+  # Full Name override for this instance
+  fullnameOverride: pgbouncer-temporal
 
   # Number of PgBouncer replicas
   replicaCount: 3

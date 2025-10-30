@@ -1,3 +1,4 @@
+fullnameOverride: "qs-postgresql-cluster"
 # ServiceAccount configuration for the secret creation job
 serviceAccount:
   # Specifies whether a service account should be created
@@ -11,10 +12,10 @@ serviceAccount:
 # PG Cluster for Pharia Applications
 clusterPharia:
   enabled: true
-  nameOverride: cluster-pharia
+  fullnameOverride: cluster-pharia
   type: postgresql
   # PgBouncer host for connection pooling (optional)
-  pgbouncerHost: qs-pgbouncer-pgbouncer-pharia
+  pgbouncerHost: pgbouncer-pharia
   version:
     # -- PostgreSQL major version to use
     postgresql: "17"
@@ -192,10 +193,10 @@ clusterPharia:
 # PG Cluster for Temporal
 clusterTemporal:
   enabled: true
-  nameOverride: cluster-temporal
+  fullnameOverride: cluster-temporal
   type: postgresql
   # PgBouncer host for connection pooling (optional)
-  pgbouncerHost: qs-pgbouncer-pgbouncer-temporal
+  pgbouncerHost: pgbouncer-temporal
   version:
     # -- PostgreSQL major version to use
     postgresql: "17"
