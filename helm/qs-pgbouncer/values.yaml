@@ -86,7 +86,7 @@ pgbouncerPharia:
       args:
         - --web.listen-address=:9127
         - --web.telemetry-path=/metrics
-        - --log.level=error
+        - --log.level=debug
         - --pgBouncer.connectionString=postgres://$(PGBOUNCER_USER):$(PGBOUNCER_PWD)@localhost:6432/pgbouncer-pharia?sslmode=disable&connect_timeout=10
       env:
         - name: PGBOUNCER_USER
@@ -199,7 +199,7 @@ pgbouncerTemporal:
       args:
         - --web.listen-address=:9127
         - --web.telemetry-path=/metrics
-        - --log.level=error
+        - --log.level=debug
         - --pgBouncer.connectionString=postgres://$(PGBOUNCER_USER):$(PGBOUNCER_PWD)@localhost:6432/pgbouncer-temporal?sslmode=disable&connect_timeout=10
       env:
         - name: PGBOUNCER_USER
