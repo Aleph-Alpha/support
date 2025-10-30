@@ -148,6 +148,15 @@ log_error() {
     echo "❌ $*" >&2
 }
 
+log_error_multiline() {
+    local main_message="$1"
+    shift
+    echo "❌ $main_message" >&2
+    for line in "$@"; do
+        echo "   $line" >&2
+    done
+}
+
 # Parse command line arguments
 parse_args() {
     # Check for help first, regardless of position
@@ -280,14 +289,14 @@ check_prerequisites() {
     local cosign_verify="$SCRIPT_DIR/cosign-verify-image.sh"
 
     if [[ ! -f "$cosign_extract" ]]; then
-        log_error "Required script not found: cosign-extract.sh"
-        log_error "Expected location: $cosign_extract"
+        log_error_multiline "Required script not found: cosign-extract.sh" \
+            "Expected location: $cosign_extract"
         exit 1
     fi
 
     if [[ ! -f "$cosign_verify" ]]; then
-        log_error "Required script not found: cosign-verify-image.sh"
-        log_error "Expected location: $cosign_verify"
+        log_error_multiline "Required script not found: cosign-verify-image.sh" \
+            "Expected location: $cosign_verify"
         exit 1
     fi
 
@@ -308,9 +317,9 @@ check_registry_accessible() {
         log_verbose "Registry is accessible for: $image"
         return 0
     else
-        log_error "Registry is not accessible for: $image"
-        log_error "Please ensure you're logged in to the registry:"
-        log_error "  docker login <registry>"
+        log_error_multiline "Registry is not accessible for: $image" \
+            "Please ensure you're logged in to the registry:" \
+            "  docker login <registry>"
         return 1
     fi
 }
@@ -421,9 +430,9 @@ download_sbom() {
     local extract_script="$SCRIPT_DIR/cosign-extract.sh"
     log_verbose "Looking for cosign-extract.sh at: $extract_script"
     if [[ ! -f "$extract_script" ]]; then
-        log_error "cosign-extract.sh not found at: $extract_script"
-        log_error "Current working directory: $(pwd)"
-        log_error "Script directory: $SCRIPT_DIR"
+        log_error_multiline "cosign-extract.sh not found at: $extract_script" \
+            "Current working directory: $(pwd)" \
+            "Script directory: $SCRIPT_DIR"
         return 1
     fi
     log_verbose "Found cosign-extract.sh script"
@@ -463,9 +472,9 @@ download_cosign_triage() {
     local extract_script="$SCRIPT_DIR/cosign-extract.sh"
     log_verbose "Looking for cosign-extract.sh at: $extract_script"
     if [[ ! -f "$extract_script" ]]; then
-        log_error "cosign-extract.sh not found at: $extract_script"
-        log_error "Current working directory: $(pwd)"
-        log_error "Script directory: $SCRIPT_DIR"
+        log_error_multiline "cosign-extract.sh not found at: $extract_script" \
+            "Current working directory: $(pwd)" \
+            "Script directory: $SCRIPT_DIR"
         return 1
     fi
     log_verbose "Found cosign-extract.sh script"
@@ -561,24 +570,28 @@ run_trivy_scan() {
         return 0
     else
         local exit_code=$?
-        log_error "Trivy SBOM scan failed (exit code: $exit_code)"
+        local error_details=()
+
         # Show error output for debugging
         if [[ -s "$stderr_file" ]]; then
-            log_error "Trivy error output:"
-            cat "$stderr_file" >&2
+            error_details+=("Trivy error output:")
+            error_details+=("$(cat "$stderr_file")")
         fi
 
         # Additional debug info
-        log_error "SBOM file: $sbom_file"
+        error_details+=("SBOM file: $sbom_file")
         if [[ -f "$sbom_file" ]]; then
-            log_error "SBOM file exists, size: $(stat -f%z "$sbom_file" 2>/dev/null || stat -c%s "$sbom_file" 2>/dev/null || echo "unknown") bytes"
-            log_verbose "SBOM first few lines:"
+            local file_size=$(stat -f%z "$sbom_file" 2>/dev/null || stat -c%s "$sbom_file" 2>/dev/null || echo "unknown")
+            error_details+=("SBOM file exists, size: $file_size bytes")
             if $VERBOSE; then
-                head -10 "$sbom_file" >&2
+                error_details+=("SBOM first few lines:")
+                error_details+=("$(head -10 "$sbom_file")")
             fi
         else
-            log_error "SBOM file does not exist!"
+            error_details+=("SBOM file does not exist!")
         fi
+
+        log_error_multiline "Trivy SBOM scan failed (exit code: $exit_code)" "${error_details[@]}"
 
         rm -f "$stderr_file"
         return 1
@@ -649,7 +662,6 @@ scan_image() {
     # Check registry accessibility
     log_verbose "Checking registry accessibility"
     if ! check_registry_accessible "$image"; then
-        log_error "Cannot access registry for image: $image"
         return 1
     fi
     log_result "- Registry: accessible"
@@ -747,15 +759,15 @@ scan_image() {
             # Image is signed but no SBOM
             log_result "- Signature: ✅ verified"
             log_result "- SBOM attestation: ❌ not found"
-            log_error "Cannot scan image without SBOM attestation"
-            log_error "This scanner requires an SBOM (CycloneDX or SPDX) to be attached to the image"
+            log_error_multiline "Cannot scan image without SBOM attestation" \
+                "This scanner requires an SBOM (CycloneDX or SPDX) to be attached to the image"
             return 1
             ;;
         "unsigned")
             # Image is not signed
             log_result "- Signature: ⚠️  not signed"
-            log_error "Cannot scan unsigned image"
-            log_error "This scanner requires a Cosign-signed image with SBOM attestation"
+            log_error_multiline "Cannot scan unsigned image" \
+                "This scanner requires a Cosign-signed image with SBOM attestation"
             return 1
             ;;
     esac
@@ -897,7 +909,10 @@ generate_summary_table() {
 
                 local json_report="$image_dir/trivy-report.json"
                 if [[ -f "$json_report" ]]; then
-                    # Extract CVEs from JSON report and format as table
+                    # Create table data using column utility
+                    local table_data="CVE ID|SEVERITY|PACKAGE|INSTALLED|FIXED|TITLE\n"
+
+                    # Extract CVEs from JSON report and add to table data
                     local cve_data=$(jq -r '
                         [.Results[]?.Vulnerabilities[]? |
                         {
@@ -916,11 +931,7 @@ generate_summary_table() {
                     ' "$json_report" 2>/dev/null)
 
                     if [[ -n "$cve_data" ]]; then
-                        # Build the table header
-                        printf "  %-18s %-10s %-20s %-15s %-15s %s\n" "CVE ID" "SEVERITY" "PACKAGE" "INSTALLED" "FIXED" "TITLE"
-                        printf "  %-18s %-10s %-20s %-15s %-15s %s\n" "──────────────────" "──────────" "────────────────────" "───────────────" "───────────────" "─────────────────────────────"
-
-                        # Display CVEs (limit if MAX_CVES is set)
+                        # Process CVEs and add to table data
                         local count=0
                         while IFS=$'\t' read -r cve_id severity pkg installed fixed title; do
                             # Add severity emoji
@@ -939,7 +950,8 @@ generate_summary_table() {
                             fixed=$(echo "$fixed" | cut -c1-15)
                             title=$(echo "$title" | cut -c1-30)
 
-                            printf "  %-18s %-10s %-20s %-15s %-15s %s\n" "$cve_id" "$severity_display" "$pkg" "$installed" "$fixed" "$title"
+                            # Add row to table data
+                            table_data+="$cve_id|$severity_display|$pkg|$installed|$fixed|$title\n"
 
                             ((count++))
 
@@ -947,12 +959,14 @@ generate_summary_table() {
                             if [[ $MAX_CVES -gt 0 && $count -ge $MAX_CVES ]]; then
                                 local remaining=$((total - count))
                                 if [[ $remaining -gt 0 ]]; then
-                                    echo ""
-                                    printf "  ... and %d more (use --max-cves 0 to show all)\n" "$remaining"
+                                    table_data+="... and $remaining more (use --max-cves 0 to show all)|||||\n"
                                 fi
                                 break
                             fi
                         done <<< "$cve_data"
+
+                        # Print table using column utility
+                        echo -e "$table_data" | column -t -s '|'
                     fi
                 fi
             fi
