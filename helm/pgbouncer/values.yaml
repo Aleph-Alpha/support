@@ -300,7 +300,7 @@ pgbouncer:
   pool_mode: transaction
 
   # Maximum prepared statements to cache per connection (0 = disabled)
-  # max_prepared_statements: 0
+  max_prepared_statements: 20
 
   # Query to clean connection after release (ROLLBACK handled automatically)
   # server_reset_query: DISCARD ALL
