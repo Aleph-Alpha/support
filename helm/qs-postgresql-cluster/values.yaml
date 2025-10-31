@@ -247,7 +247,7 @@ clusterTemporal:
   pgbouncerHost: pgbouncer-temporal
   version:
     # -- PostgreSQL major version to use
-    postgresql: "13"
+    postgresql: "17"
   cluster:
     # -- Number of instances
     instances: 3
