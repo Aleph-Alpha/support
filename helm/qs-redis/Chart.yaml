@@ -1,0 +1,34 @@
+apiVersion: v2
+name: qs-redis
+home: https://aleph-alpha.com/phariaai/
+icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
+description: Helm chart for managing Redis instances for Pharia AI applications with support for multiple Redis deployments
+version: 1.0.0
+keywords:
+  - redis
+  - cache
+  - database
+  - pharia
+  - memory-store
+maintainers:
+  - name: Pharia AI Platform Team
+sources:
+  - https://redis.io/
+  - https://github.com/bitnami/charts/tree/main/bitnami/redis
+annotations:
+  category: Database
+  licenses: Apache-2.0
+  vendor: Aleph Alpha
+
+
+dependencies:
+- name: redis
+  version: 23.2.2
+  alias: pharia-assistant-api-redis
+  condition: pharia-assistant-api-redis.enabled
+  repository: oci://registry-1.docker.io/bitnamicharts
+- name: redis
+  version: 23.2.2
+  alias: pharia-transcribe-app-redis
+  condition: pharia-transcribe-app-redis.enabled
+  repository: oci://registry-1.docker.io/bitnamicharts

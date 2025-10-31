@@ -1,0 +1,194 @@
+{{- $clusters := dict }}
+{{- range .Values.databases }}
+{{- if .enabled }}
+{{- if not (hasKey $clusters .cluster) }}
+{{- $_ := set $clusters .cluster (list) }}
+{{- end }}
+{{- $dbInfo := dict "name" .name "owner" .owner "extensions" .extensions }}
+{{- $_ := set $clusters .cluster (append (get $clusters .cluster) $dbInfo) }}
+{{- end }}
+{{- end }}
+{{- range $clusterName, $databases := $clusters }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "qs-redis.fullname" $ }}-test-{{ $clusterName | sha256sum | trunc 8 }}
+  labels:
+    {{- include "qs-redis.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: test
+    cluster: {{ $clusterName }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test-connection
+      image: {{ $.Values.tests.image | default "postgres:17" }}
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: PGHOST
+          value: "{{ $clusterName }}-rw"
+        - name: PGSSLMODE
+          value: {{ $.Values.tests.sslMode | default "prefer" | quote }}
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  PostgreSQL Connection Test"
+          echo "  Cluster: {{ $clusterName }}"
+          echo "════════════════════════════════════════════════════════════════"
+          echo
+
+          # Wait for PostgreSQL to be ready
+          echo "⏳ Waiting for PostgreSQL cluster to be ready..."
+          MAX_RETRIES=30
+          RETRY=0
+          until pg_isready -h $PGHOST -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
+            echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
+            sleep 5
+            RETRY=$((RETRY+1))
+          done
+
+          if [ $RETRY -eq $MAX_RETRIES ]; then
+            echo "❌ ERROR: PostgreSQL cluster did not become ready in time"
+            exit 1
+          fi
+          echo "✅ PostgreSQL cluster is ready"
+          echo
+
+          FAILED_TESTS=0
+          PASSED_TESTS=0
+
+          # Test each database
+          {{- range $databases }}
+          echo "────────────────────────────────────────────────────────────────"
+          echo "Testing Database: {{ .name }}"
+          echo "────────────────────────────────────────────────────────────────"
+
+          # Get credentials from secret
+          SECRET_NAME="{{ .name }}-pg-secret-qs"
+
+          # Get password from secret
+          PGPASSWORD=$(cat /secrets/{{ .name }}/password)
+          export PGPASSWORD
+          export PGDATABASE="{{ .name }}"
+          export PGUSER="{{ .owner }}"
+
+          # Test 1: Basic connectivity
+          echo -n "  Test 1: Basic connectivity... "
+          if psql -h $PGHOST -c "SELECT 1;" > /dev/null 2>&1; then
+            echo "✅ PASS"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+
+          # Test 2: Current user and database
+          echo -n "  Test 2: User and database verification... "
+          RESULT=$(psql -h $PGHOST -t -c "SELECT current_user, current_database();" 2>&1)
+          if echo "$RESULT" | grep -q "{{ .owner }}"; then
+            echo "✅ PASS"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+
+          {{- if .extensions }}
+          # Test 3: Extensions are installed
+          echo -n "  Test 3: Extensions verification... "
+          EXPECTED_EXTENSIONS=({{ range .extensions }}"{{ . }}" {{ end }})
+          MISSING_EXTENSIONS=()
+
+          for ext in "${EXPECTED_EXTENSIONS[@]}"; do
+            if ! psql -h $PGHOST -t -c "SELECT 1 FROM pg_extension WHERE extname = '$ext';" | grep -q 1; then
+              MISSING_EXTENSIONS+=("$ext")
+            fi
+          done
+
+          if [ ${#MISSING_EXTENSIONS[@]} -eq 0 ]; then
+            echo "✅ PASS ({{ len .extensions }} extensions)"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL (missing: ${MISSING_EXTENSIONS[*]})"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+
+          # Test 4: Extension functionality
+          {{- if has "uuid-ossp" .extensions }}
+          echo -n "  Test 4: uuid-ossp extension... "
+          if psql -h $PGHOST -t -c "SELECT uuid_generate_v4();" | grep -E '^[[:space:]]*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' > /dev/null; then
+            echo "✅ PASS"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          {{- end }}
+
+          {{- if has "pgcrypto" .extensions }}
+          echo -n "  Test 5: pgcrypto extension... "
+          if psql -h $PGHOST -t -c "SELECT length(crypt('test', gen_salt('bf')));" | grep -E '^[[:space:]]*[0-9]+' > /dev/null; then
+            echo "✅ PASS"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          {{- end }}
+          {{- end }}
+
+          # Test 6: Write operations
+          echo -n "  Test 6: Write operations... "
+          if psql -h $PGHOST -c "CREATE TEMP TABLE helm_test (id serial, data text); INSERT INTO helm_test (data) VALUES ('test'); SELECT COUNT(*) FROM helm_test;" > /dev/null 2>&1; then
+            echo "✅ PASS"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+
+          echo
+          {{- end }}
+
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Test Summary"
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Cluster: {{ $clusterName }}"
+          echo "  Databases Tested: {{ len $databases }}"
+          echo "  Tests Passed: $PASSED_TESTS"
+          echo "  Tests Failed: $FAILED_TESTS"
+          echo "════════════════════════════════════════════════════════════════"
+
+          if [ $FAILED_TESTS -gt 0 ]; then
+            echo
+            echo "❌ Some tests failed"
+            exit 1
+          fi
+
+          echo
+          echo "✅ All tests passed successfully!"
+          exit 0
+      volumeMounts:
+        {{- range $databases }}
+        - name: secret-{{ .name }}
+          mountPath: /secrets/{{ .name }}
+          readOnly: true
+        {{- end }}
+  volumes:
+    {{- range $databases }}
+    - name: secret-{{ .name }}
+      secret:
+        secretName: {{ .name }}-pg-secret-qs
+        items:
+          - key: password
+            path: password
+    {{- end }}
+{{- end }}

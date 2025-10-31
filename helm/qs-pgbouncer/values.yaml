@@ -188,6 +188,9 @@ pgbouncerTemporal:
       cpu: "1"
       memory: 512Mi
 
+  pgbouncer:
+    pool_mode: session
+
   # === Monitoring Configuration ===
   # PgBouncer metrics exporter for Prometheus
   pgbouncerExporter:

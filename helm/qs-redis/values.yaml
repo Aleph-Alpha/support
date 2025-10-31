@@ -1,0 +1,152 @@
+# ============================================================================
+# qs-redis Helm Chart Configuration
+# ============================================================================
+# This values file configures one or more standalone Redis instances with
+# Kubernetes-managed ACL user secrets. A Helm pre-install/upgrade Job will
+# create/update the ACL user secrets defined below while preserving any
+# existing per-user password values.
+#
+# Upstream reference (Bitnami Redis values):
+#   https://github.com/bitnami/charts/blob/main/bitnami/redis/values.yaml
+#
+# Key Concepts:
+# - Multiple Redis instances can be defined as top-level maps.
+# - Each instance must set `enabled: true` and `auth.acl.enabled: true` to be
+#   processed by the ACL secret creation Job.
+# - The Job looks at `auth.acl.users` to build `<acl-user-USERNAME>` data keys
+#   in the target secret defined by `auth.acl.userSecret`.
+# - Existing secrets: If a secret already exists and contains a user key it
+#   will be preserved (password not rotated). Missing user keys are added.
+# - New users: Added by defining them in `auth.acl.users`; removal is NOT
+#   performed automatically—manually delete keys if required.
+# - Password generation: The Job generates a random 32 char base64 password
+#   when creating a new user entry (see template job for details).
+#
+# Security Notes:
+# - Generated passwords are currently echoed in logs; consider switching to
+#   masked output or removing echo if log scrubbing is required.
+# - Secrets are labeled with `qs-redis/name` and `qs-redis/type` for selection.
+#
+# Extensibility:
+# - To add more Redis instances, replicate an instance block and (currently)
+#   ensure the key is listed in the template's `$instanceKeys` list.
+# - Future enhancement: auto-discover instance keys via a structured map.
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Global Naming Overrides
+# ----------------------------------------------------------------------------
+# Override the chart computed full name (empty = use Helm helper)
+fullnameOverride: ""
+
+# ----------------------------------------------------------------------------
+# ServiceAccount Configuration (for ACL Secret Creation Job)
+# ----------------------------------------------------------------------------
+serviceAccount:
+  create: true                    # Whether to create a ServiceAccount
+  automountServiceAccountToken: true  # Mount API credentials automatically
+  annotations: {}                 # Optional SA annotations
+  name: ""                        # Explicit name (empty = helper generated)
+
+# ----------------------------------------------------------------------------
+# RBAC Configuration (Role & RoleBinding for Secret CRUD)
+# ----------------------------------------------------------------------------
+rbac:
+  create: true                    # Whether to create RBAC resources
+
+pharia-transcribe-app-redis:
+  enabled: true                   # Enable this Redis instance
+  fullnameOverride: "pharia-transcribe-app-redis"  # Explicit resource name
+  architecture: standalone         # Standalone vs replication (only standalone supported here)
+
+  # --------------------------------------------------------------------------
+  # Authentication & ACL Configuration
+  # --------------------------------------------------------------------------
+  auth:
+    enabled: true                  # Enable auth; required for ACL
+    acl:
+      enabled: true                # Enable ACL management
+      sentinel: false              # Sentinel ACL support (reserved / unused here)
+      # Secret storing ACL user credentials. If omitted, a name will be derived
+      # Format of secret data keys: acl-user-<username>
+      # Each value: BASE64 encoded random password (generated on creation)
+      userSecret: "pharia-transcribe-app-redis-acl-users-secret"
+      users:
+        # List of ACL user specifications
+        # Fields:
+        # - username : Redis ACL username
+        # - enabled  : "on" | "off"; whether the user is active
+        # - commands : Redis ACL command category rules (e.g. +@all)
+        # - keys     : Key pattern rules (e.g. ~*)
+        # - channels : Pub/Sub channel pattern rules (e.g. &*)
+        - username: "pharia-transcribe-user"
+          enabled: "on"
+          commands: "+@all"
+          keys: "~*"
+          channels: "&*"
+
+  # --------------------------------------------------------------------------
+  # Master Node Persistence (Disabled for ephemeral / development use)
+  # --------------------------------------------------------------------------
+  master:
+    persistence:
+      enabled: false               # Set true to enable PVC persistence
+      storageClass: ""             # StorageClass override (empty = default)
+      accessModes:
+        - ReadWriteOnce
+      size: 10Gi                   # Requested storage size
+
+pharia-assistant-api-redis:
+  enabled: true
+  fullnameOverride: "pharia-assistant-api-redis"
+  architecture: standalone
+
+  auth:
+    enabled: true
+    acl:
+      enabled: true
+      sentinel: false
+      userSecret: "pharia-assistant-api-redis-acl-users-secret"
+      users:
+        - username: "pharia-assistant-api-user"
+          enabled: "on"
+          commands: "+@all"
+          keys: "~*"
+          channels: "&*"
+
+  master:
+    persistence:
+      enabled: false
+      storageClass: ""
+      accessModes:
+        - ReadWriteOnce
+      size: 10Gi
+
+# ============================================================================
+# Example: Adding an Additional Redis Instance
+# ============================================================================
+# new-instance-name-redis:
+#   enabled: true
+#   fullnameOverride: "new-instance-name-redis"
+#   architecture: standalone
+#   auth:
+#     enabled: true
+#     acl:
+#       enabled: true
+#       sentinel: false
+#       userSecret: "new-instance-name-redis-acl-users-secret"
+#       users:
+#         - username: "app-user"
+#           enabled: "on"
+#           commands: "+@all"
+#           keys: "~*"
+#           channels: "&*"
+#   master:
+#     persistence:
+#       enabled: false
+#       storageClass: ""
+#       accessModes:
+#         - ReadWriteOnce
+#       size: 10Gi
+
+# Remember: update the template's `$instanceKeys` list until auto-discovery is implemented.
