@@ -54,6 +54,13 @@ serviceAccount:
 rbac:
   create: true                    # Whether to create RBAC resources
 
+# ----------------------------------------------------------------------------
+# Test Configuration
+# ----------------------------------------------------------------------------
+tests:
+  image: "redis:7-alpine"         # Container image for helm test pods
+  # future: add resources / timeout / retry settings here
+
 pharia-transcribe-app-redis:
   enabled: true                   # Enable this Redis instance
   fullnameOverride: "pharia-transcribe-app-redis"  # Explicit resource name
