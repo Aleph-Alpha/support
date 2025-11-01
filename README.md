@@ -1,29 +1,260 @@
-# Aleph Alpha Support Scripts
+# Aleph Alpha Support Toolkit
 
-A collection of public support scripts and utilities for Aleph Alpha customers to help with container security, attestation management, and other operational tasks.
+Comprehensive open-source tooling used internally and shared publicly to streamline:
+
+* Container image security (signing, attestation, SBOM & triage processing)
+* Kubernetes operational workflows (Helm charts for Redis, PostgreSQL, PgBouncer, MinIO)
+* Secure supply chain verification (Cosign, Chainguard base validation)
+* Runtime functional tests (Helm test pods for databases, Redis ACL, MinIO buckets)
+
+> This README has been updated to reflect new Helm charts (qs-redis, qs-minio, qs-postgresql-*), Redis ACL secret automation, and test enhancements. Legacy or removed components have been pruned.
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Scripts](#scripts)
-  - [Scanner Scripts](#scanner-scripts)
-    - [k8s-image-scanner.sh](#k8s-image-scannersh)
-    - [cosign-scan-image.sh](#cosign-scan-imagesh)
-  - [Cosign Scripts](#cosign-scripts)
-    - [cosign-extract.sh](#cosign-extractsh)
-    - [cosign-verify-image.sh](#cosign-verify-imagesh)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Contributing](#contributing)
-- [License](#license)
+1. [Repository Structure](#repository-structure)
+2. [Helm Charts](#helm-charts)
+   * [qs-redis (ACL Secret Automation)](#qs-redis)
+   * [qs-postgresql-cluster](#qs-postgresql-cluster)
+   * [qs-postgresql-db](#qs-postgresql-db)
+   * [pgbouncer](#pgbouncer)
+   * [qs-minio (Distributed / HA)](#qs-minio)
+3. [Security & Supply Chain Tooling](#security--supply-chain-tooling)
+   * [Cosign Verification & Extraction](#cosign-scripts)
+   * [Chainguard Base Image Verification](#chainguard-base-image-verification)
+4. [Image & Attestation Scanner](#image--attestation-scanner)
+5. [Helm Test Pods](#helm-test-pods)
+6. [Prerequisites](#prerequisites)
+7. [Installation & Quick Start](#installation--quick-start)
+8. [Usage Workflows](#usage-workflows)
+9. [Development & Contributing](#development--contributing)
+10. [Roadmap / Future Enhancements](#roadmap--future-enhancements)
+11. [License](#license)
+12. [About Aleph Alpha](#about-aleph-alpha)
 
-## 🔍 Overview
+## 🗂 Repository Structure
 
-This repository contains utility scripts designed to help Aleph Alpha customers manage and interact with container images, security attestations, and related infrastructure components. These tools are particularly useful for organizations working with signed container images and security compliance requirements.
+```
+support/
+├─ helm/
+│  ├─ qs-redis/                  # Multi-instance Redis w/ ACL secret automation & test
+│  ├─ qs-postgresql-cluster/     # CloudNativePG clusters + roles
+│  ├─ qs-postgresql-db/          # CloudNativePG Database CR management + tests & extension job
+│  ├─ pgbouncer/                 # PgBouncer connection pooler chart
+│  ├─ qs-minio/                  # Distributed (HA) MinIO configuration
+│  └─ qs-pgbouncer/              # (Legacy/variant) placeholder chart (if still needed)
+├─ scanner/                      # Kubernetes & single-image security scanners
+│  ├─ k8s-image-scanner.sh
+│  └─ sample-ignore-images.txt
+├─ cosign-extract.sh             # Attestation extraction / verification
+├─ cosign-verify-image.sh        # Image signature verification
+├─ cosign-scan-image.sh          # Single-image SBOM & triage scan (invokes extract)
+├─ verify-chainguard-base-image.sh  # Chainguard base image validation
+├─ CHANGELOG.md
+├─ LICENSE
+└─ README.md
+```
 
-## 🛠️ Scripts
+## � Helm Charts
 
-### Scanner Scripts
+### qs-redis
+
+Multi-instance Redis chart with automatic ACL user secret management and functional tests.
+
+Key features:
+* Define multiple standalone Redis instances as top-level keys in `values.yaml`.
+* Pre-install/upgrade Job (`job-create-redis-acl-secrets.yaml`) generates or updates Kubernetes Secrets for ACL users, preserving existing passwords.
+* ACL users declared under `auth.acl.users` with username, command, key, channel scopes.
+* Helm test Pod validates: authenticated PING, AUTH, SET/GET, ACL LIST coverage.
+* Secrets labeled for selection (`qs-redis/name`, `qs-redis/type`).
+
+Usage (example):
+```bash
+helm install redis-stack ./helm/qs-redis -n data
+helm test redis-stack -n data
+```
+
+Planned improvement: auto-discover instance keys (remove hardcoded `$instanceKeys`).
+
+### qs-postgresql-cluster
+
+Defines CloudNativePG cluster resources and roles (users) including password secrets references. Supports multiple clusters (e.g., Pharia, Temporal) with granular PostgreSQL parameters and resource sizing.
+
+Highlights:
+* Role definitions with secret references for password preservation.
+* Tuned PostgreSQL parameters for performance (shared_buffers, work_mem, etc.).
+* Separation of clusters for different application domains.
+
+### qs-postgresql-db
+
+Manages CloudNativePG `Database` custom resources declaratively plus extension enablement and connection tests.
+
+Highlights:
+* Rich field documentation (locale, reclaim policy, templates, extensions).
+* Post-install/upgrade Job enables listed extensions per database.
+* Helm test Pod: connectivity, extension presence & basic write operations (emoji-styled summary).
+
+### pgbouncer
+
+Lightweight connection pooler chart: anti-affinity, TLS, monitoring (ServiceMonitor), and comprehensive configuration surface for pooling modes & limits.
+
+### qs-minio
+
+Distributed MinIO deployment (HA) with 4 pods, single PVC per pod, security hardening, and optional bucket provisioning.
+
+Highlights:
+* `replicaCount: 4`, `ha.enabled: true`, `ha.drivesPerNode: 1`.
+* Root credentials sourced from existing secret (recommended) to avoid churn.
+* Guidance for scaling and durability decisions in `values.yaml`.
+* Security contexts enforce non-root, drop capabilities, read-only root FS.
+* Styled Helm test (bucket lifecycle) validating: create bucket, upload object, list & verify content, delete object and bucket.
+
+## 🔐 Security & Supply Chain Tooling
+
+### Cosign Scripts
+
+* `cosign-verify-image.sh`: signature verification (keyless/key-based) with identity patterns and optional non-failing mode.
+* `cosign-extract.sh`: attestation discovery, selection (`--last`), predicate-only extraction (SBOM), multi-type support (slsa, cyclonedx, spdx, vuln, triage, license, custom).
+* `cosign-scan-image.sh`: single-image vulnerability workflow (SBOM + triage) with CVE classification.
+
+### Chainguard Base Image Verification
+
+`verify-chainguard-base-image.sh` determines if an image derives from a Chainguard base. Integrated into scanner output for compliance tracking.
+
+## 🛰 Image & Attestation Scanner
+
+`scanner/k8s-image-scanner.sh` discovers running Kubernetes images, fetches SBOM & triage attestations, applies filtering, verifies Chainguard base usage, and produces structured reports with severity & status segmentation.
+
+Key outputs:
+* `scan-summary.json` (aggregate statistics & CVE analysis)
+* Per-image directories with SBOM, triage, Trivy output, filtered CVE sets, Chainguard verification.
+
+Run:
+```bash
+./scanner/k8s-image-scanner.sh --namespace pharia-ai --parallel-scans 5
+```
+
+## 🧪 Helm Test Pods
+
+| Chart | Test Validations |
+|-------|------------------|
+| qs-postgresql-db | DB connectivity, user/database identity, extensions, write ops |
+| qs-redis | Authenticated PING, AUTH per ACL user, SET/GET, ACL LIST coverage |
+| qs-minio | Bucket create, object upload & verify, cleanup lifecycle |
+
+Invoke tests manually:
+```bash
+helm test <release> -n <namespace>
+```
+
+## 📦 Prerequisites
+
+Common tooling required for scripts and workflows:
+
+| Tool | Purpose |
+|------|---------|
+| kubectl | Kubernetes API interactions |
+| jq | JSON parsing & transformation |
+| crane | Registry operations (digest resolution) |
+| docker | Registry accessibility / auth contexts |
+| cosign | Image & attestation signature verification |
+| trivy | SBOM vulnerability scanning |
+| column | Tabular render for summaries |
+| bash (>=4) | Required for some advanced script features |
+
+Installation (macOS):
+```bash
+brew install jq crane cosign trivy
+```
+
+## ⚡ Installation & Quick Start
+
+Clone & prepare:
+```bash
+git clone https://github.com/Aleph-Alpha/support.git
+cd support
+chmod +x scanner/k8s-image-scanner.sh cosign-scan-image.sh cosign-extract.sh \
+  cosign-verify-image.sh verify-chainguard-base-image.sh
+```
+
+Install a Helm chart (example Redis):
+```bash
+helm install redis-stack ./helm/qs-redis -n data
+helm test redis-stack -n data
+```
+
+Scan a single image:
+```bash
+./cosign-scan-image.sh --image registry.example.com/app:v1.2.3 --format json
+```
+
+## 🔄 Usage Workflows
+
+### Redis ACL Lifecycle
+1. Define instances & users in `helm/qs-redis/values.yaml`.
+2. Install/upgrade releases; pre-install Job creates/updates secrets.
+3. Run Helm test to validate ACL users operationally.
+4. Add/remove users by editing values and re-upgrading (removal requires manual secret key deletion currently).
+
+### PostgreSQL Database + Extensions
+1. Deploy clusters via `qs-postgresql-cluster` (roles + sizing).
+2. Deploy databases via `qs-postgresql-db` with `extensions:` lists.
+3. Extension Job runs per upgrade to ensure availability.
+4. Helm test summarizes connectivity & extension readiness.
+
+### MinIO Distributed Deployment
+1. Ensure secret with root-user/password exists (or adapt template to create).
+2. Install `qs-minio` (4 nodes default).
+3. Use test pod to verify bucket/object operations.
+4. Expand cluster per MinIO guidelines (avoid scale-down).
+
+### Supply Chain Verification & Vulnerability Pipeline
+1. For a running namespace: execute `k8s-image-scanner.sh`.
+2. Review `scan-results/scan-summary.json` for remediation focus.
+3. Use `cosign-extract.sh` for deep attestation inspection.
+
+## 🛡 Security Practices
+
+* Prefer digest pinning for production images (add `@sha256:<digest>`).
+* Use OIDC identity matching (GitHub Actions) in Cosign commands for provenance assurance.
+* Consider implementing secret rotation policies (future: Redis ACL secret rotate flag).
+* Apply network policies and restrict test pods if running in production clusters.
+
+## 🧩 Development & Contributing
+
+Pull requests welcome. Please:
+* Maintain stylistic consistency (banner comment sections in values files).
+* Include error handling & clear user messaging in scripts.
+* Add Helm test validation when introducing critical operational behavior.
+* Update CHANGELOG.md for user-visible changes.
+
+## 🔮 Roadmap / Future Enhancements
+
+| Area | Planned Improvement |
+|------|----------------------|
+| Redis | Auto-discovery of instance keys; optional password rotation; ACL negative tests |
+| MinIO | Optional bucket provisioning via values list; lifecycle policies examples |
+| PostgreSQL | Additional extension health checks; performance smoke tests |
+| Scanner | SARIF enrichment for triage outputs; pluggable severity gating |
+| Supply Chain | Chain of custody reporting (build->scan->deploy trace) |
+| Docs | Architecture diagrams for multi-chart deployments |
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE).
+
+## 🏢 About Aleph Alpha
+
+[Aleph Alpha](https://aleph-alpha.com) researches, develops and deploys sovereign, explainable AI. PhariaAI enables enterprises and governments to build modular AI infrastructure with full data & process ownership.
+
+Our toolkit helps operational teams enforce security, ensure functional readiness, and accelerate compliant deployments in Kubernetes environments.
+
+---
+
+For questions or feature requests open an issue or reach out to our support channels.
+
+## 🛠️ (Legacy) Script Details
+
+### Scanner Scripts (Detailed)
 
 #### k8s-image-scanner.sh
 
@@ -369,7 +600,7 @@ The scanner leverages existing scripts for consistent behavior:
 - **cosign-extract.sh** (for extracting SBOM and triage attestations)
 - **cosign-verify-image.sh** (for verifying image signatures)
 
-### Cosign Scripts
+### Cosign Scripts (Detailed)
 
 #### verify-chainguard-base-image.sh (NEW)
 
