@@ -1,0 +1,142 @@
+{{- /*
+Redis ACL & Connectivity Helm Test
+Creates one test Pod per enabled Redis instance (currently enumerated manually).
+Validates:
+  1. Service reachable (PING -> PONG)
+  2. AUTH for each configured ACL user works
+  3. Basic read/write operations using first ACL user
+  4. ACL user listed in ACL LIST
+Styled output with PASS/FAIL counters and summary.
+*/ -}}
+{{- $root := . -}}
+{{- $instanceKeys := list "pharia-transcribe-app-redis" "pharia-assistant-api-redis" -}}
+{{- range $k := $instanceKeys }}
+{{- $cfg := index $root.Values $k | default dict -}}
+{{- if and $cfg $cfg.enabled $cfg.auth $cfg.auth.enabled $cfg.auth.acl $cfg.auth.acl.enabled ($cfg.auth.acl.users) }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "qs-redis.fullname" $root }}-test-{{ $k | sha256sum | trunc 8 }}
+  labels:
+    {{- include "qs-redis.labels" $root | nindent 4 }}
+    app.kubernetes.io/component: test
+    redis-instance: {{ $k }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: redis-acl-test
+      image: {{ $root.Values.tests.image | default "redis:7-alpine" }}
+      imagePullPolicy: IfNotPresent
+      command:
+        - /bin/sh
+        - -c
+        - |
+          # POSIX shell (alpine /bin/sh). Avoid bash arrays & pipefail.
+          set -eu
+
+          INSTANCE="{{ $k }}"
+          # Service host name: all Redis service endpoints use -master suffix
+          HOST="{{ $cfg.fullnameOverride | default $k }}-master"
+          PORT="6379"
+          SECRET_NAME="{{ $cfg.auth.acl.userSecret | default (printf "%s-acl-users-secret" $k) }}"
+
+          echo "════════════════════════════════════════════════════════════"
+          echo "  Redis ACL & Connectivity Test"
+          echo "  Instance: ${INSTANCE}"
+          echo "  Host: ${HOST}:${PORT}"
+          echo "════════════════════════════════════════════════════════════"
+          echo
+
+          PASSED=0
+          FAILED=0
+          TEST_INDEX=1
+
+          pass() { echo "  ✅ PASS"; PASSED=$(expr $PASSED + 1); }
+          fail() { echo "  ❌ FAIL"; FAILED=$(expr $FAILED + 1); }
+          start() { printf "%s. %s ... " "$TEST_INDEX" "$1"; TEST_INDEX=$(expr $TEST_INDEX + 1); }
+
+          # Collect user:password lines (space-delimited list) from secret directory
+          USERS=""
+          for f in /acl-users/*; do
+            [ -f "$f" ] || continue
+            user=$(basename "$f")
+            pw=$(cat "$f")
+            if [ -z "$USERS" ]; then
+              USERS="${user}:${pw}"
+            else
+              USERS="${USERS} ${user}:${pw}"
+            fi
+          done
+
+          if [ -z "$USERS" ]; then
+            echo "❌ No ACL users found in mounted secret ${SECRET_NAME}"
+            exit 1
+          fi
+
+          # Derive first user early for authenticated PING
+          FIRST_PAIR=$(printf "%s" "$USERS" | awk '{print $1}')
+          FIRST_USER=$(printf "%s" "$FIRST_PAIR" | cut -d':' -f1)
+          FIRST_PASS=$(printf "%s" "$FIRST_PAIR" | cut -d':' -f2-)
+
+          ##################################################################
+          start "Service PING (auth)"
+          if redis-cli -h "$HOST" -p "$PORT" --user "$FIRST_USER" --pass "$FIRST_PASS" PING 2>/dev/null | grep -q PONG; then pass; else fail; fi
+
+          ##################################################################
+          # AUTH each user
+          for up in $USERS; do
+            u=$(printf "%s" "$up" | cut -d':' -f1)
+            p=$(printf "%s" "$up" | cut -d':' -f2-)
+            start "AUTH user '$u'"
+            if redis-cli -h "$HOST" -p "$PORT" --user "$u" --pass "$p" ACL WHOAMI 2>/dev/null | grep -q "^$u$"; then pass; else fail; fi
+          done
+
+          # First user credentials already determined earlier
+
+          ##################################################################
+          start "Read/Write operations (SET/GET)"
+          if redis-cli -h "$HOST" -p "$PORT" --user "$FIRST_USER" --pass "$FIRST_PASS" SET helm:test:value "42" >/dev/null 2>&1 \
+             && [ "$(redis-cli -h "$HOST" -p "$PORT" --user "$FIRST_USER" --pass "$FIRST_PASS" GET helm:test:value)" = "42" ]; then pass; else fail; fi
+
+          ##################################################################
+          start "ACL LIST contains all users"
+          MISSING=0
+          ACL_OUT=$(redis-cli -h "$HOST" -p "$PORT" --user "$FIRST_USER" --pass "$FIRST_PASS" ACL LIST 2>/dev/null || true)
+          for up in $USERS; do
+            u=$(printf "%s" "$up" | cut -d':' -f1)
+            echo "$ACL_OUT" | grep -q "user $u" || MISSING=$(expr $MISSING + 1)
+          done
+          if [ $MISSING -eq 0 ]; then pass; else fail; fi
+
+          echo
+          echo "════════════════════════════════════════════════════════════"
+          echo "  Summary for instance ${INSTANCE}"
+          echo "════════════════════════════════════════════════════════════"
+          USER_COUNT=$(printf "%s" "$USERS" | wc -w | tr -d ' ')
+          echo "  Users tested: $USER_COUNT"
+          echo "  Tests passed: $PASSED"
+          echo "  Tests failed: $FAILED"
+          echo "════════════════════════════════════════════════════════════"
+
+          if [ $FAILED -gt 0 ]; then
+            echo "❌ Some Redis tests failed"
+            exit 1
+          fi
+
+          echo "✅ All Redis tests passed for instance ${INSTANCE}!"
+          exit 0
+      volumeMounts:
+        - name: acl-users-secret
+          mountPath: /acl-users
+          readOnly: true
+  volumes:
+    - name: acl-users-secret
+      secret:
+        secretName: {{ $cfg.auth.acl.userSecret | default (printf "%s-acl-users-secret" $k) }}
+{{- end }}
+{{- end }}
