@@ -1,0 +1,29 @@
+apiVersion: v2
+name: qs-minio
+home: https://aleph-alpha.com/phariaai/
+icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
+description: Helm chart for managing Redis instances for Pharia AI applications with support for multiple Redis deployments
+version: 1.0.0
+keywords:
+  - redis
+  - cache
+  - database
+  - pharia
+  - memory-store
+maintainers:
+  - name: Pharia AI Platform Team
+sources:
+  - https://redis.io/
+  - https://github.com/bitnami/charts/tree/main/bitnami/redis
+annotations:
+  category: Database
+  licenses: Apache-2.0
+  vendor: Aleph Alpha
+
+
+dependencies:
+- name: minio
+  version: 0.5.4
+  alias: pharia-minio
+  condition: pharia-minio.enabled
+  repository: oci://registry-1.docker.io/cloudpirates

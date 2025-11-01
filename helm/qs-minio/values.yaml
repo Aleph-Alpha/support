@@ -1,0 +1,204 @@
+## ============================================================================
+## MinIO High Availability Configuration
+## ============================================================================
+## This values file configures a distributed (HA) MinIO deployment.
+## MinIO in distributed mode provides erasure coding across multiple pods (nodes)
+## for resilience and data durability.
+##
+## References:
+## - https://min.io/docs/minio/linux/reference/minio-server/minio-server.html
+## - https://min.io/docs/minio/linux/operations/expand-minio-deployment.html
+## - https://github.com/minio/minio
+##
+## Key Concepts:
+## - Even node count (>=4) recommended for production. Using 4 here.
+## - "Drives" are backing storage paths. Provided via PVC(s) per pod.
+## - Scaling down a distributed cluster is NOT supported; plan capacity early.
+## - Root credentials are sourced from an existing Kubernetes Secret to avoid
+##   accidental password regeneration across upgrades.
+## - Bucket provisioning (defaultBuckets) happens only once; idempotent creation
+##   of existing buckets is safe.
+## ============================================================================
+
+fullnameOverride: ""
+
+# =========================================================================
+# MinIO Instance Definition
+# =========================================================================
+pharia-minio:
+  enabled: true
+  fullnameOverride: "pharia-minio"
+
+  # ========================================================================
+  # Authentication Configuration
+  # ========================================================================
+  # Helm release will create a secret named pharia-minio
+  # root-user: xxxxx
+  # root-password: xxxxxxx
+  auth:
+    # Root credentials are expected from existing secret (see guidance). Add overrides here if chart templates support them.
+    # rootUser: "admin"
+    # rootPassword: ""
+    # existingSecret: "minio-root-credentials"
+    # existingSecretUserKey: "MINIO_ROOT_USER"
+    # existingSecretPasswordKey: "MINIO_ROOT_PASSWORD"
+    {}
+
+
+
+  # ========================================================================
+  # Server Configuration
+  # ========================================================================
+  config:
+    browserEnabled: true            # Enable built-in web console
+    domain: ""                      # Domain for virtual-host style requests
+    extraEnvVars: []                # Additional environment variables
+    minioCompressionAllowEncryption: ""
+    minioCompressionEnabled: ""
+    minioCompressionExtensions: ""
+    minioCompressionMimeTypes: ""
+    minioConfigEnvFile: ""          # Path to env file (inside container)
+    minioOpts: ""                   # Additional CLI opts (e.g. '--console-address=":9001"')
+    minioScannerSpeed: ""           # Scanner throttling (fastest|fast|default|slow|slowest)
+    minioVolumes: ""                # Override storage paths (normally auto for StatefulSet PVCs)
+    region: ""                      # Default region
+    serverUrl: ""                   # External URL (for console redirects)
+
+  # ========================================================================
+  # Bucket Provisioning
+  # ========================================================================
+  # Format: name[:policy] with policy in (none, download, upload, public)
+  defaultBuckets: ""                # e.g. "uploads,public-bucket:public"
+
+  # ========================================================================
+  # High Availability / Distributed Settings
+  # ========================================================================
+  replicaCount: 4                   # Number of pods (must be even >=4 for prod)
+  ha:
+    drivesPerNode: 1                # PVCs per pod (adjust if multiple drives)
+    enabled: true                   # Distributed mode flag
+    freezeScaling: true             # Documentation flag discouraging scale changes
+    zones: 1                        # Availability zones (future use)
+
+  # ========================================================================
+  # Resource Requests & Limits
+  # ========================================================================
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+  # ========================================================================
+  # Persistence (Per Pod PVC)
+  # ========================================================================
+  persistence:
+    accessModes:
+      - ReadWriteOnce
+    annotations: {}
+    enabled: true
+    existingClaim: ""               # For standalone/manual PVC (unused here)
+    mountPath: /mnt/data            # Data path inside container
+    size: 50Gi                      # Capacity PER pod
+    storageClass: ""               # Default storage class (empty = cluster default)
+
+  # ========================================================================
+  # Probes (Health / Readiness)
+  # ========================================================================
+  livenessProbe:
+    enabled: true
+    failureThreshold: 3
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+
+  readinessProbe:
+    enabled: true
+    failureThreshold: 3
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    successThreshold: 1
+    timeoutSeconds: 3
+
+  startupProbe:
+    enabled: false
+    failureThreshold: 30
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    successThreshold: 1
+    timeoutSeconds: 5
+
+  # ========================================================================
+  # Security Context
+  # ========================================================================
+  podSecurityContext:
+    fsGroup: 1001
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: true
+    runAsGroup: 1001
+    runAsNonRoot: true
+    runAsUser: 1001
+
+  # ========================================================================
+  # Service (Internal Access)
+  # ========================================================================
+  service:
+    annotations: {}
+    consolePort: 9090
+    port: 9000
+    type: ClusterIP
+
+  # ========================================================================
+  # Ingress (S3 API) - Disabled by Default
+  # ========================================================================
+  ingress:
+    annotations: {}
+    className: ""
+    enabled: false
+    hosts:
+      - host: minio.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # ========================================================================
+  # Console Ingress - Disabled by Default
+  # ========================================================================
+  consoleIngress:
+    annotations: {}
+    className: ""
+    enabled: false
+    hosts:
+      - host: minio-console.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # ========================================================================
+  # Scheduling & Topology
+  # ========================================================================
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # ========================================================================
+  # Extra Objects (Additional Manifests)
+  # ========================================================================
+  extraObjects: []
+
+  # ========================================================================
+  # Guidance
+  # ========================================================================
+  # - Ensure 'minio-root-credentials' Secret exists before install.
+  # - Avoid scaling down; to expand follow MinIO expansion guidelines.
+  # - For TLS enable ingress and provide certs or integrate cert-manager.
+  # - Use readinessProbe values tuned for your storage performance.
