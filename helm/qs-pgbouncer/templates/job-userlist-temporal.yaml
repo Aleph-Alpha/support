@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "qs-pgbouncer.fullname" . }}-userlist-temporal
+  name: {{ include "qs-pgbouncer.fullname" . }}-userlist-pharia
   labels:
     {{- include "qs-pgbouncer.labels" . | nindent 4 }}
     app.kubernetes.io/component: create-secrets-userlist
@@ -60,8 +60,10 @@ spec:
               # Function to create PGbouncer secrets
               create_pgbouncer_userlist_secret() {
                   print_status "Creating PgBouncer userlist secret..."
-                  local secret_name="{{ .Values.pgbouncerTemporal.userlist.secret}}"
+                  local secret_name="{{ .Values.pgbouncerTemporal.config.existingUserlistSecret }}"
                   local userlist_content=""
+                  local pgbouncer_username=""
+                  local pgbouncer_password=""
 
                   print_status "Looking for secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-temporal..."
 
@@ -100,6 +102,13 @@ spec:
 
                       print_success "Found credentials for user: $username from secret: $secret_name_only"
 
+                      # Check if this is the pgbouncer user and save credentials
+                      if [ "$username" = "pgbouncer" ]; then
+                          print_status "Found pgbouncer user credentials - saving for admin secret"
+                          pgbouncer_username="$username"
+                          pgbouncer_password="$password"
+                      fi
+
                       # Add user entry to userlist content
                       userlist_content+="\"$username\" \"$password\"\n"
                   done
@@ -123,6 +132,33 @@ spec:
                       -o yaml | kubectl apply -f -
 
                   print_success "Created PgBouncer userlist secret: $secret_name"
+
+                  # Export pgbouncer credentials for admin secret creation
+                  export PGBOUNCER_FOUND_USERNAME="$pgbouncer_username"
+                  export PGBOUNCER_FOUND_PASSWORD="$pgbouncer_password"
+              }
+
+              # Function to create admin secret with distinct keys adminUser/adminPassword
+              create_admin_secret() {
+                  local admin_secret_name="{{ .Values.pgbouncerTemporal.config.existingAdminSecret }}"
+                  local admin_user_key="adminUser"
+                  local admin_password_key="adminPassword"
+
+                  # Check if secret already exists
+                  if kubectl get secret "$admin_secret_name" >/dev/null 2>&1; then
+                      print_status "Admin secret $admin_secret_name already exists; skipping creation"
+                      return 0
+                  fi
+
+                  # Use found pgbouncer credentials if available, otherwise generate
+                  local admin_password_val="$PGBOUNCER_FOUND_PASSWORD"
+
+                  print_status "Creating admin secret $admin_secret_name with user 'pgbouncer'"
+                  kubectl create secret generic "$admin_secret_name" \
+                      --from-literal=${admin_user_key}="pgbouncer" \
+                      --from-literal=${admin_password_key}="$admin_password_val" \
+                      --dry-run=client -o yaml | kubectl apply -f -
+                  print_success "Created admin secret $admin_secret_name"
               }
 
               # Main execution
@@ -136,17 +172,14 @@ spec:
                       exit 1
                   fi
 
-                  # Check if openssl is available for password generation
-                  if ! command -v openssl &> /dev/null; then
-                      print_error "openssl is not installed or not in PATH (needed for password generation)"
-                      exit 1
-                  fi
-
                   # Create pgbouncer userlist secret
                   create_pgbouncer_userlist_secret
+
+                  # Create admin secret (if enabled and absent)
+                  create_admin_secret
                   echo ""
 
-                  print_success "pgbouncer userlist secret has been created successfully!"
+                  print_success "pgbouncer userlist and admin secrets have been created successfully!"
               }
 
               # Run main function

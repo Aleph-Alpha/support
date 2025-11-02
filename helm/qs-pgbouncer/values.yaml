@@ -2,264 +2,356 @@
 # QS PgBouncer Helm Chart Configuration
 # ============================================================================
 #
-# This Helm chart deploys multiple PgBouncer instances for different PostgreSQL clusters.
-# It is a wrapper chart that uses the pgbouncer subchart to deploy:
-# - PgBouncer for Pharia cluster
-# - PgBouncer for Temporal cluster
+# This Helm chart deploys PgBouncer connection poolers for PostgreSQL clusters.
+# It supports multiple independent instances with separate configurations:
+# - PgBouncer for Pharia cluster (transaction pooling mode)
+# - PgBouncer for Temporal cluster (session pooling mode)
 #
 # Each PgBouncer instance can be configured independently with its own:
-# - Database connections
-# - Resource limits
-# - Monitoring/metrics
-# - High availability settings
+# - Database connections and routing
+# - Resource limits and high availability
+# - Monitoring and metrics collection
+# - Authentication and user management
 #
 # For more details, see:
 # - https://www.pgbouncer.org/config.html
 # - https://github.com/cloudnative-pg/pgbouncer-containers
 
 # ============================================================================
-# Basic Configuration
+# Global Configuration
 # ============================================================================
 
-# Full Name override for Kubernetes resources
+# Override the full name used for Kubernetes resources
 fullnameOverride: "qs-pgbouncer"
 
 # ============================================================================
 # Helm Test Configuration
 # ============================================================================
-# Configuration for Helm tests that verify PgBouncer connectivity
+# Configuration for Helm tests that verify PgBouncer connectivity and functionality
 # Note: Tests are only executed when you run 'helm test <release-name>'
 tests:
-  # Container image to use for tests
+  # Container image to use for connection tests
   image: "postgres:17"
-  # SSL mode for PgBouncer connections during tests
+  # SSL mode for PostgreSQL connections during tests
   sslMode: "prefer"
 
 # ============================================================================
 # PgBouncer Pharia Instance Configuration
 # ============================================================================
 # PgBouncer instance for the Pharia PostgreSQL cluster
+# Uses transaction pooling mode for optimal connection reuse
 
 pgbouncerPharia:
   # Enable or disable this PgBouncer instance
   enabled: true
-
-  # Full Name override for this instance
+  # Override the full name for this specific instance
   fullnameOverride: pgbouncer-pharia
-
-  # Number of PgBouncer replicas
+  # Kubernetes workload type (Deployment or StatefulSet)
+  kind: Deployment
+  # Number of PgBouncer replica pods for high availability
   replicaCount: 3
 
-  # Pod anti-affinity setting (soft or hard)
-  antiAffinity: soft
-
   # === Database Configuration ===
-  # Database connection settings for the Pharia PostgreSQL cluster
-  databases:
-    "*":
-      host: "cluster-pharia-rw"  # Pharia PostgreSQL read-write endpoint
-      port: 5432
+  # Database connection settings and PgBouncer parameters
+  config:
+    # Database connection mappings
+    # The "*" wildcard allows any database name to be routed to the target host
+    databases:
+      "*":
+        # PostgreSQL cluster service hostname for Pharia
+        host: "cluster-pharia-rw"
+        # PostgreSQL service port
+        port: 5432
 
-  # === Authentication Configuration ===
-  # User authentication list secret
-  userlist:
-    secret: pgbouncer-pharia-userlist
+    # Administrative user for PgBouncer management
+    adminUser: pgbouncer
+
+    # Core PgBouncer configuration parameters
+    # Reference: https://www.pgbouncer.org/config.html
+    pgbouncer:
+      # Connection pooling mode: transaction mode for Pharia applications
+      # Transaction mode releases connections after each transaction
+      pool_mode: transaction
+      # SSL mode for backend PostgreSQL connections
+      server_tls_sslmode: require
+      # PostgreSQL parameters to ignore from client connections
+      ignore_startup_parameters: extra_float_digits, jit
+      # Maximum prepared statements per connection
+      max_prepared_statements: 20
+      # Default number of connections in the pool
+      default_pool_size: 20
+      # Authentication method: scram-sha-256 for secure password handling
+      auth_type: scram-sha-256
+      # Log new connections (0=disabled, 1=enabled)
+      log_connections: 0
+      # Log connection closures (0=disabled, 1=enabled)
+      log_disconnections: 0
+      # Log pooler errors (0=disabled, 1=enabled)
+      log_pooler_errors: 1
+      # Log pooler statistics (0=disabled, 1=enabled)
+      log_stats: 1
+      # Log file destination (stdout for container logging)
+      logfile: /dev/stdout
+      # Maximum number of client connections
+      max_client_conn: 300
+
+    # === Authentication Configuration ===
+    # Secret management for user authentication
+    # Secrets must be created separately and contain required user credentials
+    # Name of secret containing admin user credentials (adminUser/adminPassword keys)
+    existingAdminSecret: "pgbouncer-pharia-admin"
+    # Name of secret containing userlist.txt file for user authentication
+    existingUserlistSecret: "pgbouncer-pharia-userlist"
+
+    # PgBouncer metrics exporter configuration (nested under config)
+    pgbouncerExporter:
+      # Enable Prometheus metrics exporter sidecar
+      enabled: true
+      # Enable PodMonitor for Prometheus Operator (deprecated, use serviceMonitor)
+      podMonitor: false
 
   # === Resource Configuration ===
-  # CPU and memory resource requests and limits
+  # CPU and memory resource limits and requests for PgBouncer pods
   resources:
     limits:
-      cpu: "4"
-      memory: 2000Mi
+      # CPU limit
+      cpu: 100m
+      # Memory limit
+      memory: 128Mi
     requests:
-      cpu: "1"
-      memory: 512Mi
+      # CPU request
+      cpu: 50m
+      # Memory request
+      memory: 64Mi
+
+  # === High Availability Configuration ===
+  # Pod affinity and anti-affinity rules for high availability
+  affinity:
+    podAntiAffinity:
+      # Prefer to schedule pods on different nodes to avoid single points of failure
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+              - pgbouncer
+            - key: app.kubernetes.io/instance
+              operator: In
+              values:
+              - pgbouncer
+          # Topology key for anti-affinity (hostname separates by node)
+          topologyKey: kubernetes.io/hostname
 
   # === Monitoring Configuration ===
-  # PgBouncer metrics exporter for Prometheus
-  pgbouncerExporter:
-    - name: metrics-exporter
-      image: quay.io/prometheuscommunity/pgbouncer-exporter:v0.11.0
-      ports:
-        - name: metrics
-          containerPort: 9127
-      args:
-        - --web.listen-address=:9127
-        - --web.telemetry-path=/metrics
-        - --log.level=debug
-        - --pgBouncer.connectionString=postgres://$(PGBOUNCER_USER):$(PGBOUNCER_PWD)@localhost:6432/pgbouncer?sslmode=disable&connect_timeout=10
-      env:
-        - name: PGBOUNCER_USER
-          valueFrom:
-            secretKeyRef:
-              name: "pgbouncer-pharia-pg-secret-qs"
-              key: username
-        - name: PGBOUNCER_PWD
-          valueFrom:
-            secretKeyRef:
-              name: "pgbouncer-pharia-pg-secret-qs"
-              key: password
-      livenessProbe:
-        initialDelaySeconds: 3
-        timeoutSeconds: 3
-        httpGet:
-          path: /
-          port: metrics
-      readinessProbe:
-        initialDelaySeconds: 5
-        timeoutSeconds: 10
-        httpGet:
-          path: /
-          port: metrics
-      securityContext:
-        runAsUser: 1001
-        runAsGroup: 1001
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
-
-  # === ServiceMonitor Configuration ===
-  # Prometheus Operator ServiceMonitor for metrics collection
+  # Prometheus ServiceMonitor configuration for metrics collection
   serviceMonitor:
     # Enable ServiceMonitor resource creation
-    enabled: false
-
-    # Scrape interval for metrics collection
+    enabled: true
+    # Metrics scrape interval
     interval: 30s
-
-    # Timeout for each scrape request
+    # Scrape timeout duration
     scrapeTimeout: 10s
 
-    # Metrics endpoint path
-    path: /metrics
-
-    # Additional labels for ServiceMonitor
-    labels: {}
-
-    # Additional annotations for ServiceMonitor
-    annotations: {}
-
-    # Honor labels from scraped data
-    honorLabels: false
-
-    # Metric relabeling configuration
-    metricRelabelings: []
-
-    # Target relabeling configuration
-    relabelings: []
+  # === Initialization Configuration ===
+  # Additional init containers to run before PgBouncer starts
+  extraInitContainers:
+  - name: check-config
+    # Lightweight image for configuration validation
+    image: "alpine:latest"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # Wait for userlist.txt to be available
+        echo "INFO: Waiting for /etc/userlist/userlist.txt to be available..."
+        max_wait=300
+        wait_time=0
+        while [ ! -f /etc/userlist/userlist.txt ] && [ $wait_time -lt $max_wait ]; do
+          echo "userlist.txt not found, waiting... (${wait_time}s/${max_wait}s)"
+          sleep 5
+          wait_time=$((wait_time + 5))
+        done
+        if [ ! -f /etc/userlist/userlist.txt ]; then
+          echo "ERROR: userlist.txt not found after ${max_wait} seconds"
+          exit 127
+        fi
+        # Validate file is not empty
+        if [ ! -s /etc/userlist/userlist.txt ]; then
+          echo "ERROR: userlist.txt is empty"
+          exit 127
+        fi
+        echo "INFO: userlist.txt is present and non-empty."
+    volumeMounts:
+    - name: userlist
+      mountPath: /etc/userlist/
 
 # ============================================================================
 # PgBouncer Temporal Instance Configuration
 # ============================================================================
 # PgBouncer instance for the Temporal PostgreSQL cluster
+# Uses session pooling mode to maintain connection state for Temporal workflows
 
 pgbouncerTemporal:
   # Enable or disable this PgBouncer instance
   enabled: true
-
-  # Full Name override for this instance
+  # Override the full name for this specific instance
   fullnameOverride: pgbouncer-temporal
-
-  # Number of PgBouncer replicas
+  # Kubernetes workload type (Deployment or StatefulSet)
+  kind: Deployment
+  # Number of PgBouncer replica pods for high availability
   replicaCount: 3
 
-  # Pod anti-affinity setting (soft or hard)
-  antiAffinity: soft
-
   # === Database Configuration ===
-  # Database connection settings for the Temporal PostgreSQL cluster
-  databases:
-    "*":
-      host: "cluster-temporal-rw"  # Temporal PostgreSQL read-write endpoint
-      port: 5432
+  # Database connection settings and PgBouncer parameters
+  config:
+    # Database connection mappings
+    # The "*" wildcard allows any database name to be routed to the target host
+    databases:
+      "*":
+        # PostgreSQL cluster service hostname for Temporal
+        host: "cluster-temporal-rw"
+        # PostgreSQL service port
+        port: 5432
 
-  # === Authentication Configuration ===
-  # User authentication list secret
-  userlist:
-    secret: pgbouncer-temporal-userlist
+    # Administrative user for PgBouncer management
+    adminUser: pgbouncer
+
+    # Core PgBouncer configuration parameters
+    # Reference: https://www.pgbouncer.org/config.html
+    pgbouncer:
+      # Connection pooling mode: session mode for Temporal's connection state requirements
+      # Session mode maintains connection state and prepared statements
+      pool_mode: session
+      # SSL mode for backend PostgreSQL connections
+      server_tls_sslmode: require
+      # PostgreSQL parameters to ignore from client connections
+      ignore_startup_parameters: extra_float_digits
+      # Maximum prepared statements per connection
+      max_prepared_statements: 20
+      # Default number of connections in the pool
+      default_pool_size: 20
+      # Authentication method: scram-sha-256 for secure password handling
+      auth_type: scram-sha-256
+      # Log new connections (0=disabled, 1=enabled)
+      log_connections: 0
+      # Log connection closures (0=disabled, 1=enabled)
+      log_disconnections: 0
+      # Log pooler errors (0=disabled, 1=enabled)
+      log_pooler_errors: 1
+      # Log pooler statistics (0=disabled, 1=enabled)
+      log_stats: 1
+      # Log file destination (stdout for container logging)
+      logfile: /dev/stdout
+      # Maximum number of client connections
+      max_client_conn: 200
+
+    # === Authentication Configuration ===
+    # Secret management for user authentication
+    # Secrets must be created separately and contain required user credentials
+    # Name of secret containing admin user credentials (adminUser/adminPassword keys)
+    existingAdminSecret: "pgbouncer-temporal-admin"
+    # Name of secret containing userlist.txt file for user authentication
+    existingUserlistSecret: "pgbouncer-temporal-userlist"
+
+    # PgBouncer metrics exporter configuration (nested under config)
+    pgbouncerExporter:
+      # Enable Prometheus metrics exporter sidecar
+      enabled: true
+      # Enable PodMonitor for Prometheus Operator (deprecated, use serviceMonitor)
+      podMonitor: false
 
   # === Resource Configuration ===
-  # CPU and memory resource requests and limits
+  # CPU and memory resource limits and requests for PgBouncer pods
   resources:
     limits:
-      cpu: "4"
-      memory: 2000Mi
+      # CPU limit
+      cpu: 100m
+      # Memory limit
+      memory: 128Mi
     requests:
-      cpu: "1"
-      memory: 512Mi
+      # CPU request
+      cpu: 50m
+      # Memory request
+      memory: 64Mi
 
-  pgbouncer:
-    pool_mode: session
+  # === High Availability Configuration ===
+  # Pod affinity and anti-affinity rules for high availability
+  affinity:
+    podAntiAffinity:
+      # Prefer to schedule pods on different nodes to avoid single points of failure
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: In
+              values:
+              - pgbouncer
+            - key: app.kubernetes.io/instance
+              operator: In
+              values:
+              - pgbouncer
+          # Topology key for anti-affinity (hostname separates by node)
+          topologyKey: kubernetes.io/hostname
 
   # === Monitoring Configuration ===
-  # PgBouncer metrics exporter for Prometheus
-  pgbouncerExporter:
-    - name: metrics-exporter
-      image: quay.io/prometheuscommunity/pgbouncer-exporter:v0.11.0
-      ports:
-        - name: metrics
-          containerPort: 9127
-      args:
-        - --web.listen-address=:9127
-        - --web.telemetry-path=/metrics
-        - --log.level=debug
-        - --pgBouncer.connectionString=postgres://$(PGBOUNCER_USER):$(PGBOUNCER_PWD)@localhost:6432/pgbouncer?sslmode=disable&connect_timeout=10
-      env:
-        - name: PGBOUNCER_USER
-          valueFrom:
-            secretKeyRef:
-              name: "pgbouncer-temporal-pg-secret-qs"
-              key: username
-        - name: PGBOUNCER_PWD
-          valueFrom:
-            secretKeyRef:
-              name: "pgbouncer-temporal-pg-secret-qs"
-              key: password
-      livenessProbe:
-        initialDelaySeconds: 3
-        timeoutSeconds: 3
-        httpGet:
-          path: /
-          port: metrics
-      readinessProbe:
-        initialDelaySeconds: 5
-        timeoutSeconds: 10
-        httpGet:
-          path: /
-          port: metrics
-      securityContext:
-        runAsUser: 1001
-        runAsGroup: 1001
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
-
-  # === ServiceMonitor Configuration ===
-  # Prometheus Operator ServiceMonitor for metrics collection
+  # Prometheus ServiceMonitor configuration for metrics collection
   serviceMonitor:
     # Enable ServiceMonitor resource creation
-    enabled: false
-
-    # Scrape interval for metrics collection
+    enabled: true
+    # Metrics scrape interval
     interval: 30s
-
-    # Timeout for each scrape request
+    # Scrape timeout duration
     scrapeTimeout: 10s
 
-    # Metrics endpoint path
-    path: /metrics
+  # === Pod Disruption Configuration ===
+  # PodDisruptionBudget settings for controlled disruptions
+  pdb:
+    # Maximum number of pods that can be unavailable during disruptions
+    maxUnavailable: 1
 
-    # Additional labels for ServiceMonitor
-    labels: {}
+  # === Initialization Configuration ===
+  # Additional init containers to run before PgBouncer starts
+  extraInitContainers:
+  - name: check-config
+    # Lightweight image for configuration validation
+    image: "alpine:latest"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        # Wait for userlist.txt to be available
+        echo "INFO: Waiting for /etc/userlist/userlist.txt to be available..."
+        max_wait=300
+        wait_time=0
+        while [ ! -f /etc/userlist/userlist.txt ] && [ $wait_time -lt $max_wait ]; do
+          echo "userlist.txt not found, waiting... (${wait_time}s/${max_wait}s)"
+          sleep 5
+          wait_time=$((wait_time + 5))
+        done
+        if [ ! -f /etc/userlist/userlist.txt ]; then
+          echo "ERROR: userlist.txt not found after ${max_wait} seconds"
+          exit 127
+        fi
+        # Validate file is not empty
+        if [ ! -s /etc/userlist/userlist.txt ]; then
+          echo "ERROR: userlist.txt is empty"
+          exit 127
+        fi
+        echo "INFO: userlist.txt is present and non-empty."
+    volumeMounts:
+    - name: userlist
+      mountPath: /etc/userlist/
 
-    # Additional annotations for ServiceMonitor
-    annotations: {}
-
-    # Honor labels from scraped data
-    honorLabels: false
-
-    # Metric relabeling configuration
-    metricRelabelings: []
-
-    # Target relabeling configuration
-    relabelings: []
+# ============================================================================
+# Global Metrics Configuration
+# ============================================================================
+# Top-level PgBouncer metrics exporter configuration
+# This is maintained for backward compatibility with the pgbouncer chart
+pgbouncerExporter:
+  # Enable metrics exporter globally
+  enabled: true

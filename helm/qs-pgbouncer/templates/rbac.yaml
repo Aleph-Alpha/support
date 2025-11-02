@@ -7,7 +7,9 @@ metadata:
     {{- include "qs-pgbouncer.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
   annotations:
-    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -22,7 +24,9 @@ metadata:
     {{- include "qs-pgbouncer.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
   annotations:
-    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-8"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
