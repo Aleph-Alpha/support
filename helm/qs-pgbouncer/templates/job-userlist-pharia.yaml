@@ -161,6 +161,74 @@ spec:
                   print_success "Created admin secret $admin_secret_name"
               }
 
+              # Function to trigger PgBouncer deployment restart when secrets change
+              trigger_pgbouncer_restart() {
+                  local userlist_secret_name="{{ .Values.pgbouncerPharia.config.existingUserlistSecret }}"
+                  local admin_secret_name="{{ .Values.pgbouncerPharia.config.existingAdminSecret }}"
+                  local deployment_name="{{ .Values.pgbouncerPharia.fullnameOverride }}"
+
+                  print_status "Checking if PgBouncer deployment restart is needed..."
+
+                  # Calculate checksums of secret contents
+                  local userlist_checksum=""
+                  local admin_checksum=""
+
+                  if kubectl get secret "$userlist_secret_name" >/dev/null 2>&1; then
+                      userlist_checksum=$(kubectl get secret "$userlist_secret_name" -o jsonpath='{.data.userlist\.txt}' | sha256sum | cut -d' ' -f1)
+                      print_status "Userlist secret checksum: $userlist_checksum"
+                  fi
+
+                  if kubectl get secret "$admin_secret_name" >/dev/null 2>&1; then
+                      admin_checksum=$(kubectl get secret "$admin_secret_name" -o jsonpath='{.data}' | sha256sum | cut -d' ' -f1)
+                      print_status "Admin secret checksum: $admin_checksum"
+                  fi
+
+                  # Check if deployment exists
+                  if ! kubectl get deployment "$deployment_name" >/dev/null 2>&1; then
+                      print_warning "Deployment $deployment_name not found; skipping restart annotation"
+                      return 0
+                  fi
+
+                  # Get current annotations
+                  local current_userlist_checksum=$(kubectl get deployment "$deployment_name" -o jsonpath='{.spec.template.metadata.annotations.checksum/userlist-secret}' 2>/dev/null || echo "")
+                  local current_admin_checksum=$(kubectl get deployment "$deployment_name" -o jsonpath='{.spec.template.metadata.annotations.checksum/admin-secret}' 2>/dev/null || echo "")
+
+                  # Check if restart is needed
+                  local restart_needed=false
+                  if [ "$userlist_checksum" != "$current_userlist_checksum" ]; then
+                      print_status "Userlist secret changed (old: $current_userlist_checksum, new: $userlist_checksum)"
+                      restart_needed=true
+                  fi
+
+                  if [ "$admin_checksum" != "$current_admin_checksum" ]; then
+                      print_status "Admin secret changed (old: $current_admin_checksum, new: $admin_checksum)"
+                      restart_needed=true
+                  fi
+
+                  if [ "$restart_needed" = true ]; then
+                      print_status "Triggering PgBouncer deployment restart by updating secret checksums..."
+
+                      # Update deployment annotations to trigger restart
+                      kubectl patch deployment "$deployment_name" -p "{
+                        \"spec\": {
+                          \"template\": {
+                            \"metadata\": {
+                              \"annotations\": {
+                                \"checksum/userlist-secret\": \"$userlist_checksum\",
+                                \"checksum/admin-secret\": \"$admin_checksum\",
+                                \"kubectl.kubernetes.io/restartedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+                              }
+                            }
+                          }
+                        }
+                      }"
+
+                      print_success "PgBouncer deployment restart triggered due to secret changes"
+                  else
+                      print_status "No secret changes detected; PgBouncer restart not needed"
+                  fi
+              }
+
               # Main execution
               main() {
                   print_status "Starting secret creation for pharia-ai-helm-chart..."
@@ -177,8 +245,11 @@ spec:
 
                   # Create admin secret (if enabled and absent)
                   create_admin_secret
-                  echo ""
 
+                  # Trigger PgBouncer restart if secrets changed
+                  trigger_pgbouncer_restart
+
+                  echo ""
                   print_success "pgbouncer userlist and admin secrets have been created successfully!"
               }
 

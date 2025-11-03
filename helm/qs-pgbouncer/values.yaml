@@ -51,10 +51,6 @@ pgbouncerPharia:
   # Number of PgBouncer replica pods for high availability
   replicaCount: 3
 
-  # reloader annotations to auto-reload PgBouncer on config changes
-  podAnnotations:
-    reloader.stakater.com/auto: "true"
-
   # === Database Configuration ===
   # Database connection settings and PgBouncer parameters
   config:
@@ -107,13 +103,6 @@ pgbouncerPharia:
     # Name of secret containing userlist.txt file for user authentication
     existingUserlistSecret: "pgbouncer-pharia-userlist"
 
-    # PgBouncer metrics exporter configuration (nested under config)
-    pgbouncerExporter:
-      # Enable Prometheus metrics exporter sidecar
-      enabled: true
-      # Enable PodMonitor for Prometheus Operator (deprecated, use serviceMonitor)
-      podMonitor: false
-
   # === Resource Configuration ===
   # CPU and memory resource limits and requests for PgBouncer pods
   resources:
@@ -150,14 +139,12 @@ pgbouncerPharia:
           topologyKey: kubernetes.io/hostname
 
   # === Monitoring Configuration ===
-  # Prometheus ServiceMonitor configuration for metrics collection
-  serviceMonitor:
-    # Enable ServiceMonitor resource creation
+  # PgBouncer metrics exporter configuration (nested under config)
+  pgbouncerExporter:
+    # Enable Prometheus metrics exporter sidecar
     enabled: true
-    # Metrics scrape interval
-    interval: 30s
-    # Scrape timeout duration
-    scrapeTimeout: 10s
+    # Enable PodMonitor for Prometheus Operator (deprecated, use serviceMonitor)
+    podMonitor: false
 
   # === Initialization Configuration ===
   # Additional init containers to run before PgBouncer starts
@@ -207,10 +194,6 @@ pgbouncerTemporal:
   kind: Deployment
   # Number of PgBouncer replica pods for high availability
   replicaCount: 3
-
-  # reloader annotations to auto-reload PgBouncer on config changes
-  podAnnotations:
-    reloader.stakater.com/auto: "true"
 
   # === Database Configuration ===
   # Database connection settings and PgBouncer parameters
@@ -264,13 +247,6 @@ pgbouncerTemporal:
     # Name of secret containing userlist.txt file for user authentication
     existingUserlistSecret: "pgbouncer-temporal-userlist"
 
-    # PgBouncer metrics exporter configuration (nested under config)
-    pgbouncerExporter:
-      # Enable Prometheus metrics exporter sidecar
-      enabled: true
-      # Enable PodMonitor for Prometheus Operator (deprecated, use serviceMonitor)
-      podMonitor: false
-
   # === Resource Configuration ===
   # CPU and memory resource limits and requests for PgBouncer pods
   resources:
@@ -306,21 +282,19 @@ pgbouncerTemporal:
           # Topology key for anti-affinity (hostname separates by node)
           topologyKey: kubernetes.io/hostname
 
-  # === Monitoring Configuration ===
-  # Prometheus ServiceMonitor configuration for metrics collection
-  serviceMonitor:
-    # Enable ServiceMonitor resource creation
-    enabled: true
-    # Metrics scrape interval
-    interval: 30s
-    # Scrape timeout duration
-    scrapeTimeout: 10s
-
   # === Pod Disruption Configuration ===
   # PodDisruptionBudget settings for controlled disruptions
   pdb:
     # Maximum number of pods that can be unavailable during disruptions
     maxUnavailable: 1
+
+  # === Monitoring Configuration ===
+  # PgBouncer metrics exporter configuration (nested under config)
+  pgbouncerExporter:
+    # Enable Prometheus metrics exporter sidecar
+    enabled: true
+    # Enable PodMonitor for Prometheus Operator (deprecated, use serviceMonitor)
+    podMonitor: false
 
   # === Initialization Configuration ===
   # Additional init containers to run before PgBouncer starts
@@ -354,12 +328,3 @@ pgbouncerTemporal:
     volumeMounts:
     - name: userlist
       mountPath: /etc/userlist/
-
-# ============================================================================
-# Global Metrics Configuration
-# ============================================================================
-# Top-level PgBouncer metrics exporter configuration
-# This is maintained for backward compatibility with the pgbouncer chart
-pgbouncerExporter:
-  # Enable metrics exporter globally
-  enabled: true
