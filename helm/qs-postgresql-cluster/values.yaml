@@ -29,6 +29,13 @@ jobConfig:
   # -- Fail on error - if false, job continues even if some secrets fail
   failOnError: true
 
+# Configuration for Helm tests
+tests:
+  # -- PostgreSQL image to use for connection tests
+  image: postgres:17
+  # -- SSL mode for PostgreSQL connections (disable, allow, prefer, require, verify-ca, verify-full)
+  sslMode: prefer
+
 # PG Cluster for Pharia Applications
 clusterPharia:
   enabled: true
@@ -352,7 +359,7 @@ clusterTemporal:
   #    # -- PgBouncer type of service to forward traffic to.
   #    type: rw
   #    # -- PgBouncer pooling mode
-  #    poolMode: transaction
+  #    poolMode: session
   #    # -- Number of PgBouncer instances
   #    instances: 3
   #    # -- PgBouncer configuration parameters
