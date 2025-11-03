@@ -51,6 +51,10 @@ pgbouncerPharia:
   # Number of PgBouncer replica pods for high availability
   replicaCount: 3
 
+  # reloader annotations to auto-reload PgBouncer on config changes
+  podAnnotations:
+    reloader.stakater.com/auto: "true"
+
   # === Database Configuration ===
   # Database connection settings and PgBouncer parameters
   config:
@@ -203,6 +207,10 @@ pgbouncerTemporal:
   kind: Deployment
   # Number of PgBouncer replica pods for high availability
   replicaCount: 3
+
+  # reloader annotations to auto-reload PgBouncer on config changes
+  podAnnotations:
+    reloader.stakater.com/auto: "true"
 
   # === Database Configuration ===
   # Database connection settings and PgBouncer parameters
