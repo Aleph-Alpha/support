@@ -65,6 +65,13 @@ spec:
                   local pgbouncer_username=""
                   local pgbouncer_password=""
 
+                  # Store existing secret content for comparison
+                  local existing_userlist_content=""
+                  if kubectl get secret "$secret_name" >/dev/null 2>&1; then
+                      existing_userlist_content=$(kubectl get secret "$secret_name" -o jsonpath='{.data.userlist\.txt}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+                      print_status "Found existing userlist secret with content"
+                  fi
+
                   print_status "Looking for secrets with labels app.kubernetes.io/name=qs-postgresql-cluster and qs-postgresql-cluster/name=cluster-pharia..."
 
                   # Get all secrets with both labels
@@ -121,6 +128,15 @@ spec:
                   # Remove trailing newline
                   userlist_content=$(echo -e "$userlist_content" | sed '$d')
 
+                  # Compare with existing content and store result for restart decision
+                  if [ "$userlist_content" != "$existing_userlist_content" ]; then
+                      export USERLIST_CHANGED=true
+                      print_status "Userlist content has changed - deployment restart will be needed"
+                  else
+                      export USERLIST_CHANGED=false
+                      print_status "Userlist content unchanged - no restart needed"
+                  fi
+
                   print_status "Creating PgBouncer userlist secret: $secret_name"
 
                   # Create the secret with userlist.txt key
@@ -144,9 +160,17 @@ spec:
                   local admin_user_key="adminUser"
                   local admin_password_key="adminPassword"
 
+                  # Store existing admin secret content for comparison
+                  local existing_admin_content=""
+                  if kubectl get secret "$admin_secret_name" >/dev/null 2>&1; then
+                      existing_admin_content=$(kubectl get secret "$admin_secret_name" -o jsonpath='{.data}' 2>/dev/null || echo "")
+                      print_status "Found existing admin secret"
+                  fi
+
                   # Check if secret already exists
                   if kubectl get secret "$admin_secret_name" >/dev/null 2>&1; then
                       print_status "Admin secret $admin_secret_name already exists; skipping creation"
+                      export ADMIN_SECRET_CHANGED=false
                       return 0
                   fi
 
@@ -158,72 +182,46 @@ spec:
                       --from-literal=${admin_user_key}="pgbouncer" \
                       --from-literal=${admin_password_key}="$admin_password_val" \
                       --dry-run=client -o yaml | kubectl apply -f -
+
+                  # Since we're creating a new secret, mark it as changed
+                  export ADMIN_SECRET_CHANGED=true
                   print_success "Created admin secret $admin_secret_name"
               }
 
-              # Function to trigger PgBouncer deployment restart when secrets change
+              # Function to restart PgBouncer deployment if secrets changed
               trigger_pgbouncer_restart() {
-                  local userlist_secret_name="{{ .Values.pgbouncerPharia.config.existingUserlistSecret }}"
-                  local admin_secret_name="{{ .Values.pgbouncerPharia.config.existingAdminSecret }}"
                   local deployment_name="{{ .Values.pgbouncerPharia.fullnameOverride }}"
 
                   print_status "Checking if PgBouncer deployment restart is needed..."
 
-                  # Calculate checksums of secret contents
-                  local userlist_checksum=""
-                  local admin_checksum=""
-
-                  if kubectl get secret "$userlist_secret_name" >/dev/null 2>&1; then
-                      userlist_checksum=$(kubectl get secret "$userlist_secret_name" -o jsonpath='{.data.userlist\.txt}' | sha256sum | cut -d' ' -f1)
-                      print_status "Userlist secret checksum: $userlist_checksum"
-                  fi
-
-                  if kubectl get secret "$admin_secret_name" >/dev/null 2>&1; then
-                      admin_checksum=$(kubectl get secret "$admin_secret_name" -o jsonpath='{.data}' | sha256sum | cut -d' ' -f1)
-                      print_status "Admin secret checksum: $admin_checksum"
-                  fi
-
                   # Check if deployment exists
                   if ! kubectl get deployment "$deployment_name" >/dev/null 2>&1; then
-                      print_warning "Deployment $deployment_name not found; skipping restart annotation"
+                      print_warning "Deployment $deployment_name not found; skipping restart"
                       return 0
                   fi
 
-                  # Get current annotations
-                  local current_userlist_checksum=$(kubectl get deployment "$deployment_name" -o jsonpath='{.spec.template.metadata.annotations.checksum/userlist-secret}' 2>/dev/null || echo "")
-                  local current_admin_checksum=$(kubectl get deployment "$deployment_name" -o jsonpath='{.spec.template.metadata.annotations.checksum/admin-secret}' 2>/dev/null || echo "")
-
-                  # Check if restart is needed
+                  # Check if any secrets changed based on our earlier comparisons
                   local restart_needed=false
-                  if [ "$userlist_checksum" != "$current_userlist_checksum" ]; then
-                      print_status "Userlist secret changed (old: $current_userlist_checksum, new: $userlist_checksum)"
+                  local restart_reason=""
+
+                  if [ "$USERLIST_CHANGED" = "true" ]; then
                       restart_needed=true
+                      restart_reason="userlist secret content changed"
                   fi
 
-                  if [ "$admin_checksum" != "$current_admin_checksum" ]; then
-                      print_status "Admin secret changed (old: $current_admin_checksum, new: $admin_checksum)"
-                      restart_needed=true
+                  if [ "$ADMIN_SECRET_CHANGED" = "true" ]; then
+                      if [ "$restart_needed" = "true" ]; then
+                          restart_reason="userlist and admin secrets changed"
+                      else
+                          restart_needed=true
+                          restart_reason="admin secret created"
+                      fi
                   fi
 
-                  if [ "$restart_needed" = true ]; then
-                      print_status "Triggering PgBouncer deployment restart by updating secret checksums..."
-
-                      # Update deployment annotations to trigger restart
-                      kubectl patch deployment "$deployment_name" -p "{
-                        \"spec\": {
-                          \"template\": {
-                            \"metadata\": {
-                              \"annotations\": {
-                                \"checksum/userlist-secret\": \"$userlist_checksum\",
-                                \"checksum/admin-secret\": \"$admin_checksum\",
-                                \"kubectl.kubernetes.io/restartedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-                              }
-                            }
-                          }
-                        }
-                      }"
-
-                      print_success "PgBouncer deployment restart triggered due to secret changes"
+                  if [ "$restart_needed" = "true" ]; then
+                      print_status "Triggering PgBouncer deployment restart: $restart_reason"
+                      kubectl rollout restart deployment "$deployment_name"
+                      print_success "PgBouncer deployment restart initiated due to: $restart_reason"
                   else
                       print_status "No secret changes detected; PgBouncer restart not needed"
                   fi
