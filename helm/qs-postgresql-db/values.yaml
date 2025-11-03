@@ -360,6 +360,18 @@ databases:
       - pg_trgm
       - btree_gin
 
+  - name: "mlflow"
+    enabled: true
+    cluster: "cluster-pharia"
+    owner: "mlflow"
+    connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
+
   - name: "temporal"
     enabled: true
     cluster: "cluster-temporal"

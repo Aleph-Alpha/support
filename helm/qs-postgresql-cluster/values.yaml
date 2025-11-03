@@ -212,6 +212,16 @@ clusterPharia:
         login: true
         superuser: false
         replication: false
+      - name: "mlflow"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
+        # `password` and `username` key should exist in secret. username key should be the name of the user (mlflow)
+        passwordSecret:
+          name: "mlflow-pg-secret-qs"
+        login: true
+        superuser: false
+        replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
     enabled: false
