@@ -108,6 +108,14 @@ spec:
               value: {{ include "qs-postgresql-cluster.name" $root | quote }}
             - name: PG_ROLES
               value: "{{- range $index, $role := $clusterConfig.cluster.roles }}{{- if $index }},{{- end }}{{ $role.name }}{{- end }}"
+            - name: LOG_LEVEL
+              value: {{ $root.Values.jobConfig.logLevel | quote }}
+            - name: COLORED_OUTPUT
+              value: {{ $root.Values.jobConfig.coloredOutput | quote }}
+            - name: DRY_RUN
+              value: {{ $root.Values.jobConfig.dryRun | quote }}
+            - name: FAIL_ON_ERROR
+              value: {{ $root.Values.jobConfig.failOnError | quote }}
           volumeMounts:
             - name: script
               mountPath: /scripts
