@@ -30,6 +30,14 @@ tests:
   image: "postgres:17"
   # SSL mode for PostgreSQL connections during tests
   sslMode: "prefer"
+  # Connection method for tests: "direct" or "pooler"
+  # direct: Test via direct cluster connection (cluster-xxx-rw)
+  # pooler: Test via native CloudNativePG poolers (requires poolers to be deployed)
+  connectionMethod: "direct"
+  # Pooler mode to use when connectionMethod is "pooler"
+  # transaction: Use transaction mode pooler
+  # session: Use session mode pooler
+  poolerMode: "transaction"
 
 # ============================================================================
 # Field Reference Documentation
