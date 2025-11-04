@@ -340,12 +340,24 @@ if $VERIFY; then
 fi
 
 DIGESTS=()
-REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
-  | jq -r --arg pt "$PRED_TYPE" '
-      .referrers[]
-      | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
-      | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
-      | .digest')
+# Collect referrers, reversing order if --last is used for optimization
+if $USE_LAST; then
+  REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
+    | jq -r --arg pt "$PRED_TYPE" '
+        [.referrers[]
+        | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
+        | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
+        | .digest]
+        | reverse
+        | .[]')
+else
+  REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
+    | jq -r --arg pt "$PRED_TYPE" '
+        .referrers[]
+        | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
+        | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
+        | .digest')
+fi
 
 for d in $REFERRERS; do
   echo "🔎 Checking candidate referrer digest=$d"
@@ -359,6 +371,10 @@ for d in $REFERRERS; do
 
   if [ "$inner" = "$PRED_TYPE" ]; then
     DIGESTS+=("$d")
+    # When --last is used, we can stop after finding the first valid attestation
+    if $USE_LAST; then
+      break
+    fi
   fi
 done
 
@@ -372,12 +388,15 @@ if [ ${#DIGESTS[@]} -eq 0 ]; then
   exit 1
 fi
 
-echo "🔎 Found ${#DIGESTS[@]} attestations for type=$TYPE:"
-i=1
-for d in "${DIGESTS[@]}"; do
-  echo "  [$i] $d"
-  i=$((i+1))
-done
+# Skip listing when --last is used (we only validated one)
+if ! $USE_LAST; then
+  echo "🔎 Found ${#DIGESTS[@]} attestations for type=$TYPE:"
+  i=1
+  for d in "${DIGESTS[@]}"; do
+    echo "  [$i] $d"
+    i=$((i+1))
+  done
+fi
 
 # Function to fetch + decode one attestation
 fetch_attestation() {
