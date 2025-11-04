@@ -10,11 +10,12 @@
 {{- end }}
 {{- end }}
 {{- range $clusterName, $databases := $clusters }}
+{{- $clusterShortName := trimPrefix "cluster-" $clusterName }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "qs-postgresql-db.fullname" $ }}-enable-extensions-{{ $clusterName | sha256sum | trunc 8 }}
+  name: {{ include "qs-postgresql-db.fullname" $ }}-enable-extensions-{{ $clusterShortName }}
   labels:
     {{- include "qs-postgresql-db.labels" $ | nindent 4 }}
     app.kubernetes.io/component: extension-enabler

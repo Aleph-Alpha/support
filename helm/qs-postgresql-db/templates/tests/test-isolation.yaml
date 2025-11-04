@@ -1,0 +1,247 @@
+{{- $clusters := dict }}
+{{- range .Values.databases }}
+{{- if .enabled }}
+{{- if not (hasKey $clusters .cluster) }}
+{{- $_ := set $clusters .cluster (list) }}
+{{- end }}
+{{- $dbInfo := dict "name" .name "owner" .owner }}
+{{- $_ := set $clusters .cluster (append (get $clusters .cluster) $dbInfo) }}
+{{- end }}
+{{- end }}
+{{- range $clusterName, $databases := $clusters }}
+{{- $clusterShortName := trimPrefix "cluster-" $clusterName }}
+{{- if gt (len $databases) 1 }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "qs-postgresql-db.fullname" $ }}-test-isolation-{{ $clusterShortName }}
+  labels:
+    {{- include "qs-postgresql-db.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: test-isolation
+    cluster: {{ $clusterName }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test-isolation
+      image: {{ $.Values.tests.image | default "postgres:17" }}
+      imagePullPolicy: IfNotPresent
+      env:
+        - name: PGHOST
+          value: "{{ $clusterName }}-rw"
+        - name: PGSSLMODE
+          value: {{ $.Values.tests.sslMode | default "prefer" | quote }}
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Database Isolation Security Test"
+          echo "  Cluster: {{ $clusterName }}"
+          echo "════════════════════════════════════════════════════════════════"
+          echo
+
+          # Wait for PostgreSQL to be ready
+          echo "⏳ Waiting for PostgreSQL cluster to be ready..."
+          MAX_RETRIES=30
+          RETRY=0
+          until pg_isready -h "{{ $clusterName }}-rw" -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
+            echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
+            sleep 5
+            RETRY=$((RETRY+1))
+          done
+
+          if [ $RETRY -eq $MAX_RETRIES ]; then
+            echo "❌ ERROR: PostgreSQL cluster did not become ready in time"
+            exit 1
+          fi
+          echo "✅ PostgreSQL cluster is ready"
+          echo
+
+          FAILED_TESTS=0
+          PASSED_TESTS=0
+          TOTAL_DATABASES={{ len $databases }}
+
+          {{- $firstDb := index $databases 0 }}
+          {{- $secondDb := index $databases 1 }}
+          
+          # Test 1: User from first database trying to access second database
+          echo "────────────────────────────────────────────────────────────────"
+          echo "Test 1: Cross-Database Access Prevention"
+          echo "────────────────────────────────────────────────────────────────"
+          echo "User: {{ $firstDb.owner }} attempting to access: {{ $secondDb.name }}"
+          echo
+
+          {{- if eq $firstDb.name "pgbouncer" }}
+          FIRST_PASSWORD=$(cat /secrets/pgbouncer-{{ $clusterShortName }}/password)
+          {{- else }}
+          FIRST_PASSWORD=$(cat /secrets/{{ $firstDb.name }}/password)
+          {{- end }}
+          export PGPASSWORD="$FIRST_PASSWORD"
+
+          echo -n "  Attempting connection... "
+          OUTPUT=$(psql -h "{{ $clusterName }}-rw" -U "{{ $firstDb.owner }}" -d "{{ $secondDb.name }}" -c "SELECT 1;" 2>&1 || true)
+          
+          if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
+            echo "✅ PASS: Access correctly denied"
+            echo "   $(echo "$OUTPUT" | grep -E 'FATAL|ERROR' | head -1)"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL: Access granted (SECURITY ISSUE!)"
+            echo "$OUTPUT"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          echo
+
+          # Test 2: User can access their own database
+          echo "────────────────────────────────────────────────────────────────"
+          echo "Test 2: Own Database Access Verification"
+          echo "────────────────────────────────────────────────────────────────"
+          echo "User: {{ $firstDb.owner }} accessing own database: {{ $firstDb.name }}"
+          echo
+
+          echo -n "  Attempting connection... "
+          if psql -h "{{ $clusterName }}-rw" -U "{{ $firstDb.owner }}" -d "{{ $firstDb.name }}" -c "SELECT 1;" > /dev/null 2>&1; then
+            echo "✅ PASS: Can access own database"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL: Cannot access own database"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          echo
+
+          # Test 3: Reverse - User from second database trying to access first database
+          echo "────────────────────────────────────────────────────────────────"
+          echo "Test 3: Reverse Cross-Database Access Prevention"
+          echo "────────────────────────────────────────────────────────────────"
+          echo "User: {{ $secondDb.owner }} attempting to access: {{ $firstDb.name }}"
+          echo
+
+          {{- if eq $secondDb.name "pgbouncer" }}
+          SECOND_PASSWORD=$(cat /secrets/pgbouncer-{{ $clusterShortName }}/password)
+          {{- else }}
+          SECOND_PASSWORD=$(cat /secrets/{{ $secondDb.name }}/password)
+          {{- end }}
+          export PGPASSWORD="$SECOND_PASSWORD"
+
+          echo -n "  Attempting connection... "
+          OUTPUT=$(psql -h "{{ $clusterName }}-rw" -U "{{ $secondDb.owner }}" -d "{{ $firstDb.name }}" -c "SELECT 1;" 2>&1 || true)
+          
+          if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
+            echo "✅ PASS: Access correctly denied"
+            echo "   $(echo "$OUTPUT" | grep -E 'FATAL|ERROR' | head -1)"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL: Access granted (SECURITY ISSUE!)"
+            echo "$OUTPUT"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          echo
+
+          # Test 4: Second user can access their own database
+          echo "────────────────────────────────────────────────────────────────"
+          echo "Test 4: Own Database Access Verification (User 2)"
+          echo "────────────────────────────────────────────────────────────────"
+          echo "User: {{ $secondDb.owner }} accessing own database: {{ $secondDb.name }}"
+          echo
+
+          echo -n "  Attempting connection... "
+          if psql -h "{{ $clusterName }}-rw" -U "{{ $secondDb.owner }}" -d "{{ $secondDb.name }}" -c "SELECT 1;" > /dev/null 2>&1; then
+            echo "✅ PASS: Can access own database"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "❌ FAIL: Cannot access own database"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          echo
+
+          {{- if gt (len $databases) 2 }}
+          # Test all other databases for cross-access
+          {{- range $idx, $db := $databases }}
+          {{- if and (ne $idx 0) (ne $idx 1) }}
+          echo "────────────────────────────────────────────────────────────────"
+          echo "Test {{ add $idx 3 }}: Additional Cross-Database Check"
+          echo "────────────────────────────────────────────────────────────────"
+          echo "User: {{ $firstDb.owner }} → {{ $db.name }}"
+          
+          {{- if eq $db.name "pgbouncer" }}
+          TEST_DB_NAME="{{ $db.name }}"
+          {{- else }}
+          TEST_DB_NAME="{{ $db.name }}"
+          {{- end }}
+
+          export PGPASSWORD="$FIRST_PASSWORD"
+          OUTPUT=$(psql -h "{{ $clusterName }}-rw" -U "{{ $firstDb.owner }}" -d "$TEST_DB_NAME" -c "SELECT 1;" 2>&1 || true)
+          
+          if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
+            echo "  ✅ PASS: Cross-access denied"
+            PASSED_TESTS=$((PASSED_TESTS + 1))
+          else
+            echo "  ❌ FAIL: Cross-access granted (SECURITY ISSUE!)"
+            FAILED_TESTS=$((FAILED_TESTS + 1))
+          fi
+          echo
+          {{- end }}
+          {{- end }}
+          {{- end }}
+
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Isolation Test Summary"
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Cluster: {{ $clusterName }}"
+          echo "  Databases: $TOTAL_DATABASES"
+          echo "  Tests Passed: $PASSED_TESTS"
+          echo "  Tests Failed: $FAILED_TESTS"
+          echo "════════════════════════════════════════════════════════════════"
+
+          if [ $FAILED_TESTS -gt 0 ]; then
+            echo
+            echo "❌ Database isolation is NOT properly enforced!"
+            echo "⚠️  Users can access databases they don't own."
+            echo "💡 Ensure the isolation enforcement job has run successfully."
+            exit 1
+          fi
+
+          echo
+          echo "✅ Database isolation is properly enforced!"
+          echo "🔒 Users can only access their own databases."
+          exit 0
+      volumeMounts:
+        {{- range $databases }}
+        {{- if eq .name "pgbouncer" }}
+        - name: secret-pgbouncer-{{ $clusterShortName }}
+          mountPath: /secrets/pgbouncer-{{ $clusterShortName }}
+          readOnly: true
+        {{- else }}
+        - name: secret-{{ .name }}
+          mountPath: /secrets/{{ .name }}
+          readOnly: true
+        {{- end }}
+        {{- end }}
+  volumes:
+    {{- range $databases }}
+    {{- if eq .name "pgbouncer" }}
+    - name: secret-pgbouncer-{{ $clusterShortName }}
+      secret:
+        secretName: pgbouncer-{{ $clusterShortName }}-pg-secret-qs
+        items:
+          - key: password
+            path: password
+    {{- else }}
+    - name: secret-{{ .name }}
+      secret:
+        secretName: {{ .name }}-pg-secret-qs
+        items:
+          - key: password
+            path: password
+    {{- end }}
+    {{- end }}
+{{- end }}
+{{- end }}
+
