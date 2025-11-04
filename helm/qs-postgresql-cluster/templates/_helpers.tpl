@@ -104,6 +104,18 @@ spec:
               value: "cluster-{{ $clusterName }}-rw"
             - name: PGBOUNCER_HOST
               value: "{{ $clusterConfig.pgbouncerHost }}"
+            {{- if $clusterConfig.poolers }}
+            {{- range $clusterConfig.poolers }}
+            {{- if eq .poolMode "transaction" }}
+            - name: POOLER_TRANSACTION_HOST
+              value: "cluster-{{ $clusterName }}-pooler-{{ .name }}"
+            {{- end }}
+            {{- if eq .poolMode "session" }}
+            - name: POOLER_SESSION_HOST
+              value: "cluster-{{ $clusterName }}-pooler-{{ .name }}"
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - name: APP_NAME
               value: {{ include "qs-postgresql-cluster.name" $root | quote }}
             - name: PG_ROLES

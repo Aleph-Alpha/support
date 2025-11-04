@@ -253,21 +253,40 @@ clusterPharia:
     # -- You need to configure backups manually, so backups are disabled by default.
     enabled: false
   # -- List of PgBouncer poolers
-  poolers: []
-  #  - name: pharia-rw
-  #    # -- PgBouncer type of service to forward traffic to.
-  #    type: rw
-  #    # -- PgBouncer pooling mode
-  #    poolMode: transaction
-  #    # -- Number of PgBouncer instances
-  #    instances: 3
-  #    # -- PgBouncer configuration parameters
-  #    parameters:
-  #      max_client_conn: "1000"
-  #      default_pool_size: "25"
-  #    monitoring:
-  #      # -- Whether to enable monitoring
-  #      enabled: false
+  poolers:
+    # Transaction mode pooler - for databases that work well with transaction pooling
+    # Recommended for: document-index, and other databases without prepared statements
+    - name: pharia-rw-transaction
+      # -- PgBouncer type of service to forward traffic to.
+      type: rw
+      # -- PgBouncer pooling mode
+      poolMode: transaction
+      # -- Number of PgBouncer instances
+      instances: 1
+      # -- PgBouncer configuration parameters
+      parameters:
+        max_client_conn: "500"
+        default_pool_size: "25"
+      monitoring:
+        # -- Whether to enable monitoring
+        enabled: false
+    
+    # Session mode pooler - for databases that require session state
+    # Recommended for: pharia-os, dex (databases needing prepared statements)
+    - name: pharia-rw-session
+      # -- PgBouncer type of service to forward traffic to.
+      type: rw
+      # -- PgBouncer pooling mode
+      poolMode: session
+      # -- Number of PgBouncer instances
+      instances: 1
+      # -- PgBouncer configuration parameters
+      parameters:
+        max_client_conn: "300"
+        default_pool_size: "20"
+      monitoring:
+        # -- Whether to enable monitoring
+        enabled: false
   #      podMonitor:
   #        # -- Whether to enable the PodMonitor
   #        enabled: true
@@ -354,21 +373,40 @@ clusterTemporal:
     # -- You need to configure backups manually, so backups are disabled by default.
     enabled: false
   # -- List of PgBouncer poolers
-  poolers: []
-  #  - name: temporal-rw
-  #    # -- PgBouncer type of service to forward traffic to.
-  #    type: rw
-  #    # -- PgBouncer pooling mode
-  #    poolMode: session
-  #    # -- Number of PgBouncer instances
-  #    instances: 3
-  #    # -- PgBouncer configuration parameters
-  #    parameters:
-  #      max_client_conn: "1000"
-  #      default_pool_size: "25"
-  #    monitoring:
-  #      # -- Whether to enable monitoring
-  #      enabled: false
+  poolers:
+    # Transaction mode pooler - for databases that work well with transaction pooling
+    # Recommended for: Most temporal databases
+    - name: temporal-rw-transaction
+      # -- PgBouncer type of service to forward traffic to.
+      type: rw
+      # -- PgBouncer pooling mode
+      poolMode: transaction
+      # -- Number of PgBouncer instances
+      instances: 1
+      # -- PgBouncer configuration parameters
+      parameters:
+        max_client_conn: "500"
+        default_pool_size: "25"
+      monitoring:
+        # -- Whether to enable monitoring
+        enabled: false
+    
+    # Session mode pooler - for databases that require session state
+    # Recommended for: Temporal workflow databases requiring session state
+    - name: temporal-rw-session
+      # -- PgBouncer type of service to forward traffic to.
+      type: rw
+      # -- PgBouncer pooling mode
+      poolMode: session
+      # -- Number of PgBouncer instances
+      instances: 1
+      # -- PgBouncer configuration parameters
+      parameters:
+        max_client_conn: "300"
+        default_pool_size: "20"
+      monitoring:
+        # -- Whether to enable monitoring
+        enabled: false
   #      podMonitor:
   #        # -- Whether to enable the PodMonitor
   #        enabled: true
