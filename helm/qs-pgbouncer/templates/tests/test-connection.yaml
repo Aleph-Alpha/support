@@ -1,9 +1,9 @@
 {{- $instances := list }}
 {{- if and (hasKey .Values "pgbouncerPharia") (.Values.pgbouncerPharia.enabled) }}
-{{- $instances = append $instances (dict "name" "pharia" "values" .Values.pgbouncerPharia "fullname" (printf "%s-pgbouncer-pharia" (include "qs-pgbouncer.fullname" $))) }}
+{{- $instances = append $instances (dict "name" "pharia" "values" .Values.pgbouncerPharia "fullname" .Values.pgbouncerPharia.fullnameOverride) }}
 {{- end }}
 {{- if and (hasKey .Values "pgbouncerTemporal") (.Values.pgbouncerTemporal.enabled) }}
-{{- $instances = append $instances (dict "name" "temporal" "values" .Values.pgbouncerTemporal "fullname" (printf "%s-pgbouncer-temporal" (include "qs-pgbouncer.fullname" $))) }}
+{{- $instances = append $instances (dict "name" "temporal" "values" .Values.pgbouncerTemporal "fullname" .Values.pgbouncerTemporal.fullnameOverride) }}
 {{- end }}
 {{- range $instance := $instances }}
 ---
@@ -99,6 +99,11 @@ spec:
               PASSWORD="${BASH_REMATCH[2]}"
               DBNAME=$(get_dbname "$USERNAME")
 
+              if [ "$USERNAME" = "pgbouncer" ]; then
+                echo "⚠️  Skipping pgbouncer admin user"
+                continue
+              fi
+
               echo "────────────────────────────────────────────────────────────────"
               echo "Testing User: $USERNAME"
               echo "Database: $DBNAME"
@@ -188,7 +193,11 @@ spec:
   volumes:
     - name: userlist-secret
       secret:
-        secretName: {{ $instance.values.userlist.secret }}
+        {{- if eq $instance.name "pharia" }}
+        secretName: {{ $.Values.pgbouncerPharia.config.existingUserlistSecret }}
+        {{- else if eq $instance.name "temporal" }}
+        secretName: {{ $.Values.pgbouncerTemporal.config.existingUserlistSecret }}
+        {{- end }}
         items:
           - key: userlist.txt
             path: userlist.txt
