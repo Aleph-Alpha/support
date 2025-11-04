@@ -76,8 +76,6 @@ pgbouncerPharia:
       server_tls_sslmode: require
       # PostgreSQL parameters to ignore from client connections
       ignore_startup_parameters: extra_float_digits, jit
-      # Maximum prepared statements per connection
-      max_prepared_statements: 20
       # Default number of connections in the pool
       default_pool_size: 20
       # Authentication method: scram-sha-256 for secure password handling
