@@ -1468,7 +1468,12 @@ generate_cve_summary_table() {
         # Add color coding for Chainguard base image status (use grey minus for No)
         local chainguard_display="➖ No"
         if [[ "$is_chainguard" == "true" ]]; then
-            chainguard_display="✅ Yes"
+            # Check if it's a public Chainguard image (starts with cgr.dev/chainguard)
+            if echo "$base_image" | grep -q "^cgr.dev/chainguard"; then
+                chainguard_display="✅ Yes (public)"
+            else
+                chainguard_display="✅ Yes"
+            fi
         fi
 
         # Add row to table data

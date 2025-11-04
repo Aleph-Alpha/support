@@ -329,7 +329,17 @@ run_with_timeout() {
     local timeout_duration=$1
     shift
 
-    timeout "$timeout_duration" "$@"
+    if command -v timeout >/dev/null 2>&1; then
+        # Linux/GNU timeout
+        timeout "${timeout_duration}s" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        # macOS with GNU coreutils (brew install coreutils)
+        gtimeout "${timeout_duration}s" "$@"
+    else
+        # Fallback without timeout
+        log_verbose "No timeout command available, running without timeout"
+        "$@"
+    fi
 }
 
 # Check if image is Cosign-signed and has SBOM/triage attestations
@@ -351,7 +361,7 @@ detect_attestation_type() {
     fi
 
     # Run cosign verification using the dedicated script with timeout
-    verify_output=$(run_with_timeout 60 "$verify_script" --image "$image" \
+    verify_output=$(run_with_timeout "$TIMEOUT" "$verify_script" --image "$image" \
         --certificate-oidc-issuer "$CERTIFICATE_OIDC_ISSUER" \
         --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" \
         --output-level none 2>&1)
