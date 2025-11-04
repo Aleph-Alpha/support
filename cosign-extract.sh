@@ -24,7 +24,7 @@ Options:
   --image IMAGE                       Fully qualified image reference (required)
   --choice                            Which attestation to fetch: index, all
   --last                              Automatically select the most recent attestation if multiple exist
---output PATH                         Output file (single type) or directory (all types)
+  --output PATH                       Output file (single type) or directory (all types)
   --list                              List available predicateTypes and counts
   --show-null                         Show entries missing predicateType in --list
   --inspect-null                      Inspect referrers missing predicateType
