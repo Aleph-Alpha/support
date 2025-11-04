@@ -9,6 +9,33 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+# Image configuration for secret creation jobs
+jobImage:
+  # -- Container image for kubectl in secret creation jobs
+  repository: bitnamilegacy/kubectl
+  # -- Image tag for kubectl (set to specific version for stability)
+  tag: "1.31"
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# Configuration for secret creation jobs
+jobConfig:
+  # -- Log level for secret creation jobs (debug, info, warning, error)
+  logLevel: info
+  # -- Enable colored output in logs
+  coloredOutput: true
+  # -- Dry-run mode - if true, shows what would be done without making changes
+  dryRun: false
+  # -- Fail on error - if false, job continues even if some secrets fail
+  failOnError: true
+
+# Configuration for Helm tests
+tests:
+  # -- PostgreSQL image to use for connection tests
+  image: postgres:17
+  # -- SSL mode for PostgreSQL connections (disable, allow, prefer, require, verify-ca, verify-full)
+  sslMode: prefer
+
 # PG Cluster for Pharia Applications
 clusterPharia:
   enabled: true
@@ -212,6 +239,16 @@ clusterPharia:
         login: true
         superuser: false
         replication: false
+      - name: "mlflow"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
+        # `password` and `username` key should exist in secret. username key should be the name of the user (mlflow)
+        passwordSecret:
+          name: "mlflow-pg-secret-qs"
+        login: true
+        superuser: false
+        replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
     enabled: false
@@ -322,7 +359,7 @@ clusterTemporal:
   #    # -- PgBouncer type of service to forward traffic to.
   #    type: rw
   #    # -- PgBouncer pooling mode
-  #    poolMode: transaction
+  #    poolMode: session
   #    # -- Number of PgBouncer instances
   #    instances: 3
   #    # -- PgBouncer configuration parameters
