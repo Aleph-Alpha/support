@@ -1,0 +1,15 @@
+apiVersion: v2
+name: qs-redis-cluster
+version: 0.17.2
+appVersion: "0.17.2"
+description: Quick Start Helm chart for Redis Cluster
+home: https://github.com/ot-container-kit/redis-operator
+icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
+sources:
+  - https://github.com/ot-container-kit/redis-operator
+keywords:
+- operator
+- redis
+- cluster
+- sharding
+type: application
