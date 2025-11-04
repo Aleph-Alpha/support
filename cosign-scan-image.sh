@@ -329,7 +329,17 @@ run_with_timeout() {
     local timeout_duration=$1
     shift
 
-    timeout "$timeout_duration" "$@"
+    if command -v timeout >/dev/null 2>&1; then
+        # Linux/GNU timeout
+        timeout "${timeout_seconds}s" "${cmd[@]}"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        # macOS with GNU coreutils (brew install coreutils)
+        gtimeout "${timeout_seconds}s" "${cmd[@]}"
+    else
+        # Fallback without timeout
+        log_verbose "No timeout command available, running without timeout"
+        "${cmd[@]}"
+    fi
 }
 
 # Check if image is Cosign-signed and has SBOM/triage attestations

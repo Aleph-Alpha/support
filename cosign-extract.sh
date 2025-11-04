@@ -20,20 +20,20 @@ Usage:
   $0 --type TYPE --image IMAGE[:TAG] --output FILE --predicate-only  # extract only predicate content
 
 Options:
-  --type TYPE               Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
-  --image IMAGE             Fully qualified image reference (required)
-  --choice                  Which attestation to fetch: index, all
-  --last                    Automatically select the most recent attestation if multiple exist
-  --output PATH             Output file (single type) or directory (all types)
-  --list                    List available predicateTypes and counts
-  --show-null               Show entries missing predicateType in --list
-  --inspect-null            Inspect referrers missing predicateType
-  --verify                  Verify attestations using cosign before extraction
-  --no-extraction           Skip extraction and content output (useful with --verify for verification-only)
-  --predicate-only          Extract only the predicate content, not the full attestation envelope (mutually exclusive with --no-extraction)
+  --type TYPE                         Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
+  --image IMAGE                       Fully qualified image reference (required)
+  --choice                            Which attestation to fetch: index, all
+  --last                              Automatically select the most recent attestation if multiple exist
+--output PATH                         Output file (single type) or directory (all types)
+  --list                              List available predicateTypes and counts
+  --show-null                         Show entries missing predicateType in --list
+  --inspect-null                      Inspect referrers missing predicateType
+  --verify                            Verify attestations using cosign before extraction
+  --no-extraction                     Skip extraction and content output (useful with --verify for verification-only)
+  --predicate-only                    Extract only the predicate content, not the full attestation envelope (mutually exclusive with --no-extraction)
   --certificate-oidc-issuer ISSUER    OIDC issuer for verification (default: https://token.actions.githubusercontent.com)
   --certificate-identity-regexp REGEX Identity regexp for verification (default: Aleph Alpha workflows)
-  -h, --help                Show this help
+  -h, --help                          Show this help
 
 Verification:
   When --verify is used, attestations are verified using cosign verify-attestation before extraction.
