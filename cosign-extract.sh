@@ -350,6 +350,14 @@ if $USE_LAST; then
         | .digest]
         | reverse
         | .[]')
+
+  # When --last is used, trust the annotation filter and use the first referrer
+  # (which is the most recent after reversing). Skip expensive verification loop.
+  # We'll verify the inner predicateType only when fetching the actual content.
+  FIRST_REFERRER=$(echo "$REFERRERS" | head -n 1)
+  if [ -n "$FIRST_REFERRER" ]; then
+    DIGESTS+=("$FIRST_REFERRER")
+  fi
 else
   REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
     | jq -r --arg pt "$PRED_TYPE" '
@@ -357,26 +365,23 @@ else
         | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
         | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
         | .digest')
-fi
 
-for d in $REFERRERS; do
-  echo "🔎 Checking candidate referrer digest=$d"
-  layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
-  bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
-  oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
-  raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
-  inner=$(echo "$raw" | jq -r '.predicateType')
-  echo "   ↳ inner predicateType=$inner"
-  rm -f "$bundle"
+  # When not using --last, verify inner predicateType for all candidates
+  for d in $REFERRERS; do
+    echo "🔎 Checking candidate referrer digest=$d"
+    layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
+    bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
+    oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
+    raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
+    inner=$(echo "$raw" | jq -r '.predicateType')
+    echo "   ↳ inner predicateType=$inner"
+    rm -f "$bundle"
 
-  if [ "$inner" = "$PRED_TYPE" ]; then
-    DIGESTS+=("$d")
-    # When --last is used, we can stop after finding the first valid attestation
-    if $USE_LAST; then
-      break
+    if [ "$inner" = "$PRED_TYPE" ]; then
+      DIGESTS+=("$d")
     fi
-  fi
-done
+  done
+fi
 
 if [ ${#DIGESTS[@]} -eq 0 ]; then
   echo "❌ No attestations found for type=$TYPE (predicateType=$PRED_TYPE)"
