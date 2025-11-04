@@ -62,6 +62,15 @@ pgbouncerPharia:
         host: "cluster-pharia-rw"
         # PostgreSQL service port
         port: 5432
+      # pharia-os database specific configuration to avoid pg prepared statement error
+      # it can also solve by adding "binary_parameters=yes" in connection string if we want to use transaction pool mode
+      "pharia-os":
+        # PostgreSQL cluster service hostname for Pharia
+        host: "cluster-pharia-rw"
+        # PostgreSQL service port
+        port: 5432
+        pool_mode: session
+        pool_size: 20
 
     # Administrative user for PgBouncer management
     adminUser: pgbouncer
@@ -218,8 +227,6 @@ pgbouncerTemporal:
       server_tls_sslmode: require
       # PostgreSQL parameters to ignore from client connections
       ignore_startup_parameters: extra_float_digits
-      # Maximum prepared statements per connection
-      max_prepared_statements: 20
       # Default number of connections in the pool
       default_pool_size: 20
       # Authentication method: scram-sha-256 for secure password handling
