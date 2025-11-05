@@ -1,21 +1,13 @@
----
 apiVersion: v2
 name: qs-redis-standalone
 version: 0.16.7
 appVersion: "0.16.7"
-description: Quick Start Helm chart for Redis Standalone (managed by OT-CONTAINER-KIT Redis Operator)
+description: Pharia AI Quick Start Helm chart for Redis
 home: https://github.com/ot-container-kit/redis-operator
 icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
-sources:
-  - https://github.com/ot-container-kit/redis-operator
-maintainers:
-  - name: iamabhishek-dubey
-  - name: sandy724
-  - name: shubham-cmyk
-keywords:
-- operator
-- redis
-- standalone
-- opstree
-- kubernetes
-type: application
+
+dependencies:
+  - name: redis
+    version: 0.16.7
+    repository: https://ot-container-kit.github.io/helm-charts/
+

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: qs-redis-operator
+version: 0.22.2
+appVersion: "0.22.2"
+description: Pharia AI Quick Start Helm chart for Redis Operator
+home: https://github.com/OT-CONTAINER-KIT/redis-operator
+icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
+
+dependencies:
+  - name: redis-operator
+    version: 0.22.2
+    repository: https://ot-container-kit.github.io/helm-charts/
+

@@ -1,159 +1,39 @@
----
-redisStandalone:
-  name: ""
-  image: quay.io/opstree/redis
-  tag: v7.0.15
-  imagePullPolicy: IfNotPresent
-  imagePullSecrets: []
-    # - name:  Secret with Registry credentials
-  redisSecret:
-    secretName: ""
-    secretKey: ""
-  serviceType: ClusterIP
-  resources: {}
-    # requests:
-    #   cpu: 100m
-    #   memory: 128Mi
-    # limits:
-    #   cpu: 100m
-    #   memory: 128Mi
-  ignoreAnnotations: []
-    # - "redis.opstreelabs.in/ignore"
-  minReadySeconds: 0
-  # -- Some fields of statefulset are immutable, such as volumeClaimTemplates.
-  # When set to true, the operator will delete the statefulset and recreate it. Default is false.
-  recreateStatefulSetOnUpdateInvalid: false
-  # -- MaxMemoryPercentOfLimit is the percentage of redis container memory limit to be used as maxmemory. 
-  #    Default is 0 (disabled).
-  maxMemoryPercentOfLimit: 0
+# Pharia AI Quick Start values for Redis Standalone
+# This file contains values that override the upstream redis chart
 
-labels: {}
-#   foo: bar
-#   test: echo
+# All values are passed through to the redis subchart
+# For full configuration options, see:
+# https://github.com/OT-CONTAINER-KIT/redis-operator/blob/main/charts/redis/values.yaml
 
-externalConfig:
-  enabled: false
-  data: |
-    tcp-keepalive 400
-    slowlog-max-len 158
-    stream-node-max-bytes 2048
-
-externalService:
-  enabled: false
-  # annotations:
-  #   foo: bar
-  serviceType: NodePort
-  port: 6379
-  #nodePort: 31000
-
-serviceMonitor:
-  enabled: false
-  interval: 30s
-  scrapeTimeout: 10s
-  # -- Namespace where servicemonitor resource will be created, if empty it will be created in the same namespace as the redis
-  namespace: ""
-  # -- extraLabels are added to the servicemonitor when enabled set to true
-  extraLabels: {}
-    # foo: bar
-    # team: devops
-
-redisExporter:
-  enabled: false
-  image: quay.io/opstree/redis-exporter
-  tag: "v1.44.0"
-  imagePullPolicy: IfNotPresent
-  resources: {}
-    # requests:
-    #   cpu: 100m
-    #   memory: 128Mi
-    # limits:
-    #   cpu: 100m
-    #   memory: 128Mi
-  env: []
-    # - name: VAR_NAME
-    #   value: "value1"
-  securityContext: {}
-
-initContainer:
-  enabled: false
-  image: ""
-  imagePullPolicy: "IfNotPresent"
-  resources: {}
-    # requests:
-    #   memory: "64Mi"
-    #   cpu: "250m"
-    # limits:
-    #   memory: "128Mi"
-    #   cpu: "500m"
-  env: []
-  command: []
-  args: []
-
-sidecars:
-  name: ""
-  image: ""
-  imagePullPolicy: "IfNotPresent"
-  resources:
-    limits:
-      cpu: "100m"
-      memory: "128Mi"
-    requests:
-      cpu: "50m"
-      memory: "64Mi"
-  env: []
-    # - name: MY_ENV_VAR
-    #   value: "my-env-var-value"
-
-priorityClassName: ""
-
-nodeSelector: {}
-  # memory: medium
-
-storageSpec:
-  volumeClaimTemplate:
-    spec:
-      # storageClassName: standard
-      accessModes: ["ReadWriteOnce"]
-      resources:
-        requests:
-          storage: 1Gi
-  #   selector: {}
-
-podSecurityContext:
-  runAsUser: 1000
-  fsGroup: 1000
-
-securityContext: {}
-
-affinity: {}
-  # nodeAffinity:
-  #   requiredDuringSchedulingIgnoredDuringExecution:
-  #     nodeSelectorTerms:
-  #     - matchExpressions:
-  #       - key: disktype
-  #         operator: In
-  #         values:
-  #         - ssd
-
-tolerations: []
-  # - key: "key"
-  #   operator: "Equal"
-  #   value: "value"
-  #   effect: "NoSchedule"
-
-serviceAccountName: ""
-
-TLS:
-  ca: ca.key
-  cert: tls.crt
-  key: tls.key
-  secret:
-    secretName: ""
-
-acl:
-  secret:
-    secretName: ""
-
-env: []
-  # - name: VAR_NAME
-  #   value: "value1"
+redis:
+  # Redis image
+  # redisStandalone:
+  #   image: quay.io/opstree/redis:v7.0.12
+  
+  # Storage configuration
+  # storage:
+  #   volumeClaimTemplate:
+  #     spec:
+  #       accessModes: ["ReadWriteOnce"]
+  #       resources:
+  #         requests:
+  #           storage: 1Gi
+  
+  # Enable monitoring
+  # redisExporter:
+  #   enabled: true
+  #   image: quay.io/opstree/redis-exporter:v1.44.0
+  
+  # ServiceMonitor for Prometheus
+  # serviceMonitor:
+  #   enabled: false
+  
+  # Resources
+  # kubernetesConfig:
+  #   resources:
+  #     requests:
+  #       cpu: 100m
+  #       memory: 128Mi
+  #     limits:
+  #       cpu: 400m
+  #       memory: 512Mi

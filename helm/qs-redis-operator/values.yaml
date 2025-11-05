@@ -1,0 +1,31 @@
+# Pharia AI Quick Start values for OT-CONTAINER-KIT Redis Operator
+# This file contains values that override the upstream redis-operator chart
+
+# All values are passed through to the redis-operator subchart
+# For full configuration options, see:
+# https://github.com/OT-CONTAINER-KIT/redis-operator/blob/main/charts/redis-operator/values.yaml
+
+redis-operator:
+  # Override operator image if needed
+  # image:
+  #   repository: quay.io/opstree/redis-operator
+  #   tag: v0.22.2
+  
+  # Resource limits for the operator
+  # resources:
+  #   requests:
+  #     cpu: 100m
+  #     memory: 128Mi
+  #   limits:
+  #     cpu: 500m
+  #     memory: 512Mi
+  
+  # RBAC settings
+  # rbac:
+  #   create: true
+  
+  # ServiceAccount settings
+  # serviceAccount:
+  #   create: true
+  #   name: ""
+
