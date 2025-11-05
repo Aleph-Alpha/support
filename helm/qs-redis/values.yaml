@@ -1,0 +1,65 @@
+fullnameOverride: "qs-redis"
+
+# ServiceAccount configuration for the secret creation job
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Image configuration for secret creation jobs
+jobImage:
+  # -- Container image for kubectl in secret creation jobs
+  repository: bitnamilegacy/kubectl
+  # -- Image tag for kubectl (set to specific version for stability)
+  tag: "1.31"
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# Configuration for secret creation jobs
+jobConfig:
+  # -- Log level for secret creation jobs (debug, info, warning, error)
+  logLevel: info
+  # -- Enable colored output in logs
+  coloredOutput: true
+  # -- Dry-run mode - if true, shows what would be done without making changes
+  dryRun: false
+  # -- Fail on error - if false, job continues even if some secrets fail
+  failOnError: true
+
+# Redis applications that need secrets created
+# Each entry will result in a secret named: {app-name}-redis-secret-qs
+redisApplications:
+  - name: pharia-assistant-api
+    # Database number (0-15)
+    database: 0
+  # Add more applications as needed
+  # - name: pharia-chat
+  #   database: 0
+
+# Configuration for Helm tests
+tests:
+  # -- Redis image to use for connection tests
+  image: redis:7
+
+# Redis configuration (from OT-CONTAINER-KIT redis chart)
+redis:
+  enabled: true
+  # -- Redis password - will be auto-generated if not provided
+  # Leave empty to use auto-generated password from secret
+  redisSecret:
+    secretName: redis-master-secret-qs
+    secretKey: password
+  # Add any specific values for the redis chart here
+  # For example:
+  # kubernetesConfig:
+  #   image: "quay.io/opstree/redis:v7.2.0"
+  # storage:
+  #   volumeClaimTemplate:
+  #     spec:
+  #       resources:
+  #         requests:
+  #           storage: 2Gi

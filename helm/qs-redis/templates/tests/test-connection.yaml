@@ -1,0 +1,58 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "qs-redis.fullname" . }}-test-connection"
+  labels:
+    {{- include "qs-redis.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  containers:
+    - name: test-redis-connection
+      image: {{ .Values.tests.image }}
+      command: ["/bin/sh"]
+      args:
+        - -c
+        - |
+          set -e
+          echo "Testing Redis connection..."
+          echo "Host: {{ include "qs-redis.redisHost" . }}"
+          echo "Port: {{ include "qs-redis.redisPort" . }}"
+          
+          # Get password from secret
+          REDIS_PASSWORD=$(cat /secrets/password)
+          
+          # Test connection with AUTH
+          if redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" PING | grep -q PONG; then
+            echo "✓ Redis connection successful!"
+            
+            # Test SET/GET
+            redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" SET test-key "test-value"
+            VALUE=$(redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" GET test-key)
+            
+            if [ "$VALUE" = "test-value" ]; then
+              echo "✓ Redis SET/GET test successful!"
+              redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" DEL test-key
+              echo "✓ All tests passed!"
+              exit 0
+            else
+              echo "✗ Redis SET/GET test failed!"
+              exit 1
+            fi
+          else
+            echo "✗ Redis connection failed!"
+            exit 1
+          fi
+      volumeMounts:
+        - name: redis-secret
+          mountPath: /secrets
+          readOnly: true
+  volumes:
+    - name: redis-secret
+      secret:
+        secretName: {{ .Values.redis.redisSecret.secretName }}
+        items:
+          - key: {{ .Values.redis.redisSecret.secretKey }}
+            path: password
+  restartPolicy: Never

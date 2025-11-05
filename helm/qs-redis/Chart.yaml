@@ -1,5 +1,5 @@
 apiVersion: v2
-name: qs-redis-standalone
+name: qs-redis
 version: 0.16.7
 appVersion: "0.16.7"
 description: Pharia AI Quick Start Helm chart for Redis
@@ -10,4 +10,5 @@ dependencies:
   - name: redis
     version: 0.16.7
     repository: https://ot-container-kit.github.io/helm-charts/
+    condition: redis.enabled
 
