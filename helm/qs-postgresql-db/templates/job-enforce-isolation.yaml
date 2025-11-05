@@ -10,7 +10,7 @@
 {{- end }}
 {{- end }}
 {{- range $clusterName, $databases := $clusters }}
-{{- $clusterShortName := trimPrefix "cluster-" $clusterName }}
+{{- $clusterShortName := trimPrefix "qs-postgresql-cluster-" $clusterName }}
 ---
 apiVersion: batch/v1
 kind: Job

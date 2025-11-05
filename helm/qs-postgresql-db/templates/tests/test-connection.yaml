@@ -9,7 +9,7 @@
 {{- end }}
 {{- end }}
 {{- range $clusterName, $databases := $clusters }}
-{{- $clusterShortName := trimPrefix "cluster-" $clusterName }}
+{{- $clusterShortName := trimPrefix "qs-postgresql-cluster-" $clusterName }}
 ---
 apiVersion: v1
 kind: Pod
@@ -49,9 +49,9 @@ spec:
             # Use pooler connection
             if [ "$POOLER_MODE" = "session" ]; then
               # Try to find session pooler
-              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-${CLUSTER_NAME#cluster-}-rw-session" 2>/dev/null | awk '{print $1}')
+              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-session" 2>/dev/null | awk '{print $1}')
               if [ -n "$POOLER_HOST" ]; then
-                PGHOST="${CLUSTER_NAME}-pooler-${CLUSTER_NAME#cluster-}-rw-session"
+                PGHOST="${CLUSTER_NAME}-pooler-session"
                 CONNECTION_TYPE="Native Pooler (Session Mode)"
               else
                 echo "⚠️  Session pooler not found, falling back to direct connection"
@@ -60,9 +60,9 @@ spec:
               fi
             else
               # Try to find transaction pooler
-              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-${CLUSTER_NAME#cluster-}-rw-transaction" 2>/dev/null | awk '{print $1}')
+              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-transaction" 2>/dev/null | awk '{print $1}')
               if [ -n "$POOLER_HOST" ]; then
-                PGHOST="${CLUSTER_NAME}-pooler-${CLUSTER_NAME#cluster-}-rw-transaction"
+                PGHOST="${CLUSTER_NAME}-pooler-transaction"
                 CONNECTION_TYPE="Native Pooler (Transaction Mode)"
               else
                 echo "⚠️  Transaction pooler not found, falling back to direct connection"
@@ -108,30 +108,12 @@ spec:
 
           # Test each database
           {{- range $databases }}
-          # Check if we should skip this database when using pooler
-          SKIP_DB=false
-          {{- if eq .name "pgbouncer" }}
-          if [ "$CONNECTION_METHOD" = "pooler" ]; then
-            echo "────────────────────────────────────────────────────────────────"
-            echo "Testing Database: {{ .name }}"
-            echo "────────────────────────────────────────────────────────────────"
-            echo "  ⚠️  Skipping pgbouncer database (not accessible via native poolers)"
-            echo
-            SKIP_DB=true
-          fi
-          {{- end }}
-
-          if [ "$SKIP_DB" = "false" ]; then
-            echo "────────────────────────────────────────────────────────────────"
-            echo "Testing Database: {{ .name }}"
-            echo "────────────────────────────────────────────────────────────────"
+          echo "────────────────────────────────────────────────────────────────"
+          echo "Testing Database: {{ .name }}"
+          echo "────────────────────────────────────────────────────────────────"
 
             # Get credentials from secret
-            {{- if eq .name "pgbouncer" }}
-            PGPASSWORD=$(cat /secrets/pgbouncer-{{ $clusterShortName }}/password)
-            {{- else }}
-            PGPASSWORD=$(cat /secrets/{{ .name }}/password)
-            {{- end }}
+            PGPASSWORD=$(cat /secrets/{{ .owner }}/password)
             export PGPASSWORD
             export PGDATABASE="{{ .name }}"
             export PGUSER="{{ .owner }}"
@@ -226,7 +208,6 @@ spec:
             fi
 
             echo
-          fi
           {{- end }}
 
           echo "════════════════════════════════════════════════════════════════"
@@ -234,12 +215,7 @@ spec:
           echo "════════════════════════════════════════════════════════════════"
           echo "  Cluster: {{ $clusterName }}"
           echo "  Connection: $CONNECTION_TYPE"
-          if [ "$CONNECTION_METHOD" = "pooler" ]; then
-            echo "  Databases Configured: {{ len $databases }}"
-            echo "  Databases Tested: $(({{ len $databases }} - 1)) (pgbouncer skipped)"
-          else
-            echo "  Databases Tested: {{ len $databases }}"
-          fi
+          echo "  Databases Tested: {{ len $databases }}"
           echo "  Tests Passed: $PASSED_TESTS"
           echo "  Tests Failed: $FAILED_TESTS"
           echo "════════════════════════════════════════════════════════════════"
@@ -258,32 +234,17 @@ spec:
           exit 0
       volumeMounts:
         {{- range $databases }}
-        {{- if eq .name "pgbouncer" }}
-        - name: secret-pgbouncer-{{ $clusterShortName }}
-          mountPath: /secrets/pgbouncer-{{ $clusterShortName }}
+        - name: secret-{{ .owner | replace "_" "-" }}
+          mountPath: /secrets/{{ .owner }}
           readOnly: true
-        {{- else }}
-        - name: secret-{{ .name }}
-          mountPath: /secrets/{{ .name }}
-          readOnly: true
-        {{- end }}
         {{- end }}
   volumes:
     {{- range $databases }}
-    {{- if eq .name "pgbouncer" }}
-    - name: secret-pgbouncer-{{ $clusterShortName }}
+    - name: secret-{{ .owner | replace "_" "-" }}
       secret:
-        secretName: pgbouncer-{{ $clusterShortName }}-pg-secret-qs
+        secretName: qs-postgresql-cluster-access-{{ .owner | replace "_" "-" }}
         items:
           - key: password
             path: password
-    {{- else }}
-    - name: secret-{{ .name }}
-      secret:
-        secretName: {{ .name }}-pg-secret-qs
-        items:
-          - key: password
-            path: password
-    {{- end }}
     {{- end }}
 {{- end }}
