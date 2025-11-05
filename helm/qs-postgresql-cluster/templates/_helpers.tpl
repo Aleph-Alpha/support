@@ -104,8 +104,6 @@ spec:
               value: "{{ $clusterConfig.fullnameOverride }}"
             - name: CLUSTER_HOST
               value: "{{ $clusterConfig.fullnameOverride }}-rw"
-            - name: PGBOUNCER_HOST
-              value: "{{ $clusterConfig.pgbouncerHost }}"
             {{- if $clusterConfig.poolers }}
             {{- range $clusterConfig.poolers }}
             {{- if eq .poolMode "transaction" }}

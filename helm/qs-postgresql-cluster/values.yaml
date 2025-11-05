@@ -46,8 +46,6 @@ clusterPharia:
   enabled: true
   fullnameOverride: qs-postgresql-cluster-pharia
   type: postgresql
-  # PgBouncer host for connection pooling (optional)
-  pgbouncerHost: pgbouncer-pharia
   version:
     # -- PostgreSQL major version to use
     postgresql: "17"
@@ -84,16 +82,6 @@ clusterPharia:
         memory: "24Gi"
         cpu: "8"
     roles:
-      - name: "pgbouncer"
-        connectionLimit: -1
-        ensure: present
-        inherit: true
-        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
-        passwordSecret:
-          name: "qs-postgresql-cluster-access-pgbouncer"
-        login: true
-        superuser: false
-        replication: false
       - name: "document_index"
         connectionLimit: -1
         ensure: present
@@ -304,8 +292,6 @@ clusterTemporal:
   enabled: true
   fullnameOverride: qs-postgresql-cluster-temporal
   type: postgresql
-  # PgBouncer host for connection pooling (optional)
-  pgbouncerHost: pgbouncer-temporal
   version:
     # -- PostgreSQL major version to use
     postgresql: "17"
@@ -342,16 +328,6 @@ clusterTemporal:
         memory: "16Gi"
         cpu: "8"
     roles:
-      - name: "pgbouncer"
-        connectionLimit: -1
-        ensure: present
-        inherit: true
-        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
-        passwordSecret:
-          name: "qs-postgresql-cluster-access-pgbouncer"
-        login: true
-        superuser: false
-        replication: false
       - name: "temporal"
         connectionLimit: -1
         ensure: present
