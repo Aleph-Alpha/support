@@ -57,27 +57,27 @@ clusterPharia:
       storageClass: ""
     postgresql:
       parameters:
-        max_connections: "300"
-        shared_buffers: "4642MB"
-        effective_cache_size: "10584MB"
+        max_connections: "500"
+        shared_buffers: "6GB"
+        effective_cache_size: "10GB"
         checkpoint_completion_target: "0.9"
         wal_buffers: "64MB"
         default_statistics_target: "100"
-        maintenance_work_mem: "1287MB"
-        work_mem: "287MB"
+        maintenance_work_mem: "1GB"
+        work_mem: "16MB"
         effective_io_concurrency: "200"
-        max_worker_processes: "6"
-        max_parallel_workers_per_gather: "3"
-        max_parallel_workers: "9"
+        max_worker_processes: "4"
+        max_parallel_workers_per_gather: "2"
+        max_parallel_workers: "4"
         max_wal_size: "2GB"
         min_wal_size: "1GB"
     resources:
       requests:
-        memory: "16Gi"
+        memory: "24Gi"
         cpu: "4"
       limits:
-        memory: "16Gi"
-        cpu: "4"
+        memory: "24Gi"
+        cpu: "8"
     roles:
       - name: "pgbouncer"
         connectionLimit: -1
@@ -265,7 +265,7 @@ clusterPharia:
       instances: 1
       # -- PgBouncer configuration parameters
       parameters:
-        max_client_conn: "500"
+        max_client_conn: "1000"
         default_pool_size: "25"
       monitoring:
         # -- Whether to enable monitoring
@@ -282,7 +282,7 @@ clusterPharia:
       instances: 1
       # -- PgBouncer configuration parameters
       parameters:
-        max_client_conn: "300"
+        max_client_conn: "600"
         default_pool_size: "20"
       monitoring:
         # -- Whether to enable monitoring
@@ -316,17 +316,17 @@ clusterTemporal:
     postgresql:
       parameters:
         max_connections: "200"
-        shared_buffers: "4642MB"
-        effective_cache_size: "10584MB"
+        shared_buffers: "6GB"
+        effective_cache_size: "10GB"
         checkpoint_completion_target: "0.9"
         wal_buffers: "64MB"
         default_statistics_target: "100"
-        maintenance_work_mem: "1287MB"
-        work_mem: "287MB"
+        maintenance_work_mem: "1GB"
+        work_mem: "32MB"
         effective_io_concurrency: "200"
-        max_worker_processes: "6"
-        max_parallel_workers_per_gather: "3"
-        max_parallel_workers: "9"
+        max_worker_processes: "4"
+        max_parallel_workers_per_gather: "2"
+        max_parallel_workers: "4"
         max_wal_size: "2GB"
         min_wal_size: "1GB"
     resources:
@@ -335,7 +335,7 @@ clusterTemporal:
         cpu: "4"
       limits:
         memory: "16Gi"
-        cpu: "4"
+        cpu: "8"
     roles:
       - name: "pgbouncer"
         connectionLimit: -1
@@ -385,7 +385,7 @@ clusterTemporal:
       instances: 1
       # -- PgBouncer configuration parameters
       parameters:
-        max_client_conn: "500"
+        max_client_conn: "1000"
         default_pool_size: "25"
       monitoring:
         # -- Whether to enable monitoring
@@ -402,7 +402,7 @@ clusterTemporal:
       instances: 1
       # -- PgBouncer configuration parameters
       parameters:
-        max_client_conn: "300"
+        max_client_conn: "600"
         default_pool_size: "20"
       monitoring:
         # -- Whether to enable monitoring
