@@ -229,7 +229,7 @@ spec:
             path: host
           - key: port
             path: port
-          - key: database
+          - key: databaseName
             path: database
     {{- end }}
     {{- end }}
@@ -465,7 +465,7 @@ spec:
             path: host
           - key: port
             path: port
-          - key: database
+          - key: databaseName
             path: database
     {{- end }}
     {{- end }}

@@ -36,8 +36,8 @@ secretCleanup:
 
 # Configuration for Helm tests
 tests:
-  # -- PostgreSQL image to use for connection tests
-  image: postgres:17
+  # -- PostgreSQL image to use for connection tests (alpine variant is ~40% smaller)
+  image: postgres:17-alpine
   # -- SSL mode for PostgreSQL connections (disable, allow, prefer, require, verify-ca, verify-full)
   sslMode: prefer
 
