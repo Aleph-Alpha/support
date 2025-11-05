@@ -20,7 +20,7 @@ spec:
       imagePullPolicy: IfNotPresent
       env:
         - name: PGHOST
-          value: "cluster-pharia-rw"
+          value: "{{ .Values.clusterPharia.fullnameOverride }}-rw"
         - name: PGSSLMODE
           value: {{ .Values.tests.sslMode | default "prefer" | quote }}
       command:
@@ -111,13 +111,13 @@ spec:
           }
 
           # Wait for PostgreSQL cluster
-          wait_for_service "cluster-pharia-rw" "PostgreSQL cluster (direct)" || exit 1
+          wait_for_service "{{ .Values.clusterPharia.fullnameOverride }}-rw" "PostgreSQL cluster (direct)" || exit 1
           echo
 
           # Wait for poolers
           {{- if $.Values.clusterPharia.poolers }}
           {{- range $.Values.clusterPharia.poolers }}
-          wait_for_service "cluster-pharia-pooler-{{ .name }}" "Pooler ({{ .poolMode }} mode)" || echo "⚠️  Pooler not ready, will skip tests"
+          wait_for_service "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-{{ .name }}" "Pooler ({{ .poolMode }} mode)" || echo "⚠️  Pooler not ready, will skip tests"
           {{- end }}
           {{- end }}
           echo
@@ -128,7 +128,7 @@ spec:
           TOTAL_CONNECTIONS=0
 
           # Test each role across all connection methods
-          {{- range .Values.clusterPharia.cluster.roles }}
+          {{- range $.Values.clusterPharia.cluster.roles }}
           {{- if ne .name "pgbouncer" }}
           TOTAL_USERS=$((TOTAL_USERS + 1))
           echo "════════════════════════════════════════════════════════════════"
@@ -142,7 +142,7 @@ spec:
 
           # Test 1: Direct cluster connection
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
-          if run_tests "cluster-pharia-rw" "Direct Cluster" "$USER_NAME" "$USER_PASSWORD"; then
+          if run_tests "{{ $.Values.clusterPharia.fullnameOverride }}-rw" "Direct Cluster" "$USER_NAME" "$USER_PASSWORD"; then
             PASSED_TESTS=$((PASSED_TESTS + 3))
           else
             FAILED_TESTS=$((FAILED_TESTS + $?))
@@ -154,7 +154,7 @@ spec:
           {{- range $.Values.clusterPharia.poolers }}
           {{- if eq .poolMode "transaction" }}
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
-          if run_tests "cluster-pharia-pooler-{{ .name }}" "Native Pooler (Transaction Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+          if run_tests "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Transaction Mode)" "$USER_NAME" "$USER_PASSWORD"; then
             PASSED_TESTS=$((PASSED_TESTS + 3))
           else
             FAILED_TESTS=$((FAILED_TESTS + $?))
@@ -169,7 +169,7 @@ spec:
           {{- range $.Values.clusterPharia.poolers }}
           {{- if eq .poolMode "session" }}
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
-          if run_tests "cluster-pharia-pooler-{{ .name }}" "Native Pooler (Session Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+          if run_tests "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Session Mode)" "$USER_NAME" "$USER_PASSWORD"; then
             PASSED_TESTS=$((PASSED_TESTS + 3))
           else
             FAILED_TESTS=$((FAILED_TESTS + $?))
@@ -209,7 +209,7 @@ spec:
           echo "✅ All users can connect via all methods (direct + poolers)"
           exit 0
       volumeMounts:
-        {{- range .Values.clusterPharia.cluster.roles }}
+        {{- range $.Values.clusterPharia.cluster.roles }}
         {{- if ne .name "pgbouncer" }}
         - name: secret-{{ .name | replace "_" "-" }}
           mountPath: /secrets/{{ .name }}
@@ -217,11 +217,11 @@ spec:
         {{- end }}
         {{- end }}
   volumes:
-    {{- range .Values.clusterPharia.cluster.roles }}
+    {{- range $.Values.clusterPharia.cluster.roles }}
     {{- if ne .name "pgbouncer" }}
     - name: secret-{{ .name | replace "_" "-" }}
       secret:
-        secretName: {{ .name | replace "_" "-" }}-pg-secret-qs
+        secretName: qs-postgresql-cluster-access-{{ .name | replace "_" "-" }}
         items:
           - key: password
             path: password
@@ -256,7 +256,7 @@ spec:
       imagePullPolicy: IfNotPresent
       env:
         - name: PGHOST
-          value: "cluster-temporal-rw"
+          value: "{{ .Values.clusterTemporal.fullnameOverride }}-rw"
         - name: PGSSLMODE
           value: {{ .Values.tests.sslMode | default "prefer" | quote }}
       command:
@@ -347,13 +347,13 @@ spec:
           }
 
           # Wait for PostgreSQL cluster
-          wait_for_service "cluster-temporal-rw" "PostgreSQL cluster (direct)" || exit 1
+          wait_for_service "{{ .Values.clusterTemporal.fullnameOverride }}-rw" "PostgreSQL cluster (direct)" || exit 1
           echo
 
           # Wait for poolers
           {{- if $.Values.clusterTemporal.poolers }}
           {{- range $.Values.clusterTemporal.poolers }}
-          wait_for_service "cluster-temporal-pooler-{{ .name }}" "Pooler ({{ .poolMode }} mode)" || echo "⚠️  Pooler not ready, will skip tests"
+          wait_for_service "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-{{ .name }}" "Pooler ({{ .poolMode }} mode)" || echo "⚠️  Pooler not ready, will skip tests"
           {{- end }}
           {{- end }}
           echo
@@ -364,7 +364,7 @@ spec:
           TOTAL_CONNECTIONS=0
 
           # Test each role across all connection methods
-          {{- range .Values.clusterTemporal.cluster.roles }}
+          {{- range $.Values.clusterTemporal.cluster.roles }}
           {{- if ne .name "pgbouncer" }}
           TOTAL_USERS=$((TOTAL_USERS + 1))
           echo "════════════════════════════════════════════════════════════════"
@@ -378,7 +378,7 @@ spec:
 
           # Test 1: Direct cluster connection
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
-          if run_tests "cluster-temporal-rw" "Direct Cluster" "$USER_NAME" "$USER_PASSWORD"; then
+          if run_tests "{{ $.Values.clusterTemporal.fullnameOverride }}-rw" "Direct Cluster" "$USER_NAME" "$USER_PASSWORD"; then
             PASSED_TESTS=$((PASSED_TESTS + 3))
           else
             FAILED_TESTS=$((FAILED_TESTS + $?))
@@ -390,7 +390,7 @@ spec:
           {{- range $.Values.clusterTemporal.poolers }}
           {{- if eq .poolMode "transaction" }}
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
-          if run_tests "cluster-temporal-pooler-{{ .name }}" "Native Pooler (Transaction Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+          if run_tests "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Transaction Mode)" "$USER_NAME" "$USER_PASSWORD"; then
             PASSED_TESTS=$((PASSED_TESTS + 3))
           else
             FAILED_TESTS=$((FAILED_TESTS + $?))
@@ -405,7 +405,7 @@ spec:
           {{- range $.Values.clusterTemporal.poolers }}
           {{- if eq .poolMode "session" }}
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
-          if run_tests "cluster-temporal-pooler-{{ .name }}" "Native Pooler (Session Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+          if run_tests "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Session Mode)" "$USER_NAME" "$USER_PASSWORD"; then
             PASSED_TESTS=$((PASSED_TESTS + 3))
           else
             FAILED_TESTS=$((FAILED_TESTS + $?))
@@ -445,7 +445,7 @@ spec:
           echo "✅ All users can connect via all methods (direct + poolers)"
           exit 0
       volumeMounts:
-        {{- range .Values.clusterTemporal.cluster.roles }}
+        {{- range $.Values.clusterTemporal.cluster.roles }}
         {{- if ne .name "pgbouncer" }}
         - name: secret-{{ .name | replace "_" "-" }}
           mountPath: /secrets/{{ .name }}
@@ -453,11 +453,11 @@ spec:
         {{- end }}
         {{- end }}
   volumes:
-    {{- range .Values.clusterTemporal.cluster.roles }}
+    {{- range $.Values.clusterTemporal.cluster.roles }}
     {{- if ne .name "pgbouncer" }}
     - name: secret-{{ .name | replace "_" "-" }}
       secret:
-        secretName: {{ .name | replace "_" "-" }}-pg-secret-qs
+        secretName: qs-postgresql-cluster-access-{{ .name | replace "_" "-" }}
         items:
           - key: password
             path: password

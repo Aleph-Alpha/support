@@ -29,6 +29,11 @@ jobConfig:
   # -- Fail on error - if false, job continues even if some secrets fail
   failOnError: true
 
+# Configuration for secret cleanup on uninstall
+secretCleanup:
+  # -- Retain secrets on helm uninstall (true = keep secrets, false = delete secrets)
+  retainOnDelete: true
+
 # Configuration for Helm tests
 tests:
   # -- PostgreSQL image to use for connection tests
@@ -39,7 +44,7 @@ tests:
 # PG Cluster for Pharia Applications
 clusterPharia:
   enabled: true
-  fullnameOverride: cluster-pharia
+  fullnameOverride: qs-postgresql-cluster-pharia
   type: postgresql
   # PgBouncer host for connection pooling (optional)
   pgbouncerHost: pgbouncer-pharia
@@ -85,7 +90,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
         passwordSecret:
-          name: "pgbouncer-pharia-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pgbouncer"
         login: true
         superuser: false
         replication: false
@@ -95,7 +100,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
         passwordSecret:
-          name: "document-index-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-document-index"
         login: true
         superuser: false
         replication: false
@@ -105,7 +110,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_os)
         passwordSecret:
-          name: "pharia-os-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-os"
         login: true
         superuser: false
         replication: false
@@ -115,7 +120,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (inference_api)
         passwordSecret:
-          name: "inference-api-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-inference-api"
         login: true
         superuser: false
         replication: false
@@ -125,7 +130,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_studio)
         passwordSecret:
-          name: "pharia-studio-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-studio"
         login: true
         superuser: false
         replication: false
@@ -135,7 +140,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_oauth_gateway)
         passwordSecret:
-          name: "pharia-oauth-gateway-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-oauth-gateway"
         login: true
         superuser: false
         replication: false
@@ -145,7 +150,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_assistant)
         passwordSecret:
-          name: "pharia-assistant-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-assistant"
         login: true
         superuser: false
         replication: false
@@ -155,7 +160,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_chat)
         passwordSecret:
-          name: "pharia-chat-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-chat"
         login: true
         superuser: false
         replication: false
@@ -165,7 +170,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (pharia_catch)
         passwordSecret:
-          name: "pharia-catch-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-catch"
         login: true
         superuser: false
         replication: false
@@ -175,7 +180,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (zitadel)
         passwordSecret:
-          name: "zitadel-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-zitadel"
         login: true
         superuser: false
         replication: false
@@ -185,7 +190,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (openfga)
         passwordSecret:
-          name: "openfga-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-openfga"
         login: true
         superuser: false
         replication: false
@@ -195,7 +200,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (dex)
         passwordSecret:
-          name: "dex-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-dex"
         login: true
         superuser: false
         replication: false
@@ -205,7 +210,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_conductor)
         passwordSecret:
-          name: "pharia-conductor-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-conductor"
         login: true
         superuser: false
         replication: false
@@ -215,7 +220,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_numinous)
         passwordSecret:
-          name: "pharia-numinous-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-numinous"
         login: true
         superuser: false
         replication: false
@@ -225,7 +230,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_transcribe_app)
         passwordSecret:
-          name: "pharia-transcribe-app-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-transcribe-app"
         login: true
         superuser: false
         replication: false
@@ -235,7 +240,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (pharia_data)
         passwordSecret:
-          name: "pharia-data-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pharia-data"
         login: true
         superuser: false
         replication: false
@@ -245,7 +250,7 @@ clusterPharia:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the name of the user (mlflow)
         passwordSecret:
-          name: "mlflow-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-mlflow"
         login: true
         superuser: false
         replication: false
@@ -256,7 +261,7 @@ clusterPharia:
   poolers:
     # Transaction mode pooler - for databases that work well with transaction pooling
     # Recommended for: document-index, and other databases without prepared statements
-    - name: pharia-rw-transaction
+    - name: transaction
       # -- PgBouncer type of service to forward traffic to.
       type: rw
       # -- PgBouncer pooling mode
@@ -273,7 +278,7 @@ clusterPharia:
     
     # Session mode pooler - for databases that require session state
     # Recommended for: pharia-os, dex (databases needing prepared statements)
-    - name: pharia-rw-session
+    - name: session
       # -- PgBouncer type of service to forward traffic to.
       type: rw
       # -- PgBouncer pooling mode
@@ -297,7 +302,7 @@ clusterPharia:
 # PG Cluster for Temporal
 clusterTemporal:
   enabled: true
-  fullnameOverride: cluster-temporal
+  fullnameOverride: qs-postgresql-cluster-temporal
   type: postgresql
   # PgBouncer host for connection pooling (optional)
   pgbouncerHost: pgbouncer-temporal
@@ -343,7 +348,7 @@ clusterTemporal:
         inherit: true
         # `password` and `username` key should exist in secret. username key should be the same as the name of the user (document_index)
         passwordSecret:
-          name: "pgbouncer-temporal-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-pgbouncer"
         login: true
         superuser: false
         replication: false
@@ -353,7 +358,7 @@ clusterTemporal:
         inherit: true
         # password and username key should exist in secret. username key should be the same as the name of the user
         passwordSecret:
-          name: "temporal-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-temporal"
         login: true
         createdb: true
         superuser: false
@@ -364,7 +369,7 @@ clusterTemporal:
         inherit: true
         # password and username key should exist in secret. username key should be the same as the name of the user
         passwordSecret:
-          name: "temporal-visibility-pg-secret-qs"
+          name: "qs-postgresql-cluster-access-temporal-visibility"
         login: true
         createdb: true
         superuser: false
@@ -376,7 +381,7 @@ clusterTemporal:
   poolers:
     # Transaction mode pooler - for databases that work well with transaction pooling
     # Recommended for: Most temporal databases
-    - name: temporal-rw-transaction
+    - name: transaction
       # -- PgBouncer type of service to forward traffic to.
       type: rw
       # -- PgBouncer pooling mode
@@ -393,7 +398,7 @@ clusterTemporal:
     
     # Session mode pooler - for databases that require session state
     # Recommended for: Temporal workflow databases requiring session state
-    - name: temporal-rw-session
+    - name: session
       # -- PgBouncer type of service to forward traffic to.
       type: rw
       # -- PgBouncer pooling mode

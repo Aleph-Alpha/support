@@ -100,19 +100,21 @@ spec:
           env:
             - name: CLUSTER_NAME
               value: "{{ $clusterName }}"
+            - name: CLUSTER_FULLNAME
+              value: "{{ $clusterConfig.fullnameOverride }}"
             - name: CLUSTER_HOST
-              value: "cluster-{{ $clusterName }}-rw"
+              value: "{{ $clusterConfig.fullnameOverride }}-rw"
             - name: PGBOUNCER_HOST
               value: "{{ $clusterConfig.pgbouncerHost }}"
             {{- if $clusterConfig.poolers }}
             {{- range $clusterConfig.poolers }}
             {{- if eq .poolMode "transaction" }}
             - name: POOLER_TRANSACTION_HOST
-              value: "cluster-{{ $clusterName }}-pooler-{{ .name }}"
+              value: "{{ $clusterConfig.fullnameOverride }}-pooler-{{ .name }}"
             {{- end }}
             {{- if eq .poolMode "session" }}
             - name: POOLER_SESSION_HOST
-              value: "cluster-{{ $clusterName }}-pooler-{{ .name }}"
+              value: "{{ $clusterConfig.fullnameOverride }}-pooler-{{ .name }}"
             {{- end }}
             {{- end }}
             {{- end }}
