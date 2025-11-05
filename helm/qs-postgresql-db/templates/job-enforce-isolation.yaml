@@ -10,7 +10,7 @@
 {{- end }}
 {{- end }}
 {{- range $clusterName, $databases := $clusters }}
-{{- $clusterShortName := trimPrefix "cluster-" $clusterName }}
+{{- $clusterShortName := trimPrefix "qs-postgresql-cluster-" $clusterName }}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -120,12 +120,24 @@ spec:
                   # Grant CONNECT to owner
                   if psql -d postgres -c "GRANT CONNECT ON DATABASE \"{{ .name }}\" TO {{ .owner }};" 2>&1 | head -1; then
                     echo "  ✓ Granted CONNECT to {{ .owner }}"
-                    echo "  ✅ Database secured"
-                    DATABASES_SECURED=$((DATABASES_SECURED + 1))
                   else
                     echo "  ⚠ Warning: Could not grant CONNECT to {{ .owner }}"
                     DATABASES_FAILED=$((DATABASES_FAILED + 1))
+                    continue
                   fi
+                  
+                  # Grant CONNECT to native pooler user (for CloudNativePG poolers)
+                  # Check if cnpg_pooler_pgbouncer user exists
+                  if psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='cnpg_pooler_pgbouncer'" | grep -q 1; then
+                    if psql -d postgres -c "GRANT CONNECT ON DATABASE \"{{ .name }}\" TO cnpg_pooler_pgbouncer;" 2>&1 | head -1; then
+                      echo "  ✓ Granted CONNECT to cnpg_pooler_pgbouncer (native poolers)"
+                    else
+                      echo "  ⚠ Warning: Could not grant CONNECT to cnpg_pooler_pgbouncer"
+                    fi
+                  fi
+                  
+                  echo "  ✅ Database secured"
+                  DATABASES_SECURED=$((DATABASES_SECURED + 1))
                 else
                   echo "  Current state: PUBLIC does not have CONNECT privilege"
                   echo "  ✅ Database already secured"

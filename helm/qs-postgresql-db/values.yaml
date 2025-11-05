@@ -26,10 +26,18 @@ extensionJob:
 # Configuration for Helm tests that verify database connectivity and functionality
 # Note: Tests are only executed when you run 'helm test <release-name>'
 tests:
-  # Container image to use for tests
-  image: "postgres:17"
+  # Container image to use for tests (alpine variant is ~40% smaller)
+  image: "postgres:17-alpine"
   # SSL mode for PostgreSQL connections during tests
   sslMode: "prefer"
+  # Connection method for tests: "direct" or "pooler"
+  # direct: Test via direct cluster connection (cluster-xxx-rw)
+  # pooler: Test via native CloudNativePG poolers (requires poolers to be deployed)
+  connectionMethod: "pooler"
+  # Pooler mode to use when connectionMethod is "pooler"
+  # transaction: Use transaction mode pooler
+  # session: Use session mode pooler
+  poolerMode: "transaction"
 
 # ============================================================================
 # Field Reference Documentation
@@ -156,33 +164,9 @@ fullnameOverride: "qs-postgresql-db"
 # ============================================================================
 
 databases:
-  - name: "pgbouncer"
-    enabled: true
-    cluster: "cluster-pharia"
-    owner: "pgbouncer"
-    connectionLimit: 50
-    extensions:
-      - uuid-ossp
-      - pgcrypto
-      - pg_stat_statements
-      - pg_trgm
-      - btree_gin
-
-  - name: "pgbouncer"
-    enabled: true
-    cluster: "cluster-temporal"
-    owner: "pgbouncer"
-    connectionLimit: 50
-    extensions:
-      - uuid-ossp
-      - pgcrypto
-      - pg_stat_statements
-      - pg_trgm
-      - btree_gin
-
   - name: "document-index"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "document_index"
     connectionLimit: 50
     extensions:
@@ -194,7 +178,7 @@ databases:
 
   - name: "pharia-os"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_os"
     connectionLimit: 50
     extensions:
@@ -206,7 +190,7 @@ databases:
 
   - name: "inference-api"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "inference_api"
     connectionLimit: 50
     extensions:
@@ -218,7 +202,7 @@ databases:
 
   - name: "pharia-studio"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_studio"
     connectionLimit: 50
     extensions:
@@ -230,7 +214,7 @@ databases:
 
   - name: "pharia-oauth-gateway"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_oauth_gateway"
     connectionLimit: 50
     extensions:
@@ -242,7 +226,7 @@ databases:
 
   - name: "pharia-assistant"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_assistant"
     connectionLimit: 50
     extensions:
@@ -254,7 +238,7 @@ databases:
 
   - name: "pharia-chat"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_chat"
     connectionLimit: 100
     extensions:
@@ -266,7 +250,7 @@ databases:
 
   - name: "pharia-catch"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_catch"
     connectionLimit: 50
     extensions:
@@ -278,7 +262,7 @@ databases:
 
   - name: "zitadel"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "zitadel"
     connectionLimit: 50
     extensions:
@@ -290,7 +274,7 @@ databases:
 
   - name: "openfga"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "openfga"
     connectionLimit: 50
     extensions:
@@ -302,7 +286,7 @@ databases:
 
   - name: "dex"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "dex"
     connectionLimit: 50
     extensions:
@@ -314,7 +298,7 @@ databases:
 
   - name: "pharia-conductor"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_conductor"
     connectionLimit: 50
     extensions:
@@ -326,7 +310,7 @@ databases:
 
   - name: "pharia-numinous"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_numinous"
     connectionLimit: 50
     extensions:
@@ -338,7 +322,7 @@ databases:
 
   - name: "pharia-transcribe-app"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_transcribe_app"
     connectionLimit: 50
     extensions:
@@ -350,7 +334,7 @@ databases:
 
   - name: "pharia-data"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "pharia_data"
     connectionLimit: 50
     extensions:
@@ -362,7 +346,7 @@ databases:
 
   - name: "mlflow"
     enabled: true
-    cluster: "cluster-pharia"
+    cluster: "qs-postgresql-cluster-pharia"
     owner: "mlflow"
     connectionLimit: 50
     extensions:
@@ -374,7 +358,7 @@ databases:
 
   - name: "temporal"
     enabled: true
-    cluster: "cluster-temporal"
+    cluster: "qs-postgresql-cluster-temporal"
     owner: "temporal"
     connectionLimit: 50
     extensions:
@@ -386,7 +370,7 @@ databases:
 
   - name: "temporal-visibility"
     enabled: true
-    cluster: "cluster-temporal"
+    cluster: "qs-postgresql-cluster-temporal"
     owner: "temporal_visibility"
     connectionLimit: 50
     extensions:

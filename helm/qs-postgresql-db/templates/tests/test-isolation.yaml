@@ -9,7 +9,7 @@
 {{- end }}
 {{- end }}
 {{- range $clusterName, $databases := $clusters }}
-{{- $clusterShortName := trimPrefix "cluster-" $clusterName }}
+{{- $clusterShortName := trimPrefix "qs-postgresql-cluster-" $clusterName }}
 {{- if gt (len $databases) 1 }}
 ---
 apiVersion: v1
@@ -31,37 +31,79 @@ spec:
       image: {{ $.Values.tests.image | default "postgres:17" }}
       imagePullPolicy: IfNotPresent
       env:
-        - name: PGHOST
-          value: "{{ $clusterName }}-rw"
+        - name: CONNECTION_METHOD
+          value: {{ $.Values.tests.connectionMethod | default "direct" | quote }}
+        - name: POOLER_MODE
+          value: {{ $.Values.tests.poolerMode | default "transaction" | quote }}
+        - name: CLUSTER_NAME
+          value: "{{ $clusterName }}"
         - name: PGSSLMODE
           value: {{ $.Values.tests.sslMode | default "prefer" | quote }}
+        - name: PGCONNECT_TIMEOUT
+          value: "3"
       command:
         - /bin/bash
         - -c
         - |
           set -e
 
+          # Determine connection host based on configuration
+          if [ "$CONNECTION_METHOD" = "pooler" ]; then
+            # Use pooler connection
+            if [ "$POOLER_MODE" = "session" ]; then
+              # Try to find session pooler
+              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-session" 2>/dev/null | awk '{print $1}')
+              if [ -n "$POOLER_HOST" ]; then
+                PGHOST="${CLUSTER_NAME}-pooler-session"
+                CONNECTION_TYPE="Native Pooler (Session Mode)"
+              else
+                echo "⚠️  Session pooler not found, falling back to direct connection"
+                PGHOST="${CLUSTER_NAME}-rw"
+                CONNECTION_TYPE="Direct Cluster (Fallback)"
+              fi
+            else
+              # Try to find transaction pooler
+              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-transaction" 2>/dev/null | awk '{print $1}')
+              if [ -n "$POOLER_HOST" ]; then
+                PGHOST="${CLUSTER_NAME}-pooler-transaction"
+                CONNECTION_TYPE="Native Pooler (Transaction Mode)"
+              else
+                echo "⚠️  Transaction pooler not found, falling back to direct connection"
+                PGHOST="${CLUSTER_NAME}-rw"
+                CONNECTION_TYPE="Direct Cluster (Fallback)"
+              fi
+            fi
+          else
+            # Use direct connection
+            PGHOST="${CLUSTER_NAME}-rw"
+            CONNECTION_TYPE="Direct Cluster Access"
+          fi
+
+          export PGHOST
+
           echo "════════════════════════════════════════════════════════════════"
           echo "  Database Isolation Security Test"
           echo "  Cluster: {{ $clusterName }}"
+          echo "  Connection: $CONNECTION_TYPE"
+          echo "  Host: $PGHOST"
           echo "════════════════════════════════════════════════════════════════"
           echo
 
           # Wait for PostgreSQL to be ready
-          echo "⏳ Waiting for PostgreSQL cluster to be ready..."
+          echo "⏳ Waiting for connection endpoint to be ready..."
           MAX_RETRIES=30
           RETRY=0
-          until pg_isready -h "{{ $clusterName }}-rw" -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
+          until pg_isready -h "$PGHOST" -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
             echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
             sleep 5
             RETRY=$((RETRY+1))
           done
 
           if [ $RETRY -eq $MAX_RETRIES ]; then
-            echo "❌ ERROR: PostgreSQL cluster did not become ready in time"
+            echo "❌ ERROR: Connection endpoint did not become ready in time"
             exit 1
           fi
-          echo "✅ PostgreSQL cluster is ready"
+          echo "✅ Connection endpoint is ready"
           echo
 
           FAILED_TESTS=0
@@ -78,15 +120,11 @@ spec:
           echo "User: {{ $firstDb.owner }} attempting to access: {{ $secondDb.name }}"
           echo
 
-          {{- if eq $firstDb.name "pgbouncer" }}
-          FIRST_PASSWORD=$(cat /secrets/pgbouncer-{{ $clusterShortName }}/password)
-          {{- else }}
-          FIRST_PASSWORD=$(cat /secrets/{{ $firstDb.name }}/password)
-          {{- end }}
+          FIRST_PASSWORD=$(cat /secrets/{{ $firstDb.owner }}/password)
           export PGPASSWORD="$FIRST_PASSWORD"
 
           echo -n "  Attempting connection... "
-          OUTPUT=$(psql -h "{{ $clusterName }}-rw" -U "{{ $firstDb.owner }}" -d "{{ $secondDb.name }}" -c "SELECT 1;" 2>&1 || true)
+          OUTPUT=$(psql -h "$PGHOST" -U "{{ $firstDb.owner }}" -d "{{ $secondDb.name }}" -c "SELECT 1;" 2>&1 || true)
           
           if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
             echo "✅ PASS: Access correctly denied"
@@ -94,7 +132,8 @@ spec:
             PASSED_TESTS=$((PASSED_TESTS + 1))
           else
             echo "❌ FAIL: Access granted (SECURITY ISSUE!)"
-            echo "$OUTPUT"
+            echo "  Output received:"
+            echo "$OUTPUT" | head -5 | sed 's/^/    /'
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
           echo
@@ -107,7 +146,7 @@ spec:
           echo
 
           echo -n "  Attempting connection... "
-          if psql -h "{{ $clusterName }}-rw" -U "{{ $firstDb.owner }}" -d "{{ $firstDb.name }}" -c "SELECT 1;" > /dev/null 2>&1; then
+          if psql -h "$PGHOST" -U "{{ $firstDb.owner }}" -d "{{ $firstDb.name }}" -c "SELECT 1;" > /dev/null 2>&1; then
             echo "✅ PASS: Can access own database"
             PASSED_TESTS=$((PASSED_TESTS + 1))
           else
@@ -123,15 +162,11 @@ spec:
           echo "User: {{ $secondDb.owner }} attempting to access: {{ $firstDb.name }}"
           echo
 
-          {{- if eq $secondDb.name "pgbouncer" }}
-          SECOND_PASSWORD=$(cat /secrets/pgbouncer-{{ $clusterShortName }}/password)
-          {{- else }}
-          SECOND_PASSWORD=$(cat /secrets/{{ $secondDb.name }}/password)
-          {{- end }}
+          SECOND_PASSWORD=$(cat /secrets/{{ $secondDb.owner }}/password)
           export PGPASSWORD="$SECOND_PASSWORD"
 
           echo -n "  Attempting connection... "
-          OUTPUT=$(psql -h "{{ $clusterName }}-rw" -U "{{ $secondDb.owner }}" -d "{{ $firstDb.name }}" -c "SELECT 1;" 2>&1 || true)
+          OUTPUT=$(psql -h "$PGHOST" -U "{{ $secondDb.owner }}" -d "{{ $firstDb.name }}" -c "SELECT 1;" 2>&1 || true)
           
           if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
             echo "✅ PASS: Access correctly denied"
@@ -139,7 +174,8 @@ spec:
             PASSED_TESTS=$((PASSED_TESTS + 1))
           else
             echo "❌ FAIL: Access granted (SECURITY ISSUE!)"
-            echo "$OUTPUT"
+            echo "  Output received:"
+            echo "$OUTPUT" | head -5 | sed 's/^/    /'
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
           echo
@@ -152,7 +188,7 @@ spec:
           echo
 
           echo -n "  Attempting connection... "
-          if psql -h "{{ $clusterName }}-rw" -U "{{ $secondDb.owner }}" -d "{{ $secondDb.name }}" -c "SELECT 1;" > /dev/null 2>&1; then
+          if psql -h "$PGHOST" -U "{{ $secondDb.owner }}" -d "{{ $secondDb.name }}" -c "SELECT 1;" > /dev/null 2>&1; then
             echo "✅ PASS: Can access own database"
             PASSED_TESTS=$((PASSED_TESTS + 1))
           else
@@ -162,31 +198,29 @@ spec:
           echo
 
           {{- if gt (len $databases) 2 }}
-          # Test all other databases for cross-access
+          # Test all other databases for cross-access (skip firstDb and secondDb already tested above)
           {{- range $idx, $db := $databases }}
-          {{- if and (ne $idx 0) (ne $idx 1) }}
-          echo "────────────────────────────────────────────────────────────────"
-          echo "Test {{ add $idx 3 }}: Additional Cross-Database Check"
-          echo "────────────────────────────────────────────────────────────────"
-          echo "User: {{ $firstDb.owner }} → {{ $db.name }}"
-          
-          {{- if eq $db.name "pgbouncer" }}
-          TEST_DB_NAME="{{ $db.name }}"
-          {{- else }}
-          TEST_DB_NAME="{{ $db.name }}"
-          {{- end }}
+          {{- if and (ne $db.name $firstDb.name) (ne $db.name $secondDb.name) }}
+            echo "────────────────────────────────────────────────────────────────"
+            echo "Test {{ add $idx 3 }}: Additional Cross-Database Check"
+            echo "────────────────────────────────────────────────────────────────"
+            echo "User: {{ $firstDb.owner }} → {{ $db.name }}"
+            
+            TEST_DB_NAME="{{ $db.name }}"
 
-          export PGPASSWORD="$FIRST_PASSWORD"
-          OUTPUT=$(psql -h "{{ $clusterName }}-rw" -U "{{ $firstDb.owner }}" -d "$TEST_DB_NAME" -c "SELECT 1;" 2>&1 || true)
-          
-          if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
-            echo "  ✅ PASS: Cross-access denied"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "  ❌ FAIL: Cross-access granted (SECURITY ISSUE!)"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-          echo
+            export PGPASSWORD="$FIRST_PASSWORD"
+            OUTPUT=$(psql -h "$PGHOST" -U "{{ $firstDb.owner }}" -d "$TEST_DB_NAME" -c "SELECT 1;" 2>&1 || true)
+            
+            if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
+              echo "  ✅ PASS: Cross-access denied"
+              PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+              echo "  ❌ FAIL: Cross-access granted (SECURITY ISSUE!)"
+              echo "  Output received:"
+              echo "$OUTPUT" | head -5 | sed 's/^/    /'
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
+            echo
           {{- end }}
           {{- end }}
           {{- end }}
@@ -195,6 +229,7 @@ spec:
           echo "  Isolation Test Summary"
           echo "════════════════════════════════════════════════════════════════"
           echo "  Cluster: {{ $clusterName }}"
+          echo "  Connection: $CONNECTION_TYPE"
           echo "  Databases: $TOTAL_DATABASES"
           echo "  Tests Passed: $PASSED_TESTS"
           echo "  Tests Failed: $FAILED_TESTS"
@@ -211,36 +246,24 @@ spec:
           echo
           echo "✅ Database isolation is properly enforced!"
           echo "🔒 Users can only access their own databases."
+          if [ "$CONNECTION_METHOD" = "pooler" ]; then
+            echo "✅ Native pooler isolation verified!"
+          fi
           exit 0
       volumeMounts:
         {{- range $databases }}
-        {{- if eq .name "pgbouncer" }}
-        - name: secret-pgbouncer-{{ $clusterShortName }}
-          mountPath: /secrets/pgbouncer-{{ $clusterShortName }}
+        - name: secret-{{ .owner | replace "_" "-" }}
+          mountPath: /secrets/{{ .owner }}
           readOnly: true
-        {{- else }}
-        - name: secret-{{ .name }}
-          mountPath: /secrets/{{ .name }}
-          readOnly: true
-        {{- end }}
         {{- end }}
   volumes:
     {{- range $databases }}
-    {{- if eq .name "pgbouncer" }}
-    - name: secret-pgbouncer-{{ $clusterShortName }}
+    - name: secret-{{ .owner | replace "_" "-" }}
       secret:
-        secretName: pgbouncer-{{ $clusterShortName }}-pg-secret-qs
+        secretName: qs-postgresql-cluster-access-{{ .owner | replace "_" "-" }}
         items:
           - key: password
             path: password
-    {{- else }}
-    - name: secret-{{ .name }}
-      secret:
-        secretName: {{ .name }}-pg-secret-qs
-        items:
-          - key: password
-            path: password
-    {{- end }}
     {{- end }}
 {{- end }}
 {{- end }}

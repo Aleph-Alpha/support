@@ -32,6 +32,8 @@ spec:
           value: "5432"
         - name: PGSSLMODE
           value: {{ $.Values.tests.sslMode | default "prefer" | quote }}
+        - name: PGCONNECT_TIMEOUT
+          value: "3"
       command:
         - /bin/bash
         - -c
