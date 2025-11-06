@@ -267,7 +267,6 @@ clusterPharia:
         log_disconnections: "0"
         log_pooler_errors: "1"
         log_stats: "1"
-        logfile: /dev/stdout
     
     # Session mode pooler - for databases that require session state
     # Recommended for: pharia-os, dex (databases needing prepared statements)
@@ -289,7 +288,6 @@ clusterPharia:
         log_disconnections: "0"
         log_pooler_errors: "1"
         log_stats: "1"
-        logfile: /dev/stdout
 
 # PG Cluster for Temporal
 clusterTemporal:
@@ -379,7 +377,6 @@ clusterTemporal:
         log_disconnections: "0"
         log_pooler_errors: "1"
         log_stats: "1"
-        logfile: /dev/stdout
     
     # Session mode pooler - for databases that require session state
     # Recommended for: Temporal workflow databases requiring session state
@@ -401,4 +398,3 @@ clusterTemporal:
         log_disconnections: "0"
         log_pooler_errors: "1"
         log_stats: "1"
-        logfile: /dev/stdout
