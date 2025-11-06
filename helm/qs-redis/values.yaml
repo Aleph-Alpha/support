@@ -45,10 +45,6 @@ pharia-assistant-api-redis:
     redisSecret:
       secretName: pharia-assistant-api-redis-secret-qs
       secretKey: password
-  # -- Redis password secret configuration
-  redisSecret:
-    secretName: pharia-assistant-api-redis-secret-qs
-    secretKey: password
   # Add any specific values for the redis chart here
   # For example:
   # kubernetesConfig:
@@ -70,10 +66,6 @@ pharia-transcribe-app-redis:
     redisSecret:
       secretName: pharia-transcribe-app-redis-secret-qs
       secretKey: password
-  # -- Redis password secret configuration
-  redisSecret:
-    secretName: pharia-transcribe-app-redis-secret-qs
-    secretKey: password
   # Add any specific values for the redis chart here
   # For example:
   # kubernetesConfig:

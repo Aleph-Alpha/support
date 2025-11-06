@@ -6,7 +6,7 @@ Tests connection, authentication, and basic SET/GET operations.
 {{- $instanceKeys := list "pharia-assistant-api-redis" "pharia-transcribe-app-redis" -}}
 {{- range $k := $instanceKeys }}
 {{- $cfg := index $root.Values $k | default dict -}}
-{{- if and $cfg $cfg.enabled $cfg.redisSecret }}
+{{- if and $cfg $cfg.enabled $cfg.redisStandalone $cfg.redisStandalone.redisSecret }}
 ---
 apiVersion: v1
 kind: Pod
@@ -62,9 +62,9 @@ spec:
   volumes:
     - name: redis-secret
       secret:
-        secretName: {{ $cfg.redisSecret.secretName }}
+        secretName: {{ $cfg.redisStandalone.redisSecret.secretName }}
         items:
-          - key: {{ $cfg.redisSecret.secretKey }}
+          - key: {{ $cfg.redisStandalone.redisSecret.secretKey }}
             path: password
   restartPolicy: Never
 {{- end }}
