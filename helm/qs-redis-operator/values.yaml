@@ -5,7 +5,7 @@
 # For full configuration options, see:
 # https://github.com/OT-CONTAINER-KIT/redis-operator/blob/main/charts/redis-operator/values.yaml
 
-redis-operator:
+redis-operator: {}
   # Override operator image if needed
   # image:
   #   repository: quay.io/opstree/redis-operator

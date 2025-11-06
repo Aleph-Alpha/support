@@ -10,5 +10,11 @@ dependencies:
   - name: redis
     version: 0.16.7
     repository: https://ot-container-kit.github.io/helm-charts/
-    condition: redis.enabled
+    alias: pharia-assistant-api-redis
+    condition: pharia-assistant-api-redis.enabled
+  - name: redis
+    version: 0.16.7
+    repository: https://ot-container-kit.github.io/helm-charts/
+    alias: pharia-transcribe-app-redis
+    condition: pharia-transcribe-app-redis.enabled
 

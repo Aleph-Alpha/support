@@ -1,40 +1,51 @@
+{{- /*
+Test pods for each Redis instance.
+Tests connection, authentication, and basic SET/GET operations.
+*/ -}}
+{{- $root := . -}}
+{{- $instanceKeys := list "pharia-assistant-api-redis" "pharia-transcribe-app-redis" -}}
+{{- range $k := $instanceKeys }}
+{{- $cfg := index $root.Values $k | default dict -}}
+{{- if and $cfg $cfg.enabled $cfg.redisSecret }}
+---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: "{{ include "qs-redis.fullname" . }}-test-connection"
+  name: "{{ include "qs-redis.fullname" $root }}-test-{{ $k }}"
   labels:
-    {{- include "qs-redis.labels" . | nindent 4 }}
+    {{- include "qs-redis.labels" $root | nindent 4 }}
+    qs-redis/instance: {{ $k }}
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:
   containers:
     - name: test-redis-connection
-      image: {{ .Values.tests.image }}
+      image: {{ $root.Values.tests.image }}
       command: ["/bin/sh"]
       args:
         - -c
         - |
           set -e
-          echo "Testing Redis connection..."
-          echo "Host: {{ include "qs-redis.redisHost" . }}"
-          echo "Port: {{ include "qs-redis.redisPort" . }}"
+          echo "Testing Redis instance: {{ $k }}"
+          echo "Host: {{ $cfg.redisStandalone.name }}"
+          echo "Port: 6379"
           
           # Get password from secret
           REDIS_PASSWORD=$(cat /secrets/password)
           
           # Test connection with AUTH
-          if redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" PING | grep -q PONG; then
+          if redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" PING | grep -q PONG; then
             echo "✓ Redis connection successful!"
             
             # Test SET/GET
-            redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" SET test-key "test-value"
-            VALUE=$(redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" GET test-key)
+            redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" SET test-key "test-value"
+            VALUE=$(redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" GET test-key)
             
             if [ "$VALUE" = "test-value" ]; then
               echo "✓ Redis SET/GET test successful!"
-              redis-cli -h {{ include "qs-redis.redisHost" . }} -p {{ include "qs-redis.redisPort" . }} -a "$REDIS_PASSWORD" DEL test-key
-              echo "✓ All tests passed!"
+              redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" DEL test-key
+              echo "✓ All tests passed for {{ $k }}!"
               exit 0
             else
               echo "✗ Redis SET/GET test failed!"
@@ -51,8 +62,10 @@ spec:
   volumes:
     - name: redis-secret
       secret:
-        secretName: {{ .Values.redis.redisSecret.secretName }}
+        secretName: {{ $cfg.redisSecret.secretName }}
         items:
-          - key: {{ .Values.redis.redisSecret.secretKey }}
+          - key: {{ $cfg.redisSecret.secretKey }}
             path: password
   restartPolicy: Never
+{{- end }}
+{{- end }}
