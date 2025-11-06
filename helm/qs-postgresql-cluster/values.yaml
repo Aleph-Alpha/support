@@ -260,9 +260,6 @@ clusterPharia:
       parameters:
         max_client_conn: "1000"
         default_pool_size: "25"
-      monitoring:
-        # -- Whether to enable monitoring
-        enabled: false
     
     # Session mode pooler - for databases that require session state
     # Recommended for: pharia-os, dex (databases needing prepared statements)
@@ -277,15 +274,6 @@ clusterPharia:
       parameters:
         max_client_conn: "600"
         default_pool_size: "20"
-      monitoring:
-        # -- Whether to enable monitoring
-        enabled: false
-  #      podMonitor:
-  #        # -- Whether to enable the PodMonitor
-  #        enabled: true
-  #    # -- Custom PgBouncer deployment template.
-  #    # Use to override image, specify resources, etc.
-  #    template: {}
 
 # PG Cluster for Temporal
 clusterTemporal:
@@ -368,9 +356,6 @@ clusterTemporal:
       parameters:
         max_client_conn: "1000"
         default_pool_size: "25"
-      monitoring:
-        # -- Whether to enable monitoring
-        enabled: false
     
     # Session mode pooler - for databases that require session state
     # Recommended for: Temporal workflow databases requiring session state
@@ -385,12 +370,3 @@ clusterTemporal:
       parameters:
         max_client_conn: "600"
         default_pool_size: "20"
-      monitoring:
-        # -- Whether to enable monitoring
-        enabled: false
-  #      podMonitor:
-  #        # -- Whether to enable the PodMonitor
-  #        enabled: true
-  #    # -- Custom PgBouncer deployment template.
-  #    # Use to override image, specify resources, etc.
-  #    template: {}
