@@ -260,6 +260,14 @@ clusterPharia:
       parameters:
         max_client_conn: "1000"
         default_pool_size: "25"
+        server_tls_sslmode: require
+        ignore_startup_parameters: extra_float_digits, jit
+        auth_type: scram-sha-256
+        log_connections: 0
+        log_disconnections: 0
+        log_pooler_errors: 1
+        log_stats: 1
+        logfile: /dev/stdout
     
     # Session mode pooler - for databases that require session state
     # Recommended for: pharia-os, dex (databases needing prepared statements)
@@ -274,6 +282,14 @@ clusterPharia:
       parameters:
         max_client_conn: "600"
         default_pool_size: "20"
+        server_tls_sslmode: require
+        ignore_startup_parameters: extra_float_digits
+        auth_type: scram-sha-256
+        log_connections: 0
+        log_disconnections: 0
+        log_pooler_errors: 1
+        log_stats: 1
+        logfile: /dev/stdout
 
 # PG Cluster for Temporal
 clusterTemporal:
@@ -356,6 +372,14 @@ clusterTemporal:
       parameters:
         max_client_conn: "1000"
         default_pool_size: "25"
+        server_tls_sslmode: require
+        ignore_startup_parameters: extra_float_digits, jit
+        auth_type: scram-sha-256
+        log_connections: 0
+        log_disconnections: 0
+        log_pooler_errors: 1
+        log_stats: 1
+        logfile: /dev/stdout
     
     # Session mode pooler - for databases that require session state
     # Recommended for: Temporal workflow databases requiring session state
@@ -370,3 +394,11 @@ clusterTemporal:
       parameters:
         max_client_conn: "600"
         default_pool_size: "20"
+        server_tls_sslmode: require
+        ignore_startup_parameters: extra_float_digits
+        auth_type: scram-sha-256
+        log_connections: 0
+        log_disconnections: 0
+        log_pooler_errors: 1
+        log_stats: 1
+        logfile: /dev/stdout
