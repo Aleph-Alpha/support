@@ -357,27 +357,6 @@ clusterTemporal:
     enabled: false
   # -- List of PgBouncer poolers
   poolers:
-    # Transaction mode pooler - for databases that work well with transaction pooling
-    # Recommended for: Most temporal databases
-    - name: transaction
-      # -- PgBouncer type of service to forward traffic to.
-      type: rw
-      # -- PgBouncer pooling mode
-      poolMode: transaction
-      # -- Number of PgBouncer instances
-      instances: 1
-      # -- PgBouncer configuration parameters
-      parameters:
-        max_client_conn: "1000"
-        default_pool_size: "40"
-        server_tls_sslmode: require
-        ignore_startup_parameters: extra_float_digits, jit
-        auth_type: scram-sha-256
-        log_connections: "0"
-        log_disconnections: "0"
-        log_pooler_errors: "1"
-        log_stats: "1"
-    
     # Session mode pooler - for databases that require session state
     # Recommended for: Temporal workflow databases requiring session state
     - name: session
@@ -390,7 +369,7 @@ clusterTemporal:
       # -- PgBouncer configuration parameters
       parameters:
         max_client_conn: "600"
-        default_pool_size: "60"
+        default_pool_size: "80"
         server_tls_sslmode: require
         ignore_startup_parameters: extra_float_digits
         auth_type: scram-sha-256
