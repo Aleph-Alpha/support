@@ -371,6 +371,9 @@ clusterTemporal:
       parameters:
         max_client_conn: "600"
         default_pool_size: "80"
+        reserve_pool_size: 10
+        server_lifetime: 3600
+        server_idle_timeout: 600
         server_tls_sslmode: require
         ignore_startup_parameters: extra_float_digits
         auth_type: scram-sha-256
