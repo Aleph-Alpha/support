@@ -5,11 +5,13 @@
 # For full configuration options, see:
 # https://github.com/OT-CONTAINER-KIT/redis-operator/blob/main/charts/redis-operator/values.yaml
 
-redis-operator: {}
+redis-operator:
+  fullnameOverride: "qs-redis-operator"
   # Override operator image if needed
-  # image:
-  #   repository: quay.io/opstree/redis-operator
-  #   tag: v0.22.2
+  # Uncomment and modify to use a different image version:
+  image:
+    repository: quay.io/opstree/redis-operator
+    tag: v0.22.2
   
   # Resource limits for the operator
   # resources:
@@ -20,12 +22,26 @@ redis-operator: {}
   #     cpu: 500m
   #     memory: 512Mi
   
+  # When empty (""), the operator watches all namespaces (requires ClusterRole)
+  # Set to specific namespace to use namespace-scoped RBAC (Role instead of ClusterRole)
+  # Example: "default" or "pharia-ai"
+  # IMPORTANT: If your cluster restricts ClusterRole, set this to a specific namespace!
+  watchNamespace: ""
+
   # RBAC settings
-  # rbac:
-  #   create: true
+  # When watchNamespace is set: Creates namespace-scoped Role + RoleBinding
+  # When watchNamespace is empty: Creates cluster-scoped ClusterRole + ClusterRoleBinding
+  rbac:
+    enabled: false
+    serviceAccountName: "qs-redis-operator"
   
   # ServiceAccount settings
   # serviceAccount:
-  #   create: true
   #   name: ""
 
+  # metrics configuration for monitoring
+  metrics:
+    # Enable metrics server
+    enabled: false
+    # The address the metrics endpoint binds to
+    bindAddress: ":8080"

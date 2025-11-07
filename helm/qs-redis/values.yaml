@@ -35,6 +35,11 @@ tests:
   # -- Redis image to use for connection tests
   image: redis:7
 
+# Secret cleanup configuration
+secretCleanup:
+  # -- Retain secrets after helm uninstall (true = keep secrets, false = delete secrets)
+  retainOnDelete: true
+
 # Redis instance for pharia-assistant-api
 pharia-assistant-api-redis:
   enabled: true
@@ -43,7 +48,7 @@ pharia-assistant-api-redis:
     name: pharia-assistant-api-redis
     # Enable password authentication using the secret
     redisSecret:
-      secretName: pharia-assistant-api-redis-secret-qs
+      secretName: qs-redis-pharia-assistant-api
       secretKey: password
   # Add any specific values for the redis chart here
   # For example:
@@ -64,7 +69,7 @@ pharia-transcribe-app-redis:
     name: pharia-transcribe-app-redis
     # Enable password authentication using the secret
     redisSecret:
-      secretName: pharia-transcribe-app-redis-secret-qs
+      secretName: qs-redis-pharia-transcribe-app
       secretKey: password
   # Add any specific values for the redis chart here
   # For example:
