@@ -1,0 +1,11 @@
+apiVersion: v2
+name: qs-minio
+home: https://aleph-alpha.com/phariaai/
+icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
+description: Pharia AI Quick Start Helm chart for Minio
+version: 0.1.0
+
+dependencies:
+  - name: minio
+    version: 0.5.5
+    repository: oci://registry-1.docker.io/cloudpirates

@@ -1,0 +1,2 @@
+minio:
+  fullnameOverride: qs-minio
