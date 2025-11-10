@@ -5,15 +5,17 @@
 # For full configuration options, see:
 # https://github.com/OT-CONTAINER-KIT/redis-operator/blob/main/charts/redis-operator/values.yaml
 
-# fullnameOverride: ""
-
 customRbac:
   create: true
-  # Override the service account name (defaults to fullname if not set)
-  serviceAccountName: "redis-operator"
+  serviceAccountName: "qs-redis-operator"
 
 redis-operator:
+  # Must match the ServiceAccount name created by our custom RBAC
+  serviceAccountName: "qs-redis-operator"
+
   redisOperator:
+    name: qs-redis-operator
+
     # IMPORTANT: Set to specific namespace for namespace-scoped RBAC
     # When empty (""), operator watches all namespaces (requires ClusterRole)
     watchNamespace: "pharia-ai"
@@ -21,11 +23,6 @@ redis-operator:
   rbac:
     # Disable upstream chart's ClusterRole creation
     enabled: false
-
-  serviceAccount:
-    # Must match the ServiceAccount name created by our custom RBAC
-    # Defaults to fullname if customRbac.serviceAccountName is not set
-    name: "redis-operator"
 
   metrics:
     enabled: false
