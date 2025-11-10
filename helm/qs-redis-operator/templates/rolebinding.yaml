@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ .Values.customRbac.serviceAccountName }}
+  name: {{ include "qs-redis-operator.serviceAccountName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: {{ include "qs-redis-operator.name" . }}
@@ -12,9 +12,9 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ .Values.customRbac.serviceAccountName }}
+  name: {{ include "qs-redis-operator.serviceAccountName" . }}
 subjects:
   - kind: ServiceAccount
-    name: {{ .Values.customRbac.serviceAccountName }}
+    name: {{ include "qs-redis-operator.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
 {{- end }}
