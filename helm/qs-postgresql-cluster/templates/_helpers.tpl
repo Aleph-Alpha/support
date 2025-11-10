@@ -100,10 +100,22 @@ spec:
           env:
             - name: CLUSTER_NAME
               value: "{{ $clusterName }}"
+            - name: CLUSTER_FULLNAME
+              value: "{{ $clusterConfig.fullnameOverride }}"
             - name: CLUSTER_HOST
-              value: "cluster-{{ $clusterName }}-rw"
-            - name: PGBOUNCER_HOST
-              value: "{{ $clusterConfig.pgbouncerHost }}"
+              value: "{{ $clusterConfig.fullnameOverride }}-rw"
+            {{- if $clusterConfig.config }}
+            {{- if $clusterConfig.config.defaultPooler }}
+            - name: DEFAULT_POOLER
+              value: "{{ $clusterConfig.config.defaultPooler }}"
+            - name: DEFAULT_POOLER_HOST
+              value: "{{ $clusterConfig.fullnameOverride }}-pooler-{{ $clusterConfig.config.defaultPooler }}"
+            {{- end }}
+            {{- if $clusterConfig.config.rolePoolerMappings }}
+            - name: ROLE_POOLER_MAPPINGS
+              value: "{{- range $role, $pooler := $clusterConfig.config.rolePoolerMappings }}{{ $role }}:{{ $pooler }}:{{ $clusterConfig.fullnameOverride }}-pooler-{{ $pooler }},{{- end }}"
+            {{- end }}
+            {{- end }}
             - name: APP_NAME
               value: {{ include "qs-postgresql-cluster.name" $root | quote }}
             - name: PG_ROLES

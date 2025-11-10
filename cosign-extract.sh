@@ -20,20 +20,20 @@ Usage:
   $0 --type TYPE --image IMAGE[:TAG] --output FILE --predicate-only  # extract only predicate content
 
 Options:
-  --type TYPE               Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
-  --image IMAGE             Fully qualified image reference (required)
-  --choice                  Which attestation to fetch: index, all
-  --last                    Automatically select the most recent attestation if multiple exist
-  --output PATH             Output file (single type) or directory (all types)
-  --list                    List available predicateTypes and counts
-  --show-null               Show entries missing predicateType in --list
-  --inspect-null            Inspect referrers missing predicateType
-  --verify                  Verify attestations using cosign before extraction
-  --no-extraction           Skip extraction and content output (useful with --verify for verification-only)
-  --predicate-only          Extract only the predicate content, not the full attestation envelope (mutually exclusive with --no-extraction)
+  --type TYPE                         Attestation type (slsa|cyclonedx|spdx|vuln|license|triage|custom)
+  --image IMAGE                       Fully qualified image reference (required)
+  --choice                            Which attestation to fetch: index, all
+  --last                              Automatically select the most recent attestation if multiple exist
+  --output PATH                       Output file (single type) or directory (all types)
+  --list                              List available predicateTypes and counts
+  --show-null                         Show entries missing predicateType in --list
+  --inspect-null                      Inspect referrers missing predicateType
+  --verify                            Verify attestations using cosign before extraction
+  --no-extraction                     Skip extraction and content output (useful with --verify for verification-only)
+  --predicate-only                    Extract only the predicate content, not the full attestation envelope (mutually exclusive with --no-extraction)
   --certificate-oidc-issuer ISSUER    OIDC issuer for verification (default: https://token.actions.githubusercontent.com)
   --certificate-identity-regexp REGEX Identity regexp for verification (default: Aleph Alpha workflows)
-  -h, --help                Show this help
+  -h, --help                          Show this help
 
 Verification:
   When --verify is used, attestations are verified using cosign verify-attestation before extraction.
@@ -340,27 +340,48 @@ if $VERIFY; then
 fi
 
 DIGESTS=()
-REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
-  | jq -r --arg pt "$PRED_TYPE" '
-      .referrers[]
-      | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
-      | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
-      | .digest')
+# Collect referrers, reversing order if --last is used for optimization
+if $USE_LAST; then
+  REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
+    | jq -r --arg pt "$PRED_TYPE" '
+        [.referrers[]
+        | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
+        | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
+        | .digest]
+        | reverse
+        | .[]')
 
-for d in $REFERRERS; do
-  echo "🔎 Checking candidate referrer digest=$d"
-  layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
-  bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
-  oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
-  raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
-  inner=$(echo "$raw" | jq -r '.predicateType')
-  echo "   ↳ inner predicateType=$inner"
-  rm -f "$bundle"
-
-  if [ "$inner" = "$PRED_TYPE" ]; then
-    DIGESTS+=("$d")
+  # When --last is used, trust the annotation filter and use the first referrer
+  # (which is the most recent after reversing). Skip expensive verification loop.
+  # We'll verify the inner predicateType only when fetching the actual content.
+  FIRST_REFERRER=$(echo "$REFERRERS" | head -n 1)
+  if [ -n "$FIRST_REFERRER" ]; then
+    DIGESTS+=("$FIRST_REFERRER")
   fi
-done
+else
+  REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
+    | jq -r --arg pt "$PRED_TYPE" '
+        .referrers[]
+        | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
+        | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
+        | .digest')
+
+  # When not using --last, verify inner predicateType for all candidates
+  for d in $REFERRERS; do
+    echo "🔎 Checking candidate referrer digest=$d"
+    layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
+    bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
+    oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
+    raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
+    inner=$(echo "$raw" | jq -r '.predicateType')
+    echo "   ↳ inner predicateType=$inner"
+    rm -f "$bundle"
+
+    if [ "$inner" = "$PRED_TYPE" ]; then
+      DIGESTS+=("$d")
+    fi
+  done
+fi
 
 if [ ${#DIGESTS[@]} -eq 0 ]; then
   echo "❌ No attestations found for type=$TYPE (predicateType=$PRED_TYPE)"
@@ -372,12 +393,15 @@ if [ ${#DIGESTS[@]} -eq 0 ]; then
   exit 1
 fi
 
-echo "🔎 Found ${#DIGESTS[@]} attestations for type=$TYPE:"
-i=1
-for d in "${DIGESTS[@]}"; do
-  echo "  [$i] $d"
-  i=$((i+1))
-done
+# Skip listing when --last is used (we only validated one)
+if ! $USE_LAST; then
+  echo "🔎 Found ${#DIGESTS[@]} attestations for type=$TYPE:"
+  i=1
+  for d in "${DIGESTS[@]}"; do
+    echo "  [$i] $d"
+    i=$((i+1))
+  done
+fi
 
 # Function to fetch + decode one attestation
 fetch_attestation() {

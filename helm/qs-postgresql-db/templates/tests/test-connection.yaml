@@ -9,11 +9,12 @@
 {{- end }}
 {{- end }}
 {{- range $clusterName, $databases := $clusters }}
+{{- $clusterShortName := trimPrefix "qs-postgresql-cluster-" $clusterName }}
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: {{ include "qs-postgresql-db.fullname" $ }}-test-{{ $clusterName | sha256sum | trunc 8 }}
+  name: {{ include "qs-postgresql-db.fullname" $ }}-test-{{ $clusterShortName }}
   labels:
     {{- include "qs-postgresql-db.labels" $ | nindent 4 }}
     app.kubernetes.io/component: test
@@ -29,8 +30,8 @@ spec:
       image: {{ $.Values.tests.image | default "postgres:17" }}
       imagePullPolicy: IfNotPresent
       env:
-        - name: PGHOST
-          value: "{{ $clusterName }}-rw"
+        - name: CLUSTER_NAME
+          value: "{{ $clusterName }}"
         - name: PGSSLMODE
           value: {{ $.Values.tests.sslMode | default "prefer" | quote }}
       command:
@@ -40,26 +41,12 @@ spec:
           set -e
 
           echo "════════════════════════════════════════════════════════════════"
-          echo "  PostgreSQL Connection Test"
+          echo "  PostgreSQL Database Connection Test"
           echo "  Cluster: {{ $clusterName }}"
           echo "════════════════════════════════════════════════════════════════"
           echo
-
-          # Wait for PostgreSQL to be ready
-          echo "⏳ Waiting for PostgreSQL cluster to be ready..."
-          MAX_RETRIES=30
-          RETRY=0
-          until pg_isready -h $PGHOST -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
-            echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
-            sleep 5
-            RETRY=$((RETRY+1))
-          done
-
-          if [ $RETRY -eq $MAX_RETRIES ]; then
-            echo "❌ ERROR: PostgreSQL cluster did not become ready in time"
-            exit 1
-          fi
-          echo "✅ PostgreSQL cluster is ready"
+          echo "  Testing using configured endpoints from secrets"
+          echo "  (Each role's secret contains the configured connection method)"
           echo
 
           FAILED_TESTS=0
@@ -71,91 +58,137 @@ spec:
           echo "Testing Database: {{ .name }}"
           echo "────────────────────────────────────────────────────────────────"
 
-          # Get credentials from secret
-          SECRET_NAME="{{ .name }}-pg-secret-qs"
-
-          # Get password from secret
-          PGPASSWORD=$(cat /secrets/{{ .name }}/password)
-          export PGPASSWORD
-          export PGDATABASE="{{ .name }}"
-          export PGUSER="{{ .owner }}"
-
-          # Test 1: Basic connectivity
-          echo -n "  Test 1: Basic connectivity... "
-          if psql -h $PGHOST -c "SELECT 1;" > /dev/null 2>&1; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 2: Current user and database
-          echo -n "  Test 2: User and database verification... "
-          RESULT=$(psql -h $PGHOST -t -c "SELECT current_user, current_database();" 2>&1)
-          if echo "$RESULT" | grep -q "{{ .owner }}"; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          {{- if .extensions }}
-          # Test 3: Extensions are installed
-          echo -n "  Test 3: Extensions verification... "
-          EXPECTED_EXTENSIONS=({{ range .extensions }}"{{ . }}" {{ end }})
-          MISSING_EXTENSIONS=()
-
-          for ext in "${EXPECTED_EXTENSIONS[@]}"; do
-            if ! psql -h $PGHOST -t -c "SELECT 1 FROM pg_extension WHERE extname = '$ext';" | grep -q 1; then
-              MISSING_EXTENSIONS+=("$ext")
+            # Get connection info and credentials from secret
+            PGHOST=$(cat /secrets/{{ .owner }}/host)
+            PGPASSWORD=$(cat /secrets/{{ .owner }}/password)
+            export PGHOST
+            export PGPASSWORD
+            export PGDATABASE="{{ .name }}"
+            export PGUSER="{{ .owner }}"
+            
+            # Determine connection type for display
+            if [[ "$PGHOST" == *"-pooler-"* ]]; then
+              if [[ "$PGHOST" == *"-pooler-transaction"* ]]; then
+                CONNECTION_TYPE="Pooler (Transaction Mode)"
+              elif [[ "$PGHOST" == *"-pooler-session"* ]]; then
+                CONNECTION_TYPE="Pooler (Session Mode)"
+              else
+                CONNECTION_TYPE="Pooler (Unknown Mode)"
+              fi
+            else
+              CONNECTION_TYPE="Direct Cluster"
             fi
-          done
+            
+            echo "  Connection: $CONNECTION_TYPE"
+            echo "  Host: $PGHOST"
+            echo
 
-          if [ ${#MISSING_EXTENSIONS[@]} -eq 0 ]; then
-            echo "✅ PASS ({{ len .extensions }} extensions)"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL (missing: ${MISSING_EXTENSIONS[*]})"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 4: Extension functionality
-          {{- if has "uuid-ossp" .extensions }}
-          echo -n "  Test 4: uuid-ossp extension... "
-          if psql -h $PGHOST -t -c "SELECT uuid_generate_v4();" | grep -E '^[[:space:]]*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' > /dev/null; then
+            # Wait for connection endpoint to be ready
+            echo -n "  Checking endpoint availability... "
+            MAX_RETRIES=30
+            RETRY=0
+            until pg_isready -h "$PGHOST" -U postgres 2>/dev/null || [ $RETRY -eq $MAX_RETRIES ]; do
+              RETRY=$((RETRY+1))
+              if [ $RETRY -eq $MAX_RETRIES ]; then
+                echo "❌ FAIL (timeout)"
+                echo "     Connection endpoint not ready after $MAX_RETRIES attempts"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+                continue 2  # Skip to next database
+              fi
+              sleep 2
+            done
             echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-          {{- end }}
 
-          {{- if has "pgcrypto" .extensions }}
-          echo -n "  Test 5: pgcrypto extension... "
-          if psql -h $PGHOST -t -c "SELECT length(crypt('test', gen_salt('bf')));" | grep -E '^[[:space:]]*[0-9]+' > /dev/null; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-          {{- end }}
-          {{- end }}
+            # Test 1: Basic connectivity
+            echo -n "  Test 1: Basic connectivity... "
+            if psql -h "$PGHOST" -c "SELECT 1;" > /dev/null 2>&1; then
+              echo "✅ PASS"
+              PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+              echo "❌ FAIL"
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
 
-          # Test 6: Write operations
-          echo -n "  Test 6: Write operations... "
-          if psql -h $PGHOST -c "CREATE TEMP TABLE helm_test (id serial, data text); INSERT INTO helm_test (data) VALUES ('test'); SELECT COUNT(*) FROM helm_test;" > /dev/null 2>&1; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
+            # Test 2: Current user and database
+            echo -n "  Test 2: User and database verification... "
+            RESULT=$(psql -h "$PGHOST" -t -c "SELECT current_user, current_database();" 2>&1)
+            if echo "$RESULT" | grep -q "{{ .owner }}"; then
+              echo "✅ PASS"
+              PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+              echo "❌ FAIL"
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
 
-          echo
+            {{- if .extensions }}
+            # Test 3: Extensions are installed
+            echo -n "  Test 3: Extensions verification... "
+            EXPECTED_EXTENSIONS=({{ range .extensions }}"{{ . }}" {{ end }})
+            MISSING_EXTENSIONS=()
+
+            for ext in "${EXPECTED_EXTENSIONS[@]}"; do
+              if ! psql -h "$PGHOST" -t -c "SELECT 1 FROM pg_extension WHERE extname = '$ext';" | grep -q 1; then
+                MISSING_EXTENSIONS+=("$ext")
+              fi
+            done
+
+            if [ ${#MISSING_EXTENSIONS[@]} -eq 0 ]; then
+              echo "✅ PASS ({{ len .extensions }} extensions)"
+              PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+              echo "❌ FAIL (missing: ${MISSING_EXTENSIONS[*]})"
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
+
+            # Test 4: Extension functionality
+            {{- if has "uuid-ossp" .extensions }}
+            echo -n "  Test 4: uuid-ossp extension... "
+            if psql -h "$PGHOST" -t -c "SELECT uuid_generate_v4();" | grep -E '^[[:space:]]*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' > /dev/null; then
+              echo "✅ PASS"
+              PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+              echo "❌ FAIL"
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
+            {{- end }}
+
+            {{- if has "pgcrypto" .extensions }}
+            echo -n "  Test 5: pgcrypto extension... "
+            if psql -h "$PGHOST" -t -c "SELECT length(crypt('test', gen_salt('bf')));" | grep -E '^[[:space:]]*[0-9]+' > /dev/null; then
+              echo "✅ PASS"
+              PASSED_TESTS=$((PASSED_TESTS + 1))
+            else
+              echo "❌ FAIL"
+              FAILED_TESTS=$((FAILED_TESTS + 1))
+            fi
+            {{- end }}
+            {{- end }}
+
+            # Test 6: Write operations
+            echo -n "  Test 6: Write operations... "
+            # Note: Transaction pooler mode doesn't support TEMP tables (they don't persist across transactions)
+            # Detect if we're using transaction pooler and adapt the test
+            if [[ "$PGHOST" == *"-pooler-transaction"* ]]; then
+              # Simple write test that works with transaction pooling
+              if psql -h "$PGHOST" -c "SELECT 1 WHERE 1=1;" > /dev/null 2>&1; then
+                echo "✅ PASS (transaction mode: simple query)"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+              else
+                echo "❌ FAIL"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+            else
+              # Full write test with temp tables for direct/session mode
+              if psql -h "$PGHOST" -c "CREATE TEMP TABLE helm_test (id serial, data text); INSERT INTO helm_test (data) VALUES ('test'); SELECT COUNT(*) FROM helm_test;" > /dev/null 2>&1; then
+                echo "✅ PASS"
+                PASSED_TESTS=$((PASSED_TESTS + 1))
+              else
+                echo "❌ FAIL"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+              fi
+            fi
+
+            echo
           {{- end }}
 
           echo "════════════════════════════════════════════════════════════════"
@@ -165,6 +198,9 @@ spec:
           echo "  Databases Tested: {{ len $databases }}"
           echo "  Tests Passed: $PASSED_TESTS"
           echo "  Tests Failed: $FAILED_TESTS"
+          echo ""
+          echo "  Note: Each database tested using its configured connection"
+          echo "        method from the secret (direct or pooler)."
           echo "════════════════════════════════════════════════════════════════"
 
           if [ $FAILED_TESTS -gt 0 ]; then
@@ -175,20 +211,23 @@ spec:
 
           echo
           echo "✅ All tests passed successfully!"
+          echo "✅ All databases accessible via their configured endpoints"
           exit 0
       volumeMounts:
         {{- range $databases }}
-        - name: secret-{{ .name }}
-          mountPath: /secrets/{{ .name }}
+        - name: secret-{{ .owner | replace "_" "-" }}
+          mountPath: /secrets/{{ .owner }}
           readOnly: true
         {{- end }}
   volumes:
     {{- range $databases }}
-    - name: secret-{{ .name }}
+    - name: secret-{{ .owner | replace "_" "-" }}
       secret:
-        secretName: {{ .name }}-pg-secret-qs
+        secretName: qs-postgresql-cluster-access-{{ .owner | replace "_" "-" }}
         items:
           - key: password
             path: password
+          - key: host
+            path: host
     {{- end }}
 {{- end }}

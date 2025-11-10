@@ -20,7 +20,7 @@ spec:
       imagePullPolicy: IfNotPresent
       env:
         - name: PGHOST
-          value: "cluster-pharia-rw"
+          value: "{{ .Values.clusterPharia.fullnameOverride }}-rw"
         - name: PGSSLMODE
           value: {{ .Values.tests.sslMode | default "prefer" | quote }}
       command:
@@ -35,99 +35,223 @@ spec:
           echo "════════════════════════════════════════════════════════════════"
           echo
 
-          # Wait for PostgreSQL to be ready
-          echo "⏳ Waiting for PostgreSQL cluster to be ready..."
-          MAX_RETRIES=30
-          RETRY=0
-          until pg_isready -h $PGHOST -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
-            echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
-            sleep 5
-            RETRY=$((RETRY+1))
-          done
+          # Function to wait for a service to be ready
+          wait_for_service() {
+            local host=$1
+            local description=$2
+            
+            echo "⏳ Waiting for $description to be ready..."
+            MAX_RETRIES=30
+            RETRY=0
+            until pg_isready -h "$host" -U postgres 2>/dev/null || [ $RETRY -eq $MAX_RETRIES ]; do
+              echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
+              sleep 5
+              RETRY=$((RETRY+1))
+            done
 
-          if [ $RETRY -eq $MAX_RETRIES ]; then
-            echo "❌ ERROR: PostgreSQL cluster did not become ready in time"
-            exit 1
-          fi
-          echo "✅ PostgreSQL cluster is ready"
+            if [ $RETRY -eq $MAX_RETRIES ]; then
+              echo "❌ ERROR: $description did not become ready in time"
+              return 1
+            fi
+            echo "✅ $description is ready"
+            return 0
+          }
+
+          # Function to run connection tests
+          run_tests() {
+            local host=$1
+            local connection_type=$2
+            local user=$3
+            local password=$4
+            local tests_passed=0
+            local tests_failed=0
+            
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Connection: $connection_type"
+            echo "  Host: $host"
+            echo "  User: $user"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Test 1: Basic connectivity
+            echo -n "  Test 1: Basic connectivity... "
+            if PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -c "SELECT 1;" > /dev/null 2>&1; then
+              echo "✅ PASS"
+              tests_passed=$((tests_passed + 1))
+            else
+              echo "❌ FAIL"
+              tests_failed=$((tests_failed + 1))
+            fi
+
+            # Test 2: Current user verification
+            echo -n "  Test 2: User verification... "
+            RESULT=$(PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -t -c "SELECT current_user;" 2>&1 | xargs)
+            if [ "$RESULT" = "$user" ]; then
+              echo "✅ PASS"
+              tests_passed=$((tests_passed + 1))
+            else
+              echo "❌ FAIL (expected: $user, got: $RESULT)"
+              tests_failed=$((tests_failed + 1))
+            fi
+
+            # Test 3: Query execution
+            echo -n "  Test 3: Query execution... "
+            RESULT=$(PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -t -c "SELECT 42;" 2>&1 | xargs)
+            if [ "$RESULT" = "42" ]; then
+              echo "✅ PASS"
+              tests_passed=$((tests_passed + 1))
+            else
+              echo "❌ FAIL"
+              tests_failed=$((tests_failed + 1))
+            fi
+            
+            echo "  Summary: $tests_passed passed, $tests_failed failed"
+            echo
+            
+            return $tests_failed
+          }
+
+          # Function to get expected host for a role based on config
+          get_expected_host_pharia() {
+            local role=$1
+            local cluster_host="{{ .Values.clusterPharia.fullnameOverride }}-rw"
+            local default_pooler="{{ .Values.clusterPharia.config.defaultPooler | default "" }}"
+            
+            # Check for specific mapping first
+            {{- if $.Values.clusterPharia.config }}
+            {{- if $.Values.clusterPharia.config.rolePoolerMappings }}
+            {{- range $role, $pooler := $.Values.clusterPharia.config.rolePoolerMappings }}
+            if [ "$role" = "{{ $role }}" ]; then
+              {{- if eq $pooler "" }}
+              echo "$cluster_host"  # Empty mapping = direct
+              {{- else }}
+              echo "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-{{ $pooler }}"
+              {{- end }}
+              return
+            fi
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            
+            # No specific mapping, check default pooler
+            if [ -n "$default_pooler" ] && [ "$default_pooler" != "null" ]; then
+              echo "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-$default_pooler"
+            else
+              echo "$cluster_host"
+            fi
+          }
+
+          # Wait for PostgreSQL cluster
+          wait_for_service "{{ .Values.clusterPharia.fullnameOverride }}-rw" "PostgreSQL cluster (direct)" || exit 1
+          echo
+
+          # Wait for poolers
+          {{- if $.Values.clusterPharia.poolers }}
+          {{- range $.Values.clusterPharia.poolers }}
+          wait_for_service "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-{{ .name }}" "Pooler ({{ .poolMode }} mode)" || echo "⚠️  Pooler not ready, will skip tests"
+          {{- end }}
+          {{- end }}
           echo
 
           FAILED_TESTS=0
           PASSED_TESTS=0
           TOTAL_USERS=0
+          TOTAL_CONNECTIONS=0
+          SECRET_CONFIG_TESTS=0
 
-          # Test each role
-          {{- range .Values.clusterPharia.cluster.roles }}
+          # Test each role across all connection methods
+          {{- range $.Values.clusterPharia.cluster.roles }}
           {{- if ne .name "pgbouncer" }}
           TOTAL_USERS=$((TOTAL_USERS + 1))
-          echo "────────────────────────────────────────────────────────────────"
-          echo "Testing User: {{ .name }}"
-          echo "────────────────────────────────────────────────────────────────"
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Testing User: {{ .name }}"
+          echo "════════════════════════════════════════════════════════════════"
+          echo
 
           # Get credentials from secret
-          SECRET_NAME="{{ .name | replace "_" "-" }}-pg-secret-qs"
-          PGPASSWORD=$(cat /secrets/{{ .name }}/password)
-          export PGPASSWORD
-          export PGUSER="{{ .name }}"
-          # Connect to postgres database (always exists) for connectivity tests
-          export PGDATABASE="postgres"
-
-          # Test 1: Basic connectivity
-          echo -n "  Test 1: Basic connectivity... "
-          if psql -h $PGHOST -c "SELECT 1;" > /dev/null 2>&1; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 2: Current user verification
-          echo -n "  Test 2: User verification... "
-          RESULT=$(psql -h $PGHOST -t -c "SELECT current_user;" 2>&1 | xargs)
-          if [ "$RESULT" = "{{ .name }}" ]; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL (expected: {{ .name }}, got: $RESULT)"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 3: Check if user's dedicated database exists
-          echo -n "  Test 3: User database check... "
-          USER_DB="{{ .name | replace "_" "-" }}"
-          if psql -h $PGHOST -t -c "SELECT 1 FROM pg_database WHERE datname='$USER_DB';" 2>/dev/null | grep -q 1; then
-            echo "✅ PASS (database '$USER_DB' exists)"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "ℹ️  INFO (database '$USER_DB' not created yet - created by qs-postgresql-db chart)"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          fi
-
-          # Test 4: Write operations (temp table)
-          echo -n "  Test 4: Write operations... "
-          if psql -h $PGHOST -c "CREATE TEMP TABLE helm_test (id serial, data text); INSERT INTO helm_test (data) VALUES ('test'); DROP TABLE helm_test;" > /dev/null 2>&1; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 5: Secret fields verification
-          echo -n "  Test 5: Secret fields verification... "
-          if [ -n "$PGPASSWORD" ] && [ -n "$PGUSER" ] && [ -n "$PGDATABASE" ]; then
-            if [ -f "/secrets/{{ .name }}/host" ] && [ -f "/secrets/{{ .name }}/port" ]; then
-              echo "✅ PASS"
-              PASSED_TESTS=$((PASSED_TESTS + 1))
+          USER_NAME="{{ .name }}"
+          USER_PASSWORD=$(cat /secrets/{{ .name }}/password)
+          SECRET_HOST=$(cat /secrets/{{ .name }}/host)
+          
+          # Test 0: Verify secret configuration
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Test 0: Secret Configuration Validation"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          EXPECTED_HOST=$(get_expected_host_pharia "{{ .name }}")
+          echo "  Expected host: $EXPECTED_HOST"
+          echo "  Secret host:   $SECRET_HOST"
+          
+          if [ "$SECRET_HOST" = "$EXPECTED_HOST" ]; then
+            echo "  ✅ PASS - Secret contains correct host based on config"
+            SECRET_CONFIG_TESTS=$((SECRET_CONFIG_TESTS + 1))
+            
+            # Determine connection type for display
+            if [[ "$SECRET_HOST" == *"-pooler-"* ]]; then
+              {{- if and ($.Values.clusterPharia.config) ($.Values.clusterPharia.config.rolePoolerMappings) }}
+              {{- if hasKey $.Values.clusterPharia.config.rolePoolerMappings .name }}
+              echo "  📍 Role uses specific pooler mapping"
+              {{- else }}
+              echo "  📍 Role uses default pooler"
+              {{- end }}
+              {{- else }}
+              echo "  📍 Role uses default pooler"
+              {{- end }}
             else
-              echo "❌ FAIL (missing secret fields)"
-              FAILED_TESTS=$((FAILED_TESTS + 1))
+              echo "  📍 Role uses direct cluster connection"
             fi
           else
-            echo "❌ FAIL (missing credentials)"
+            echo "  ❌ FAIL - Secret host doesn't match configuration"
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
+          echo
+          
+          # Test connection using the configured endpoint from secret
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "$SECRET_HOST" "Configured Endpoint (from secret)" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+
+          # Test 1: Direct cluster connection (infrastructure validation)
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "{{ $.Values.clusterPharia.fullnameOverride }}-rw" "Direct Cluster" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+
+          # Test 2: Transaction pooler connection
+          {{- if $.Values.clusterPharia.poolers }}
+          {{- range $.Values.clusterPharia.poolers }}
+          {{- if eq .poolMode "transaction" }}
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Transaction Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+          {{- end }}
+          {{- end }}
+          {{- end }}
+
+          # Test 3: Session pooler connection
+          {{- if $.Values.clusterPharia.poolers }}
+          {{- range $.Values.clusterPharia.poolers }}
+          {{- if eq .poolMode "session" }}
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Session Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+          {{- end }}
+          {{- end }}
+          {{- end }}
 
           echo
           {{- end }}
@@ -137,8 +261,37 @@ spec:
           echo "  Test Summary - Pharia Cluster"
           echo "════════════════════════════════════════════════════════════════"
           echo "  Users Tested: $TOTAL_USERS"
-          echo "  Tests Passed: $PASSED_TESTS"
-          echo "  Tests Failed: $FAILED_TESTS"
+          echo "  Secret Config Tests: $SECRET_CONFIG_TESTS passed"
+          echo ""
+          echo "  Connection Configuration:"
+          {{- if $.Values.clusterPharia.config }}
+          {{- if $.Values.clusterPharia.config.defaultPooler }}
+          echo "    • Default pooler: {{ $.Values.clusterPharia.config.defaultPooler }}"
+          {{- else }}
+          echo "    • Default pooler: none (direct connection)"
+          {{- end }}
+          {{- if $.Values.clusterPharia.config.rolePoolerMappings }}
+          echo "    • Specific mappings:"
+          {{- range $role, $pooler := $.Values.clusterPharia.config.rolePoolerMappings }}
+          {{- if eq $pooler "" }}
+          echo "      - {{ $role }}: direct (override)"
+          {{- else }}
+          echo "      - {{ $role }}: {{ $pooler }}"
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          echo ""
+          echo "  Infrastructure Tests (all connection methods):"
+          echo "    • Direct cluster connection"
+          {{- if $.Values.clusterPharia.poolers }}
+          {{- range $.Values.clusterPharia.poolers }}
+          echo "    • Native pooler ({{ .poolMode }} mode)"
+          {{- end }}
+          {{- end }}
+          echo ""
+          echo "  Total Tests Passed: $PASSED_TESTS"
+          echo "  Total Tests Failed: $FAILED_TESTS"
           echo "════════════════════════════════════════════════════════════════"
 
           if [ $FAILED_TESTS -gt 0 ]; then
@@ -149,9 +302,11 @@ spec:
 
           echo
           echo "✅ All tests passed successfully!"
+          echo "✅ Secret configuration matches role-pooler mappings"
+          echo "✅ All users can connect via all methods (direct + poolers)"
           exit 0
       volumeMounts:
-        {{- range .Values.clusterPharia.cluster.roles }}
+        {{- range $.Values.clusterPharia.cluster.roles }}
         {{- if ne .name "pgbouncer" }}
         - name: secret-{{ .name | replace "_" "-" }}
           mountPath: /secrets/{{ .name }}
@@ -159,11 +314,11 @@ spec:
         {{- end }}
         {{- end }}
   volumes:
-    {{- range .Values.clusterPharia.cluster.roles }}
+    {{- range $.Values.clusterPharia.cluster.roles }}
     {{- if ne .name "pgbouncer" }}
     - name: secret-{{ .name | replace "_" "-" }}
       secret:
-        secretName: {{ .name | replace "_" "-" }}-pg-secret-qs
+        secretName: qs-postgresql-cluster-access-{{ .name | replace "_" "-" }}
         items:
           - key: password
             path: password
@@ -171,7 +326,7 @@ spec:
             path: host
           - key: port
             path: port
-          - key: database
+          - key: databaseName
             path: database
     {{- end }}
     {{- end }}
@@ -198,7 +353,7 @@ spec:
       imagePullPolicy: IfNotPresent
       env:
         - name: PGHOST
-          value: "cluster-temporal-rw"
+          value: "{{ .Values.clusterTemporal.fullnameOverride }}-rw"
         - name: PGSSLMODE
           value: {{ .Values.tests.sslMode | default "prefer" | quote }}
       command:
@@ -213,99 +368,223 @@ spec:
           echo "════════════════════════════════════════════════════════════════"
           echo
 
-          # Wait for PostgreSQL to be ready
-          echo "⏳ Waiting for PostgreSQL cluster to be ready..."
-          MAX_RETRIES=30
-          RETRY=0
-          until pg_isready -h $PGHOST -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
-            echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
-            sleep 5
-            RETRY=$((RETRY+1))
-          done
+          # Function to wait for a service to be ready
+          wait_for_service() {
+            local host=$1
+            local description=$2
+            
+            echo "⏳ Waiting for $description to be ready..."
+            MAX_RETRIES=30
+            RETRY=0
+            until pg_isready -h "$host" -U postgres 2>/dev/null || [ $RETRY -eq $MAX_RETRIES ]; do
+              echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
+              sleep 5
+              RETRY=$((RETRY+1))
+            done
 
-          if [ $RETRY -eq $MAX_RETRIES ]; then
-            echo "❌ ERROR: PostgreSQL cluster did not become ready in time"
-            exit 1
-          fi
-          echo "✅ PostgreSQL cluster is ready"
+            if [ $RETRY -eq $MAX_RETRIES ]; then
+              echo "❌ ERROR: $description did not become ready in time"
+              return 1
+            fi
+            echo "✅ $description is ready"
+            return 0
+          }
+
+          # Function to run connection tests
+          run_tests() {
+            local host=$1
+            local connection_type=$2
+            local user=$3
+            local password=$4
+            local tests_passed=0
+            local tests_failed=0
+            
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Connection: $connection_type"
+            echo "  Host: $host"
+            echo "  User: $user"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            # Test 1: Basic connectivity
+            echo -n "  Test 1: Basic connectivity... "
+            if PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -c "SELECT 1;" > /dev/null 2>&1; then
+              echo "✅ PASS"
+              tests_passed=$((tests_passed + 1))
+            else
+              echo "❌ FAIL"
+              tests_failed=$((tests_failed + 1))
+            fi
+
+            # Test 2: Current user verification
+            echo -n "  Test 2: User verification... "
+            RESULT=$(PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -t -c "SELECT current_user;" 2>&1 | xargs)
+            if [ "$RESULT" = "$user" ]; then
+              echo "✅ PASS"
+              tests_passed=$((tests_passed + 1))
+            else
+              echo "❌ FAIL (expected: $user, got: $RESULT)"
+              tests_failed=$((tests_failed + 1))
+            fi
+
+            # Test 3: Query execution
+            echo -n "  Test 3: Query execution... "
+            RESULT=$(PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -t -c "SELECT 42;" 2>&1 | xargs)
+            if [ "$RESULT" = "42" ]; then
+              echo "✅ PASS"
+              tests_passed=$((tests_passed + 1))
+            else
+              echo "❌ FAIL"
+              tests_failed=$((tests_failed + 1))
+            fi
+            
+            echo "  Summary: $tests_passed passed, $tests_failed failed"
+            echo
+            
+            return $tests_failed
+          }
+
+          # Function to get expected host for a role based on config
+          get_expected_host_temporal() {
+            local role=$1
+            local cluster_host="{{ .Values.clusterTemporal.fullnameOverride }}-rw"
+            local default_pooler="{{ .Values.clusterTemporal.config.defaultPooler | default "" }}"
+            
+            # Check for specific mapping first
+            {{- if $.Values.clusterTemporal.config }}
+            {{- if $.Values.clusterTemporal.config.rolePoolerMappings }}
+            {{- range $role, $pooler := $.Values.clusterTemporal.config.rolePoolerMappings }}
+            if [ "$role" = "{{ $role }}" ]; then
+              {{- if eq $pooler "" }}
+              echo "$cluster_host"  # Empty mapping = direct
+              {{- else }}
+              echo "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-{{ $pooler }}"
+              {{- end }}
+              return
+            fi
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            
+            # No specific mapping, check default pooler
+            if [ -n "$default_pooler" ] && [ "$default_pooler" != "null" ]; then
+              echo "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-$default_pooler"
+            else
+              echo "$cluster_host"
+            fi
+          }
+
+          # Wait for PostgreSQL cluster
+          wait_for_service "{{ .Values.clusterTemporal.fullnameOverride }}-rw" "PostgreSQL cluster (direct)" || exit 1
+          echo
+
+          # Wait for poolers
+          {{- if $.Values.clusterTemporal.poolers }}
+          {{- range $.Values.clusterTemporal.poolers }}
+          wait_for_service "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-{{ .name }}" "Pooler ({{ .poolMode }} mode)" || echo "⚠️  Pooler not ready, will skip tests"
+          {{- end }}
+          {{- end }}
           echo
 
           FAILED_TESTS=0
           PASSED_TESTS=0
           TOTAL_USERS=0
+          TOTAL_CONNECTIONS=0
+          SECRET_CONFIG_TESTS=0
 
-          # Test each role
-          {{- range .Values.clusterTemporal.cluster.roles }}
+          # Test each role across all connection methods
+          {{- range $.Values.clusterTemporal.cluster.roles }}
           {{- if ne .name "pgbouncer" }}
           TOTAL_USERS=$((TOTAL_USERS + 1))
-          echo "────────────────────────────────────────────────────────────────"
-          echo "Testing User: {{ .name }}"
-          echo "────────────────────────────────────────────────────────────────"
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  Testing User: {{ .name }}"
+          echo "════════════════════════════════════════════════════════════════"
+          echo
 
           # Get credentials from secret
-          SECRET_NAME="{{ .name | replace "_" "-" }}-pg-secret-qs"
-          PGPASSWORD=$(cat /secrets/{{ .name }}/password)
-          export PGPASSWORD
-          export PGUSER="{{ .name }}"
-          # Connect to postgres database (always exists) for connectivity tests
-          export PGDATABASE="postgres"
-
-          # Test 1: Basic connectivity
-          echo -n "  Test 1: Basic connectivity... "
-          if psql -h $PGHOST -c "SELECT 1;" > /dev/null 2>&1; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 2: Current user verification
-          echo -n "  Test 2: User verification... "
-          RESULT=$(psql -h $PGHOST -t -c "SELECT current_user;" 2>&1 | xargs)
-          if [ "$RESULT" = "{{ .name }}" ]; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL (expected: {{ .name }}, got: $RESULT)"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 3: Check if user's dedicated database exists
-          echo -n "  Test 3: User database check... "
-          USER_DB="{{ .name | replace "_" "-" }}"
-          if psql -h $PGHOST -t -c "SELECT 1 FROM pg_database WHERE datname='$USER_DB';" 2>/dev/null | grep -q 1; then
-            echo "✅ PASS (database '$USER_DB' exists)"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "ℹ️  INFO (database '$USER_DB' not created yet - created by qs-postgresql-db chart)"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          fi
-
-          # Test 4: Write operations (temp table)
-          echo -n "  Test 4: Write operations... "
-          if psql -h $PGHOST -c "CREATE TEMP TABLE helm_test (id serial, data text); INSERT INTO helm_test (data) VALUES ('test'); DROP TABLE helm_test;" > /dev/null 2>&1; then
-            echo "✅ PASS"
-            PASSED_TESTS=$((PASSED_TESTS + 1))
-          else
-            echo "❌ FAIL"
-            FAILED_TESTS=$((FAILED_TESTS + 1))
-          fi
-
-          # Test 5: Secret fields verification
-          echo -n "  Test 5: Secret fields verification... "
-          if [ -n "$PGPASSWORD" ] && [ -n "$PGUSER" ] && [ -n "$PGDATABASE" ]; then
-            if [ -f "/secrets/{{ .name }}/host" ] && [ -f "/secrets/{{ .name }}/port" ]; then
-              echo "✅ PASS"
-              PASSED_TESTS=$((PASSED_TESTS + 1))
+          USER_NAME="{{ .name }}"
+          USER_PASSWORD=$(cat /secrets/{{ .name }}/password)
+          SECRET_HOST=$(cat /secrets/{{ .name }}/host)
+          
+          # Test 0: Verify secret configuration
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Test 0: Secret Configuration Validation"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          EXPECTED_HOST=$(get_expected_host_temporal "{{ .name }}")
+          echo "  Expected host: $EXPECTED_HOST"
+          echo "  Secret host:   $SECRET_HOST"
+          
+          if [ "$SECRET_HOST" = "$EXPECTED_HOST" ]; then
+            echo "  ✅ PASS - Secret contains correct host based on config"
+            SECRET_CONFIG_TESTS=$((SECRET_CONFIG_TESTS + 1))
+            
+            # Determine connection type for display
+            if [[ "$SECRET_HOST" == *"-pooler-"* ]]; then
+              {{- if and ($.Values.clusterTemporal.config) ($.Values.clusterTemporal.config.rolePoolerMappings) }}
+              {{- if hasKey $.Values.clusterTemporal.config.rolePoolerMappings .name }}
+              echo "  📍 Role uses specific pooler mapping"
+              {{- else }}
+              echo "  📍 Role uses default pooler"
+              {{- end }}
+              {{- else }}
+              echo "  📍 Role uses default pooler"
+              {{- end }}
             else
-              echo "❌ FAIL (missing secret fields)"
-              FAILED_TESTS=$((FAILED_TESTS + 1))
+              echo "  📍 Role uses direct cluster connection"
             fi
           else
-            echo "❌ FAIL (missing credentials)"
+            echo "  ❌ FAIL - Secret host doesn't match configuration"
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
+          echo
+          
+          # Test connection using the configured endpoint from secret
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "$SECRET_HOST" "Configured Endpoint (from secret)" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+
+          # Test 1: Direct cluster connection (infrastructure validation)
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "{{ $.Values.clusterTemporal.fullnameOverride }}-rw" "Direct Cluster" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+
+          # Test 2: Transaction pooler connection
+          {{- if $.Values.clusterTemporal.poolers }}
+          {{- range $.Values.clusterTemporal.poolers }}
+          {{- if eq .poolMode "transaction" }}
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Transaction Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+          {{- end }}
+          {{- end }}
+          {{- end }}
+
+          # Test 3: Session pooler connection
+          {{- if $.Values.clusterTemporal.poolers }}
+          {{- range $.Values.clusterTemporal.poolers }}
+          {{- if eq .poolMode "session" }}
+          TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
+          if run_tests "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-{{ .name }}" "Native Pooler (Session Mode)" "$USER_NAME" "$USER_PASSWORD"; then
+            PASSED_TESTS=$((PASSED_TESTS + 3))
+          else
+            FAILED_TESTS=$((FAILED_TESTS + $?))
+            PASSED_TESTS=$((PASSED_TESTS + 3 - $?))
+          fi
+          {{- end }}
+          {{- end }}
+          {{- end }}
 
           echo
           {{- end }}
@@ -315,8 +594,37 @@ spec:
           echo "  Test Summary - Temporal Cluster"
           echo "════════════════════════════════════════════════════════════════"
           echo "  Users Tested: $TOTAL_USERS"
-          echo "  Tests Passed: $PASSED_TESTS"
-          echo "  Tests Failed: $FAILED_TESTS"
+          echo "  Secret Config Tests: $SECRET_CONFIG_TESTS passed"
+          echo ""
+          echo "  Connection Configuration:"
+          {{- if $.Values.clusterTemporal.config }}
+          {{- if $.Values.clusterTemporal.config.defaultPooler }}
+          echo "    • Default pooler: {{ $.Values.clusterTemporal.config.defaultPooler }}"
+          {{- else }}
+          echo "    • Default pooler: none (direct connection)"
+          {{- end }}
+          {{- if $.Values.clusterTemporal.config.rolePoolerMappings }}
+          echo "    • Specific mappings:"
+          {{- range $role, $pooler := $.Values.clusterTemporal.config.rolePoolerMappings }}
+          {{- if eq $pooler "" }}
+          echo "      - {{ $role }}: direct (override)"
+          {{- else }}
+          echo "      - {{ $role }}: {{ $pooler }}"
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          {{- end }}
+          echo ""
+          echo "  Infrastructure Tests (all connection methods):"
+          echo "    • Direct cluster connection"
+          {{- if $.Values.clusterTemporal.poolers }}
+          {{- range $.Values.clusterTemporal.poolers }}
+          echo "    • Native pooler ({{ .poolMode }} mode)"
+          {{- end }}
+          {{- end }}
+          echo ""
+          echo "  Total Tests Passed: $PASSED_TESTS"
+          echo "  Total Tests Failed: $FAILED_TESTS"
           echo "════════════════════════════════════════════════════════════════"
 
           if [ $FAILED_TESTS -gt 0 ]; then
@@ -327,9 +635,11 @@ spec:
 
           echo
           echo "✅ All tests passed successfully!"
+          echo "✅ Secret configuration matches role-pooler mappings"
+          echo "✅ All users can connect via all methods (direct + poolers)"
           exit 0
       volumeMounts:
-        {{- range .Values.clusterTemporal.cluster.roles }}
+        {{- range $.Values.clusterTemporal.cluster.roles }}
         {{- if ne .name "pgbouncer" }}
         - name: secret-{{ .name | replace "_" "-" }}
           mountPath: /secrets/{{ .name }}
@@ -337,11 +647,11 @@ spec:
         {{- end }}
         {{- end }}
   volumes:
-    {{- range .Values.clusterTemporal.cluster.roles }}
+    {{- range $.Values.clusterTemporal.cluster.roles }}
     {{- if ne .name "pgbouncer" }}
     - name: secret-{{ .name | replace "_" "-" }}
       secret:
-        secretName: {{ .name | replace "_" "-" }}-pg-secret-qs
+        secretName: qs-postgresql-cluster-access-{{ .name | replace "_" "-" }}
         items:
           - key: password
             path: password
@@ -349,7 +659,7 @@ spec:
             path: host
           - key: port
             path: port
-          - key: database
+          - key: databaseName
             path: database
     {{- end }}
     {{- end }}

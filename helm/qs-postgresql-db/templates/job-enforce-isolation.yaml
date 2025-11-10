@@ -1,0 +1,171 @@
+{{- if .Values.databases }}
+{{- $clusters := dict }}
+{{- range .Values.databases }}
+{{- if .enabled }}
+{{- if not (hasKey $clusters .cluster) }}
+{{- $_ := set $clusters .cluster (list) }}
+{{- end }}
+{{- $dbInfo := dict "name" .name "owner" .owner }}
+{{- $_ := set $clusters .cluster (append (get $clusters .cluster) $dbInfo) }}
+{{- end }}
+{{- end }}
+{{- range $clusterName, $databases := $clusters }}
+{{- $clusterShortName := trimPrefix "qs-postgresql-cluster-" $clusterName }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "qs-postgresql-db.fullname" $ }}-enforce-isolation-{{ $clusterShortName }}
+  labels:
+    {{- include "qs-postgresql-db.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: access-control
+    cluster: {{ $clusterName }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "15"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 5
+  template:
+    metadata:
+      labels:
+        {{- include "qs-postgresql-db.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: access-control
+        cluster: {{ $clusterShortName }}
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: enforce-isolation
+          image: {{ $.Values.extensionJob.image | default "postgres:17" }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGHOST
+              value: "{{ $clusterName }}-rw"
+            - name: PGUSER
+              value: "postgres"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ $clusterName }}-superuser"
+                  key: password
+            - name: PGSSLMODE
+              value: {{ $.Values.extensionJob.sslMode | default "prefer" | quote }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -e
+
+              echo "════════════════════════════════════════════════════════════════"
+              echo "  Database Access Control Enforcement"
+              echo "  Cluster: {{ $clusterName }}"
+              echo "════════════════════════════════════════════════════════════════"
+              echo
+
+              echo "Waiting for PostgreSQL cluster to be ready..."
+              MAX_RETRIES=30
+              RETRY=0
+              until pg_isready -h $PGHOST -U $PGUSER || [ $RETRY -eq $MAX_RETRIES ]; do
+                echo "PostgreSQL is not ready yet. Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
+                sleep 10
+                RETRY=$((RETRY+1))
+              done
+
+              if [ $RETRY -eq $MAX_RETRIES ]; then
+                echo "❌ ERROR: PostgreSQL cluster did not become ready in time"
+                exit 1
+              fi
+
+              echo "✅ PostgreSQL is ready!"
+              echo ""
+
+              DATABASES_SECURED=0
+              DATABASES_SKIPPED=0
+              DATABASES_FAILED=0
+
+              echo "Processing {{ len $databases }} configured database(s)..."
+              echo ""
+
+              # Process each configured database
+              {{- range $databases }}
+              echo "────────────────────────────────────────────────────────────────"
+              echo "Database: {{ .name }}"
+              echo "Owner: {{ .owner }}"
+              echo "────────────────────────────────────────────────────────────────"
+
+              # Check if database exists
+              if psql -lqt | cut -d \| -f 1 | grep -qw "{{ .name }}"; then
+                echo "✓ Database exists"
+                
+                # Check current CONNECT privilege for PUBLIC by examining the ACL
+                # Empty/NULL ACL means default privileges (PUBLIC has CONNECT)
+                # Format: {=T/owner} means PUBLIC has explicit CONNECT (T) privilege
+                CURRENT_ACL=$(psql -d postgres -t -c "SELECT COALESCE(datacl::text, '') FROM pg_database WHERE datname='{{ .name }}';" | xargs)
+                
+                # Empty ACL or explicit PUBLIC CONNECT means PUBLIC can connect
+                if [ -z "$CURRENT_ACL" ] || echo "$CURRENT_ACL" | grep -q "={T"; then
+                  echo "  Current state: PUBLIC has CONNECT privilege"
+                  echo "  Action: Revoking CONNECT from PUBLIC and granting to {{ .owner }}..."
+                  
+                  # Revoke CONNECT from PUBLIC
+                  if psql -d postgres -c "REVOKE CONNECT ON DATABASE \"{{ .name }}\" FROM PUBLIC;" 2>&1 | head -1; then
+                    echo "  ✓ Revoked CONNECT from PUBLIC"
+                  else
+                    echo "  ⚠ Warning: Could not revoke CONNECT from PUBLIC"
+                    DATABASES_FAILED=$((DATABASES_FAILED + 1))
+                    continue
+                  fi
+                  
+                  # Grant CONNECT to owner
+                  if psql -d postgres -c "GRANT CONNECT ON DATABASE \"{{ .name }}\" TO {{ .owner }};" 2>&1 | head -1; then
+                    echo "  ✓ Granted CONNECT to {{ .owner }}"
+                  else
+                    echo "  ⚠ Warning: Could not grant CONNECT to {{ .owner }}"
+                    DATABASES_FAILED=$((DATABASES_FAILED + 1))
+                    continue
+                  fi
+                  
+                  # Grant CONNECT to native pooler user (for CloudNativePG poolers)
+                  # Check if cnpg_pooler_pgbouncer user exists
+                  if psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='cnpg_pooler_pgbouncer'" | grep -q 1; then
+                    if psql -d postgres -c "GRANT CONNECT ON DATABASE \"{{ .name }}\" TO cnpg_pooler_pgbouncer;" 2>&1 | head -1; then
+                      echo "  ✓ Granted CONNECT to cnpg_pooler_pgbouncer (native poolers)"
+                    else
+                      echo "  ⚠ Warning: Could not grant CONNECT to cnpg_pooler_pgbouncer"
+                    fi
+                  fi
+                  
+                  echo "  ✅ Database secured"
+                  DATABASES_SECURED=$((DATABASES_SECURED + 1))
+                else
+                  echo "  Current state: PUBLIC does not have CONNECT privilege"
+                  echo "  ✅ Database already secured"
+                  DATABASES_SKIPPED=$((DATABASES_SKIPPED + 1))
+                fi
+              else
+                echo "  ⚠ Database does not exist yet, skipping..."
+                DATABASES_SKIPPED=$((DATABASES_SKIPPED + 1))
+              fi
+              echo ""
+              {{- end }}
+
+              echo "════════════════════════════════════════════════════════════════"
+              echo "  Access Control Summary - {{ $clusterName }}"
+              echo "════════════════════════════════════════════════════════════════"
+              echo "  Databases Secured: $DATABASES_SECURED"
+              echo "  Already Secured:   $DATABASES_SKIPPED"
+              echo "  Failed:            $DATABASES_FAILED"
+              echo "════════════════════════════════════════════════════════════════"
+              
+              if [ $DATABASES_FAILED -gt 0 ]; then
+                echo ""
+                echo "⚠️  Warning: Some databases could not be secured"
+                exit 1
+              fi
+              
+              echo ""
+              echo "✅ Database access control enforcement complete!"
+{{- end }}
+{{- end }}
+

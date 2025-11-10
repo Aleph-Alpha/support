@@ -26,27 +26,19 @@ Required:
   --image IMAGE                         Docker image to inspect (can be local or remote)
 
 Options:
-  --chainguard-org ORG                  Chainguard organization name for production images (leave empty for starter images)
-  --chainctl-token TOKEN                Chainguard chainctl token for production image verification
-  --chainctl-identity ID                Chainguard identity ID for production image verification (alternative to token)
   --fail-on-mismatch                    Whether to fail if base image doesn't match pattern (default: true)
   --output-level LEVEL                  Output verbosity: none, info (default), verbose
   --no-error                            Return exit code 0 even on verification failure
   -h, --help                            Show this help
 
 Verification Modes:
-  1. Starter images: Uses GitHub Actions OIDC issuer (default)
-  2. Production images: Uses Chainguard organization with chainctl authentication
+  The script automatically selects the verification method based on the image:
+  1. Public Chainguard images (cgr.dev/chainguard/*) -> Uses public verification
+  2. Aleph Alpha images (cgr.dev/aleph-alpha.com/*) -> Uses production verification with hardcoded IDs
 
 Examples:
-  # Check if image is based on Chainguard starter image
+  # Check if image is based on Chainguard base image
   $0 --image registry.example.com/myapp:latest
-
-  # Check production image with organization
-  $0 --image registry.example.com/myapp:latest --chainguard-org myorg --chainctl-token \$TOKEN
-
-  # Check with identity instead of token
-  $0 --image registry.example.com/myapp:latest --chainguard-org myorg --chainctl-identity \$IDENTITY
 
   # Silent mode for automation (only exit code)
   $0 --image registry.example.com/myapp:latest --output-level none
@@ -54,24 +46,27 @@ Examples:
   # Check without failing on mismatch (useful for discovery)
   $0 --image registry.example.com/myapp:latest --no-error
 
+  # Verbose mode to see cosign verification output
+  $0 --image registry.example.com/myapp:latest --output-level verbose
+
 Prerequisites:
   - docker (for local image inspection)
   - crane (for remote image inspection)
   - cosign (for signature verification)
   - jq (for JSON processing)
-  - chainctl (for production image verification, if using --chainguard-org)
 
 EOF
 }
 
 # Default configuration
 IMAGE=""
-CHAINGUARD_ORG=""
-CHAINCTL_TOKEN=""
-CHAINCTL_IDENTITY=""
 FAIL_ON_MISMATCH=true
 OUTPUT_LEVEL="info"
 NO_ERROR=false
+
+# Aleph Alpha organization IDs (hardcoded)
+ALEPH_ALPHA_CATALOG_SYNCER="a494e1f9538be93dd89e483286f716c09f970134/1efb903b603e7516"
+ALEPH_ALPHA_APKO_BUILDER="a494e1f9538be93dd89e483286f716c09f970134/ff0d9a2471189a21"
 
 # Global variables for results
 IS_CHAINGUARD=false
@@ -84,18 +79,6 @@ parse_args() {
         case $1 in
             --image)
                 IMAGE="$2"
-                shift 2
-                ;;
-            --chainguard-org)
-                CHAINGUARD_ORG="$2"
-                shift 2
-                ;;
-            --chainctl-token)
-                CHAINCTL_TOKEN="$2"
-                shift 2
-                ;;
-            --chainctl-identity)
-                CHAINCTL_IDENTITY="$2"
                 shift 2
                 ;;
             --fail-on-mismatch)
@@ -133,14 +116,6 @@ parse_args() {
         exit 1
     fi
 
-    # Validate that if chainguard-org is set, either token or identity is provided
-    if [[ -n "$CHAINGUARD_ORG" ]]; then
-        if [[ -z "$CHAINCTL_TOKEN" && -z "$CHAINCTL_IDENTITY" ]]; then
-            echo "❌ Error: Either chainctl-token or chainctl-identity is required when chainguard-org is set" >&2
-            exit 1
-        fi
-    fi
-
     # Validate output level
     case "$OUTPUT_LEVEL" in
         none|info|verbose) ;;
@@ -173,13 +148,6 @@ check_prerequisites() {
             missing_tools+=("$tool")
         fi
     done
-
-    # Only check for chainctl if using production images (when org is provided)
-    if [[ -n "$CHAINGUARD_ORG" ]]; then
-        if ! command -v chainctl >/dev/null 2>&1; then
-            missing_tools+=("chainctl")
-        fi
-    fi
 
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         echo "❌ Missing required tools: ${missing_tools[*]}" >&2
@@ -281,54 +249,55 @@ run_with_timeout() {
 # Function to verify Chainguard signature
 verify_chainguard_signature() {
     local image="$1"
-    local org="$2"
 
     output_verbose "Verifying Chainguard signature for: $image"
 
-    if [[ -n "$org" ]]; then
-        # Production image verification
-        output_verbose "Checking production image signature..."
+    # Case 1: Public Chainguard images -> use public verification
+    if echo "$image" | grep -q "^cgr.dev/chainguard"; then
+        output_verbose "Detected Chainguard starter image, using public verification..."
 
-        # Get service bindings from chainctl
-        output_verbose "Getting service bindings for organization: $org"
-        local catalog_syncer
-        local apko_builder
-
-        # Use timeout for chainctl commands
-        if ! catalog_syncer=$(run_with_timeout 30 chainctl iam account-associations describe "$org" -o json 2>/dev/null | jq -r '.[].chainguard.service_bindings.CATALOG_SYNCER // empty'); then
-            output_verbose "Error: Failed to get CATALOG_SYNCER for organization: $org"
-            return 1
+        # In verbose mode, show cosign output; otherwise suppress it
+        if [[ "$OUTPUT_LEVEL" == "verbose" ]]; then
+            if run_with_timeout 60 cosign verify "$image" \
+                --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+                --certificate-identity=https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main; then
+                output "✅ Starter Chainguard signature verified"
+                return 0
+            fi
+        else
+            if run_with_timeout 60 cosign verify "$image" \
+                --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
+                --certificate-identity=https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main \
+                >/dev/null 2>&1; then
+                output "✅ Starter Chainguard signature verified"
+                return 0
+            fi
         fi
+    # Case 2: Aleph Alpha images -> use production verification with hardcoded IDs
+    elif echo "$image" | grep -q "^cgr.dev/aleph-alpha.com"; then
+        output_verbose "Detected Aleph Alpha image, using production verification..."
+        output_verbose "Using service bindings - CATALOG_SYNCER: $ALEPH_ALPHA_CATALOG_SYNCER, APKO_BUILDER: $ALEPH_ALPHA_APKO_BUILDER"
 
-        if ! apko_builder=$(run_with_timeout 30 chainctl iam account-associations describe "$org" -o json 2>/dev/null | jq -r '.[].chainguard.service_bindings.APKO_BUILDER // empty'); then
-            output_verbose "Error: Failed to get APKO_BUILDER for organization: $org"
-            return 1
-        fi
-
-        if [[ -z "$catalog_syncer" || -z "$apko_builder" ]]; then
-            output_verbose "Error: Could not retrieve service bindings for organization: $org"
-            return 1
-        fi
-
-        output_verbose "Using service bindings - CATALOG_SYNCER: $catalog_syncer, APKO_BUILDER: $apko_builder"
-
-        if run_with_timeout 60 cosign verify "$image" \
-            --certificate-oidc-issuer=https://issuer.enforce.dev \
-            --certificate-identity-regexp="https://issuer.enforce.dev/(${catalog_syncer}|${apko_builder})" \
-            >/dev/null 2>&1; then
-            output_verbose "✅ Production Chainguard signature verified"
-            return 0
+        # In verbose mode, show cosign output; otherwise suppress it
+        if [[ "$OUTPUT_LEVEL" == "verbose" ]]; then
+            if run_with_timeout 60 cosign verify "$image" \
+                --certificate-oidc-issuer=https://issuer.enforce.dev \
+                --certificate-identity-regexp="https://issuer.enforce.dev/(${ALEPH_ALPHA_CATALOG_SYNCER}|${ALEPH_ALPHA_APKO_BUILDER})"; then
+                output "✅ Production Chainguard signature verified"
+                return 0
+            fi
+        else
+            if run_with_timeout 60 cosign verify "$image" \
+                --certificate-oidc-issuer=https://issuer.enforce.dev \
+                --certificate-identity-regexp="https://issuer.enforce.dev/(${ALEPH_ALPHA_CATALOG_SYNCER}|${ALEPH_ALPHA_APKO_BUILDER})" \
+                >/dev/null 2>&1; then
+                output "✅ Production Chainguard signature verified"
+                return 0
+            fi
         fi
     else
-        # Starter image verification - no authentication needed, just use public verification
-        output_verbose "Checking starter image signature..."
-        if run_with_timeout 60 cosign verify "$image" \
-            --certificate-oidc-issuer=https://token.actions.githubusercontent.com \
-            --certificate-identity=https://github.com/chainguard-images/images/.github/workflows/release.yaml@refs/heads/main \
-            >/dev/null 2>&1; then
-            output_verbose "✅ Starter Chainguard signature verified"
-            return 0
-        fi
+        output "Error: Image '$image' is not a supported Chainguard image (must be cgr.dev/chainguard/* or cgr.dev/aleph-alpha.com/*)" >&2
+        return 1
     fi
 
     output_verbose "❌ Chainguard signature verification failed"
@@ -338,8 +307,7 @@ verify_chainguard_signature() {
 # Main function to check base image
 check_base_image() {
     local image="$1"
-    local chainguard_org="$2"
-    local fail_on_mismatch="$3"
+    local fail_on_mismatch="$2"
 
     output "Checking if base image is signed by Chainguard: $image"
 
@@ -379,7 +347,7 @@ check_base_image() {
         output "Detected base image: $BASE_IMAGE"
 
         # Verify Chainguard signature on the base image
-        if verify_chainguard_signature "$BASE_IMAGE" "$chainguard_org"; then
+        if verify_chainguard_signature "$BASE_IMAGE"; then
             output "✅ Base image is signed by Chainguard"
             IS_CHAINGUARD=true
             SIGNATURE_VERIFIED=true
@@ -412,9 +380,9 @@ output_results() {
     if [[ "$OUTPUT_LEVEL" != "none" && ("$IS_CHAINGUARD" == "false" || "$OUTPUT_LEVEL" == "verbose") ]]; then
         echo ""
         echo "📋 Results:"
-        echo "   Base Image: $BASE_IMAGE"
-        echo "   Is Chainguard: $IS_CHAINGUARD"
-        echo "   Signature Verified: $SIGNATURE_VERIFIED"
+        echo "    - Base Image: $BASE_IMAGE"
+        echo "    - Is Chainguard: $IS_CHAINGUARD"
+        echo "    - Signature Verified: $SIGNATURE_VERIFIED"
     fi
 
     # Output results in a format that can be sourced by other scripts
@@ -435,15 +403,9 @@ main() {
     if [[ "$OUTPUT_LEVEL" != "none" ]]; then
         echo "🔍 Chainguard Base Image Checker"
         echo ""
-        echo "⚙️  Configuration:"
-        echo "   Image: $IMAGE"
-        if [[ -n "$CHAINGUARD_ORG" ]]; then
-            echo "   Chainguard Org: $CHAINGUARD_ORG"
-            echo "   Mode: Production"
-        else
-            echo "   Mode: Starter"
-        fi
-        echo "   Fail on Mismatch: $FAIL_ON_MISMATCH"
+        echo "⚙️ Configuration:"
+        echo "    - Image: $IMAGE"
+        echo "    - Fail on Mismatch: $FAIL_ON_MISMATCH"
         echo ""
     fi
 
@@ -451,7 +413,7 @@ main() {
     check_prerequisites
 
     # Check base image
-    if check_base_image "$IMAGE" "$CHAINGUARD_ORG" "$FAIL_ON_MISMATCH"; then
+    if check_base_image "$IMAGE" "$FAIL_ON_MISMATCH"; then
         output_results
         if [[ "$NO_ERROR" == "true" ]]; then
             exit 0
