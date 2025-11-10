@@ -1,0 +1,38 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "qs-minio.fullname" . }}-secret-creator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "qs-minio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade,pre-delete
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "qs-minio.fullname" . }}-secret-creator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "qs-minio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade,pre-delete
+    "helm.sh/hook-weight": "-10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "qs-minio.fullname" . }}-secret-creator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "qs-minio.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+
