@@ -103,7 +103,7 @@ spec:
             - name: MINIO_FULLNAME
               value: "{{ $instanceConfig.fullnameOverride }}"
             - name: MINIO_HOST
-              value: "{{ $instanceConfig.fullnameOverride }}.{{ $root.Release.Namespace }}.svc.cluster.local"
+              value: "{{ $instanceConfig.fullnameOverride }}"
             - name: MINIO_PROTOCOL
               value: "{{ $root.Values.minio.protocol | default "http" }}"
             - name: MINIO_PORT
