@@ -15,8 +15,9 @@ redis-operator:
     # Disable upstream chart's ClusterRole creation
     enabled: false
     serviceAccountName: "redis-operator"
-  
+
   serviceAccount:
     name: "redis-operator"
+
   metrics:
     enabled: false
