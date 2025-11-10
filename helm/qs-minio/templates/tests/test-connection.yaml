@@ -22,11 +22,11 @@ spec:
       image: {{ $.Values.tests.image | default "minio/mc:latest" }}
       imagePullPolicy: {{ $.Values.tests.imagePullPolicy | default "IfNotPresent" }}
       env:
-        - name: MINIO_HOST
+        - name: MINIO_ENDPOINT_URL
           valueFrom:
             secretKeyRef:
               name: {{ $value.auth.existingSecret }}
-              key: host
+              key: endpointUrl
         - name: MINIO_USER
           valueFrom:
             secretKeyRef:
@@ -39,8 +39,6 @@ spec:
               key: {{ $value.auth.existingSecretPasswordKey }}
         - name: INSTANCE_NAME
           value: "{{ $instanceName }}"
-        - name: MINIO_PORT
-          value: "{{ $.Values.tests.minioPort | default "9000" }}"
       command:
         - /bin/sh
         - -c
@@ -55,14 +53,17 @@ spec:
 
           # Debug: Show environment
           echo "DEBUG: Environment Variables"
-          echo "  MINIO_HOST: ${MINIO_HOST}"
-          echo "  MINIO_PORT: ${MINIO_PORT}"
+          echo "  MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL}"
           echo "  MINIO_USER: ${MINIO_USER}"
           echo
 
-          # Construct MinIO URL
-          MINIO_URL="http://${MINIO_HOST}:${MINIO_PORT}"
+          # Use endpoint URL from secret
+          MINIO_URL="${MINIO_ENDPOINT_URL}"
           ALIAS="test-${INSTANCE_NAME}"
+          
+          # Extract hostname for DNS checks (using shell built-ins)
+          MINIO_HOST="${MINIO_URL#*://}"  # Remove protocol
+          MINIO_HOST="${MINIO_HOST%%:*}"  # Remove port and path
           
           echo "  Target: ${MINIO_URL}"
           echo "  User: ${MINIO_USER}"
