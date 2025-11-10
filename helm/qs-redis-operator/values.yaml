@@ -1,0 +1,28 @@
+# Pharia AI Quick Start values for OT-CONTAINER-KIT Redis Operator
+# This file contains values that override the upstream redis-operator chart
+
+# All values are passed through to the redis-operator subchart
+# For full configuration options, see:
+# https://github.com/OT-CONTAINER-KIT/redis-operator/blob/main/charts/redis-operator/values.yaml
+
+customRbac:
+  create: true
+  serviceAccountName: "qs-redis-operator"
+
+redis-operator:
+  # Must match the ServiceAccount name created by our custom RBAC
+  serviceAccountName: "qs-redis-operator"
+
+  redisOperator:
+    name: qs-redis-operator
+
+    # IMPORTANT: Set to specific namespace for namespace-scoped RBAC
+    # When empty (""), operator watches all namespaces (requires ClusterRole)
+    watchNamespace: "pharia-ai"
+
+  rbac:
+    # Disable upstream chart's ClusterRole creation
+    enabled: false
+
+  metrics:
+    enabled: false

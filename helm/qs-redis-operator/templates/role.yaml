@@ -1,0 +1,123 @@
+{{- if .Values.customRbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "qs-redis-operator.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "qs-redis-operator.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    helm.sh/chart: {{ include "qs-redis-operator.chart" . }}
+rules:
+  - apiGroups:
+      - redis.redis.opstreelabs.in
+    resources:
+      - rediss
+      - redisclusters
+      - redisreplications
+      - redis
+      - rediscluster
+      - redissentinel
+      - redissentinels
+      - redisreplication
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Redis CRD finalizers
+  - apiGroups:
+      - redis.redis.opstreelabs.in
+    resources:
+      - redis/finalizers
+      - rediscluster/finalizers
+      - redisclusters/finalizers
+      - redissentinel/finalizers
+      - redissentinels/finalizers
+      - redisreplication/finalizers
+      - redisreplications/finalizers
+    verbs:
+      - update
+
+  # Redis CRD status
+  - apiGroups:
+      - redis.redis.opstreelabs.in
+    resources:
+      - redis/status
+      - rediscluster/status
+      - redisclusters/status
+      - redissentinel/status
+      - redissentinels/status
+      - redisreplication/status
+      - redisreplications/status
+    verbs:
+      - get
+      - patch
+      - update
+
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+      - pods/exec
+      - pods
+      - services
+      - configmaps
+      - events
+      - persistentvolumeclaims
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # StatefulSets
+  - apiGroups:
+      - apps
+    resources:
+      - statefulsets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Leader election
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+
+  # Pod disruption budgets
+  - apiGroups:
+      - policy
+    resources:
+      - poddisruptionbudgets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+{{- end }}

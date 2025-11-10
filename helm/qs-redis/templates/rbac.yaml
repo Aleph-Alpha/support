@@ -1,0 +1,37 @@
+{{- if .Values.serviceAccount.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "qs-redis.fullname" . }}-secret-manager
+  labels:
+    {{- include "qs-redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-15"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "qs-redis.fullname" . }}-secret-manager
+  labels:
+    {{- include "qs-redis.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-15"
+    "helm.sh/hook-delete-policy": before-hook-creation
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "qs-redis.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "qs-redis.fullname" . }}-secret-manager
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
