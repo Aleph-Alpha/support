@@ -104,16 +104,16 @@ spec:
               value: "{{ $clusterConfig.fullnameOverride }}"
             - name: CLUSTER_HOST
               value: "{{ $clusterConfig.fullnameOverride }}-rw"
-            {{- if $clusterConfig.poolers }}
-            {{- range $clusterConfig.poolers }}
-            {{- if eq .poolMode "transaction" }}
-            - name: POOLER_TRANSACTION_HOST
-              value: "{{ $clusterConfig.fullnameOverride }}-pooler-{{ .name }}"
+            {{- if $clusterConfig.config }}
+            {{- if $clusterConfig.config.defaultPooler }}
+            - name: DEFAULT_POOLER
+              value: "{{ $clusterConfig.config.defaultPooler }}"
+            - name: DEFAULT_POOLER_HOST
+              value: "{{ $clusterConfig.fullnameOverride }}-pooler-{{ $clusterConfig.config.defaultPooler }}"
             {{- end }}
-            {{- if eq .poolMode "session" }}
-            - name: POOLER_SESSION_HOST
-              value: "{{ $clusterConfig.fullnameOverride }}-pooler-{{ .name }}"
-            {{- end }}
+            {{- if $clusterConfig.config.rolePoolerMappings }}
+            - name: ROLE_POOLER_MAPPINGS
+              value: "{{- range $role, $pooler := $clusterConfig.config.rolePoolerMappings }}{{ $role }}:{{ $pooler }}:{{ $clusterConfig.fullnameOverride }}-pooler-{{ $pooler }},{{- end }}"
             {{- end }}
             {{- end }}
             - name: APP_NAME

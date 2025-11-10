@@ -245,6 +245,34 @@ clusterPharia:
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
     enabled: false
+  # -- Configuration for role-to-pooler mappings
+  config:
+    # Default pooler for roles without specific mapping
+    # If empty or not set, unmapped roles use direct cluster connection
+    # If set, unmapped roles will use this pooler
+    defaultPooler: "transaction"  # All Pharia roles use transaction pooler by default
+    
+    # Role-specific pooler mappings (overrides defaultPooler)
+    # Maps each role to a specific pooler (optional)
+    # Empty means all roles use the default pooler above
+    rolePoolerMappings: {}
+      # Examples of role-specific overrides:
+      
+      # Override to use direct connection (bypass pooler)
+      # Useful for: admin users, long-running jobs, debugging
+      # admin_user: ""
+      
+      # Override to use a different pooler (if you have multiple)
+      # pharia_os: "session"  # Would need session pooler defined
+      
+      # Real-world example: Admin needs direct access for maintenance
+      # pharia_admin: ""
+      
+      # Real-world example: Background jobs that hold long transactions
+      # background_worker: ""
+      
+      # Note: Most applications should use the default pooler
+      # Only override when you have specific requirements
   # -- List of PgBouncer poolers
   poolers:
     # Transaction mode pooler - for databases that work well with transaction pooling
@@ -263,27 +291,6 @@ clusterPharia:
         max_prepared_statements: "100"
         server_tls_sslmode: require
         ignore_startup_parameters: extra_float_digits, jit
-        auth_type: scram-sha-256
-        log_connections: "0"
-        log_disconnections: "0"
-        log_pooler_errors: "1"
-        log_stats: "1"
-    
-    # Session mode pooler - for databases that require session state
-    # Recommended for: pharia-os, dex (databases needing prepared statements)
-    - name: session
-      # -- PgBouncer type of service to forward traffic to.
-      type: rw
-      # -- PgBouncer pooling mode
-      poolMode: session
-      # -- Number of PgBouncer instances
-      instances: 1
-      # -- PgBouncer configuration parameters
-      parameters:
-        max_client_conn: "600"
-        default_pool_size: "20"
-        server_tls_sslmode: require
-        ignore_startup_parameters: extra_float_digits
         auth_type: scram-sha-256
         log_connections: "0"
         log_disconnections: "0"
@@ -356,6 +363,19 @@ clusterTemporal:
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
     enabled: false
+  # -- Configuration for role-to-pooler mappings
+  config:
+    # Default pooler for roles without specific mapping
+    # If empty or not set, unmapped roles use direct cluster connection
+    # If set, unmapped roles will use this pooler
+    defaultPooler: "session"  # All temporal roles use session pooler by default
+    
+    # Role-specific pooler mappings (overrides defaultPooler)
+    # Maps each role to a specific pooler (optional)
+    rolePoolerMappings:
+      # temporal: session  # Not needed - uses defaultPooler
+      # temporal_visibility: session  # Not needed - uses defaultPooler
+      # Add role-specific overrides here if needed
   # -- List of PgBouncer poolers
   poolers:
     # Session mode pooler - for databases that require session state
