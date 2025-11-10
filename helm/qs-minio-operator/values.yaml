@@ -1,0 +1,8 @@
+operator:
+  operator:
+    env:
+      - name: OPERATOR_STS_ENABLED
+        value: "on"
+      # Have to be overridden at deploy time
+      - name: WATCHED_NAMESPACE
+        value: ""
