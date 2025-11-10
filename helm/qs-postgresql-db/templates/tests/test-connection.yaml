@@ -30,10 +30,6 @@ spec:
       image: {{ $.Values.tests.image | default "postgres:17" }}
       imagePullPolicy: IfNotPresent
       env:
-        - name: CONNECTION_METHOD
-          value: {{ $.Values.tests.connectionMethod | default "direct" | quote }}
-        - name: POOLER_MODE
-          value: {{ $.Values.tests.poolerMode | default "transaction" | quote }}
         - name: CLUSTER_NAME
           value: "{{ $clusterName }}"
         - name: PGSSLMODE
@@ -44,63 +40,13 @@ spec:
         - |
           set -e
 
-          # Determine connection host based on configuration
-          if [ "$CONNECTION_METHOD" = "pooler" ]; then
-            # Use pooler connection
-            if [ "$POOLER_MODE" = "session" ]; then
-              # Try to find session pooler
-              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-session" 2>/dev/null | awk '{print $1}')
-              if [ -n "$POOLER_HOST" ]; then
-                PGHOST="${CLUSTER_NAME}-pooler-session"
-                CONNECTION_TYPE="Native Pooler (Session Mode)"
-              else
-                echo "⚠️  Session pooler not found, falling back to direct connection"
-                PGHOST="${CLUSTER_NAME}-rw"
-                CONNECTION_TYPE="Direct Cluster (Fallback)"
-              fi
-            else
-              # Try to find transaction pooler
-              POOLER_HOST=$(getent hosts "${CLUSTER_NAME}-pooler-transaction" 2>/dev/null | awk '{print $1}')
-              if [ -n "$POOLER_HOST" ]; then
-                PGHOST="${CLUSTER_NAME}-pooler-transaction"
-                CONNECTION_TYPE="Native Pooler (Transaction Mode)"
-              else
-                echo "⚠️  Transaction pooler not found, falling back to direct connection"
-                PGHOST="${CLUSTER_NAME}-rw"
-                CONNECTION_TYPE="Direct Cluster (Fallback)"
-              fi
-            fi
-          else
-            # Use direct connection
-            PGHOST="${CLUSTER_NAME}-rw"
-            CONNECTION_TYPE="Direct Cluster Access"
-          fi
-
-          export PGHOST
-
           echo "════════════════════════════════════════════════════════════════"
           echo "  PostgreSQL Database Connection Test"
           echo "  Cluster: {{ $clusterName }}"
-          echo "  Connection: $CONNECTION_TYPE"
-          echo "  Host: $PGHOST"
           echo "════════════════════════════════════════════════════════════════"
           echo
-
-          # Wait for PostgreSQL to be ready
-          echo "⏳ Waiting for connection endpoint to be ready..."
-          MAX_RETRIES=30
-          RETRY=0
-          until pg_isready -h "$PGHOST" -U postgres || [ $RETRY -eq $MAX_RETRIES ]; do
-            echo "   Waiting... (attempt $((RETRY+1))/$MAX_RETRIES)"
-            sleep 5
-            RETRY=$((RETRY+1))
-          done
-
-          if [ $RETRY -eq $MAX_RETRIES ]; then
-            echo "❌ ERROR: Connection endpoint did not become ready in time"
-            exit 1
-          fi
-          echo "✅ Connection endpoint is ready"
+          echo "  Testing using configured endpoints from secrets"
+          echo "  (Each role's secret contains the configured connection method)"
           echo
 
           FAILED_TESTS=0
@@ -112,11 +58,46 @@ spec:
           echo "Testing Database: {{ .name }}"
           echo "────────────────────────────────────────────────────────────────"
 
-            # Get credentials from secret
+            # Get connection info and credentials from secret
+            PGHOST=$(cat /secrets/{{ .owner }}/host)
             PGPASSWORD=$(cat /secrets/{{ .owner }}/password)
+            export PGHOST
             export PGPASSWORD
             export PGDATABASE="{{ .name }}"
             export PGUSER="{{ .owner }}"
+            
+            # Determine connection type for display
+            if [[ "$PGHOST" == *"-pooler-"* ]]; then
+              if [[ "$PGHOST" == *"-pooler-transaction"* ]]; then
+                CONNECTION_TYPE="Pooler (Transaction Mode)"
+              elif [[ "$PGHOST" == *"-pooler-session"* ]]; then
+                CONNECTION_TYPE="Pooler (Session Mode)"
+              else
+                CONNECTION_TYPE="Pooler (Unknown Mode)"
+              fi
+            else
+              CONNECTION_TYPE="Direct Cluster"
+            fi
+            
+            echo "  Connection: $CONNECTION_TYPE"
+            echo "  Host: $PGHOST"
+            echo
+
+            # Wait for connection endpoint to be ready
+            echo -n "  Checking endpoint availability... "
+            MAX_RETRIES=30
+            RETRY=0
+            until pg_isready -h "$PGHOST" -U postgres 2>/dev/null || [ $RETRY -eq $MAX_RETRIES ]; do
+              RETRY=$((RETRY+1))
+              if [ $RETRY -eq $MAX_RETRIES ]; then
+                echo "❌ FAIL (timeout)"
+                echo "     Connection endpoint not ready after $MAX_RETRIES attempts"
+                FAILED_TESTS=$((FAILED_TESTS + 1))
+                continue 2  # Skip to next database
+              fi
+              sleep 2
+            done
+            echo "✅ PASS"
 
             # Test 1: Basic connectivity
             echo -n "  Test 1: Basic connectivity... "
@@ -186,8 +167,8 @@ spec:
             # Test 6: Write operations
             echo -n "  Test 6: Write operations... "
             # Note: Transaction pooler mode doesn't support TEMP tables (they don't persist across transactions)
-            # So we do a simpler write test that works in transaction pooling mode
-            if [ "$CONNECTION_METHOD" = "pooler" ] && [ "$POOLER_MODE" = "transaction" ]; then
+            # Detect if we're using transaction pooler and adapt the test
+            if [[ "$PGHOST" == *"-pooler-transaction"* ]]; then
               # Simple write test that works with transaction pooling
               if psql -h "$PGHOST" -c "SELECT 1 WHERE 1=1;" > /dev/null 2>&1; then
                 echo "✅ PASS (transaction mode: simple query)"
@@ -214,10 +195,12 @@ spec:
           echo "  Test Summary"
           echo "════════════════════════════════════════════════════════════════"
           echo "  Cluster: {{ $clusterName }}"
-          echo "  Connection: $CONNECTION_TYPE"
           echo "  Databases Tested: {{ len $databases }}"
           echo "  Tests Passed: $PASSED_TESTS"
           echo "  Tests Failed: $FAILED_TESTS"
+          echo ""
+          echo "  Note: Each database tested using its configured connection"
+          echo "        method from the secret (direct or pooler)."
           echo "════════════════════════════════════════════════════════════════"
 
           if [ $FAILED_TESTS -gt 0 ]; then
@@ -228,9 +211,7 @@ spec:
 
           echo
           echo "✅ All tests passed successfully!"
-          if [ "$CONNECTION_METHOD" = "pooler" ]; then
-            echo "✅ Native pooler connectivity verified!"
-          fi
+          echo "✅ All databases accessible via their configured endpoints"
           exit 0
       volumeMounts:
         {{- range $databases }}
@@ -246,5 +227,7 @@ spec:
         items:
           - key: password
             path: password
+          - key: host
+            path: host
     {{- end }}
 {{- end }}

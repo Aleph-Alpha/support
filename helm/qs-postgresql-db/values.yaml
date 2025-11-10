@@ -25,19 +25,15 @@ extensionJob:
 # ============================================================================
 # Configuration for Helm tests that verify database connectivity and functionality
 # Note: Tests are only executed when you run 'helm test <release-name>'
+#
+# Tests automatically use the connection endpoint configured in each role's secret.
+# The connection method (direct or pooler) is determined by the role-pooler mappings
+# in the qs-postgresql-cluster chart, not configured here.
 tests:
   # Container image to use for tests (alpine variant is ~40% smaller)
   image: "postgres:17-alpine"
   # SSL mode for PostgreSQL connections during tests
   sslMode: "prefer"
-  # Connection method for tests: "direct" or "pooler"
-  # direct: Test via direct cluster connection (cluster-xxx-rw)
-  # pooler: Test via native CloudNativePG poolers (requires poolers to be deployed)
-  connectionMethod: "pooler"
-  # Pooler mode to use when connectionMethod is "pooler"
-  # transaction: Use transaction mode pooler
-  # session: Use session mode pooler
-  poolerMode: "transaction"
 
 # ============================================================================
 # Field Reference Documentation
