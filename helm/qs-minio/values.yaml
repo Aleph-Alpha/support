@@ -30,6 +30,15 @@ jobConfig:
   # -- Fail on error - if false, job continues even if some secrets fail
   failOnError: true
 
+# Configuration for Helm tests
+tests:
+  # -- MinIO client image to use for connection tests
+  image: minio/mc:latest
+  # -- Image pull policy for test containers
+  imagePullPolicy: IfNotPresent
+  # -- MinIO port to use for tests
+  minioPort: 9000
+
 minio-pharia-data:
   enabled: true
   fullnameOverride: qs-minio-pharia-data
@@ -37,7 +46,7 @@ minio-pharia-data:
   ## @param defaultBuckets Comma, semi-colon or space separated list of buckets to create at initialization
   ## Format: "bucket-name" or "bucket-name:policy" where policy can be: none, download, upload, or public
   ## e.g: "my-bucket, my-second-bucket:download, my-public-bucket:public"
-  defaultBuckets: ""
+  defaultBuckets: "internal,external"
   auth:
     ## @param auth.existingSecret Name of existing secret containing MinIO credentials
     existingSecret: "qs-minio-access-pharia-data"
@@ -55,7 +64,7 @@ minio-pharia-finetuning:
   ## @param defaultBuckets Comma, semi-colon or space separated list of buckets to create at initialization
   ## Format: "bucket-name" or "bucket-name:policy" where policy can be: none, download, upload, or public
   ## e.g: "my-bucket, my-second-bucket:download, my-public-bucket:public"
-  defaultBuckets: "internal,external"
+  defaultBuckets: "pharia-finetuning"
   auth:
     ## @param auth.existingSecret Name of existing secret containing MinIO credentials
     existingSecret: "qs-minio-access-pharia-finetuning"

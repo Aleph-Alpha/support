@@ -103,7 +103,7 @@ spec:
             - name: MINIO_FULLNAME
               value: "{{ $instanceConfig.fullnameOverride }}"
             - name: MINIO_HOST
-              value: "{{ $instanceConfig.fullnameOverride }}"
+              value: "{{ $instanceConfig.fullnameOverride }}.{{ $root.Release.Namespace }}.svc.cluster.local"
             - name: MINIO_USER
               value: "{{ $instanceConfig.auth.user }}"
             - name: EXISTING_SECRET_NAME
@@ -112,6 +112,8 @@ spec:
               value: "{{ $instanceConfig.auth.existingSecretUserKey }}"
             - name: PASSWORD_KEY
               value: "{{ $instanceConfig.auth.existingSecretPasswordKey }}"
+            - name: DEFAULT_BUCKETS
+              value: "{{ $instanceConfig.defaultBuckets | default "" }}"
             - name: APP_NAME
               value: {{ include "qs-minio.name" $root | quote }}
             - name: LOG_LEVEL
