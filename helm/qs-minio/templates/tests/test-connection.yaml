@@ -1,0 +1,367 @@
+{{- range $key, $value := .Values }}
+{{- if and (hasPrefix "minio-" $key) (kindIs "map" $value) }}
+{{- if $value.enabled }}
+{{- $instanceName := trimPrefix "minio-" $key }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "qs-minio.fullname" $ }}-test-{{ $instanceName }}
+  labels:
+    {{- include "qs-minio.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: test
+    minio-instance: {{ $instanceName }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test-connection
+      image: {{ $.Values.tests.image | default "minio/mc:latest" }}
+      imagePullPolicy: {{ $.Values.tests.imagePullPolicy | default "IfNotPresent" }}
+      env:
+        - name: MINIO_ENDPOINT_URL
+          valueFrom:
+            secretKeyRef:
+              name: {{ $value.auth.existingSecret }}
+              key: endpointUrl
+        - name: MINIO_USER
+          valueFrom:
+            secretKeyRef:
+              name: {{ $value.auth.existingSecret }}
+              key: {{ $value.auth.existingSecretUserKey }}
+        - name: MINIO_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ $value.auth.existingSecret }}
+              key: {{ $value.auth.existingSecretPasswordKey }}
+        - name: INSTANCE_NAME
+          value: "{{ $instanceName }}"
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+
+          echo "════════════════════════════════════════════════════════════════"
+          echo "  MinIO Connection Test"
+          echo "  Instance: ${INSTANCE_NAME}"
+          echo "════════════════════════════════════════════════════════════════"
+          echo
+
+          # Debug: Show environment
+          echo "DEBUG: Environment Variables"
+          echo "  MINIO_ENDPOINT_URL: ${MINIO_ENDPOINT_URL}"
+          echo "  MINIO_USER: ${MINIO_USER}"
+          echo
+
+          # Use endpoint URL from secret
+          MINIO_URL="${MINIO_ENDPOINT_URL}"
+          ALIAS="test-${INSTANCE_NAME}"
+          
+          # Extract hostname for DNS checks (using shell built-ins)
+          MINIO_HOST="${MINIO_URL#*://}"  # Remove protocol
+          MINIO_HOST="${MINIO_HOST%%:*}"  # Remove port and path
+          
+          echo "  Target: ${MINIO_URL}"
+          echo "  User: ${MINIO_USER}"
+          echo
+
+          TESTS_PASSED=0
+          TESTS_FAILED=0
+
+          # Function to check DNS resolution
+          check_dns() {
+            echo "🔍 Checking DNS resolution for: ${MINIO_HOST}"
+            
+            # Try ping first (most likely to be available)
+            if ping -c 1 -W 2 "${MINIO_HOST}" > /dev/null 2>&1; then
+              echo "✅ DNS resolution successful (ping)"
+              return 0
+            fi
+            
+            # Try nslookup if available
+            if command -v nslookup > /dev/null 2>&1; then
+              if nslookup "${MINIO_HOST}" > /dev/null 2>&1; then
+                echo "✅ DNS resolution successful (nslookup)"
+                nslookup "${MINIO_HOST}" | grep -A 2 "Name:" || true
+                return 0
+              fi
+            fi
+            
+            # Try getent if available
+            if command -v getent > /dev/null 2>&1; then
+              if getent hosts "${MINIO_HOST}" > /dev/null 2>&1; then
+                echo "✅ DNS resolution successful (getent)"
+                getent hosts "${MINIO_HOST}"
+                return 0
+              fi
+            fi
+            
+            echo "⚠️  Unable to verify DNS resolution with available tools"
+            echo "   Proceeding anyway - MinIO client will fail if host is unreachable"
+            return 0
+          }
+
+          # Function to check MinIO health
+          check_minio_health() {
+            # Try wget first
+            if command -v wget > /dev/null 2>&1; then
+              wget --spider --quiet --timeout=5 "${MINIO_URL}/minio/health/live" 2>/dev/null && return 0
+            fi
+            
+            # Try curl
+            if command -v curl > /dev/null 2>&1; then
+              curl -f -s --connect-timeout 5 --max-time 5 "${MINIO_URL}/minio/health/live" > /dev/null 2>&1 && return 0
+            fi
+            
+            # Try using mc (MinIO client itself)
+            mc alias set test-health "${MINIO_URL}" "${MINIO_USER}" "${MINIO_PASSWORD}" > /dev/null 2>&1 && return 0
+            
+            return 1
+          }
+
+          # Function to wait for MinIO to be ready
+          wait_for_minio() {
+            echo "⏳ Waiting for MinIO to be ready..."
+            MAX_RETRIES=60
+            RETRY=0
+            
+            # First check DNS
+            check_dns
+            echo
+            
+            until check_minio_health || [ $RETRY -eq $MAX_RETRIES ]; do
+              echo "   Waiting... (attempt $((RETRY+1))/${MAX_RETRIES})"
+              if [ $((RETRY % 6)) -eq 0 ] && [ $RETRY -gt 0 ]; then
+                echo "   Still waiting for MinIO at ${MINIO_URL}"
+              fi
+              sleep 5
+              RETRY=$((RETRY+1))
+            done
+
+            if [ $RETRY -eq $MAX_RETRIES ]; then
+              echo "❌ ERROR: MinIO did not become ready in time"
+              echo "   Connection target: ${MINIO_URL}"
+              echo "   Hostname: ${MINIO_HOST}"
+              echo "   Port: ${MINIO_PORT}"
+              return 1
+            fi
+            echo "✅ MinIO is ready"
+            return 0
+          }
+
+          # Wait for MinIO
+          if ! wait_for_minio; then
+            echo
+            echo "════════════════════════════════════════════════════════════════"
+            echo "  ❌ TEST FAILED: MinIO not available"
+            echo "════════════════════════════════════════════════════════════════"
+            exit 1
+          fi
+          echo
+
+          echo "────────────────────────────────────────────────────────────────"
+          echo "  Running Connection Tests"
+          echo "────────────────────────────────────────────────────────────────"
+          echo
+
+          # Test 1: Configure MinIO client alias
+          echo -n "  Test 1: Configure MinIO client... "
+          if ERROR=$(mc alias set "${ALIAS}" "${MINIO_URL}" "${MINIO_USER}" "${MINIO_PASSWORD}" 2>&1); then
+            echo "✅ PASS"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ FAIL"
+            echo "     Error: $ERROR"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
+
+          # Test 2: Server info (admin access - optional)
+          echo -n "  Test 2: Retrieve server info (admin)... "
+          if ERROR=$(mc admin info "${ALIAS}" 2>&1); then
+            echo "✅ PASS"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            # Admin commands may fail for non-admin users - this is OK
+            # Convert to lowercase for case-insensitive matching
+            ERROR_LOWER=$(echo "$ERROR" | tr 'A-Z' 'a-z')
+            case "$ERROR_LOWER" in
+              *"access denied"*|*"permission denied"*|*"forbidden"*)
+                echo "⚠️  SKIP (no admin access)"
+                echo "     Note: User does not have admin privileges (this is normal)"
+                ;;
+              *)
+                echo "❌ FAIL"
+                echo "     Error: $ERROR"
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+                ;;
+            esac
+          fi
+
+          # Test 3: List buckets
+          echo -n "  Test 3: List buckets... "
+          if BUCKET_LIST=$(mc ls "${ALIAS}" 2>&1); then
+            echo "✅ PASS"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+            if [ -n "$BUCKET_LIST" ]; then
+              echo "     Found buckets:"
+              echo "$BUCKET_LIST" | while IFS= read -r line; do echo "       $line"; done
+            else
+              echo "     (no buckets found - will create one for testing)"
+            fi
+          else
+            echo "❌ FAIL"
+            echo "     Error: $BUCKET_LIST"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
+
+          # Test 4: Create test bucket
+          TEST_BUCKET="test-connection-$(date +%s)"
+          echo -n "  Test 4: Create test bucket... "
+          if ERROR=$(mc mb "${ALIAS}/${TEST_BUCKET}" 2>&1); then
+            echo "✅ PASS"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ FAIL"
+            echo "     Error: $ERROR"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+            echo ""
+            echo "⚠️  Remaining tests skipped due to bucket creation failure"
+            # Skip remaining tests if bucket creation fails
+            echo
+            echo "────────────────────────────────────────────────────────────────"
+            echo "  Test Summary for Instance: ${INSTANCE_NAME}"
+            echo "────────────────────────────────────────────────────────────────"
+            echo "  ✅ Passed: ${TESTS_PASSED}"
+            echo "  ❌ Failed: ${TESTS_FAILED}"
+            echo "  ⚠️  Skipped: Tests 5-8 (due to bucket creation failure)"
+            echo "────────────────────────────────────────────────────────────────"
+            echo
+            echo "════════════════════════════════════════════════════════════════"
+            echo "  ❌ TESTS FAILED"
+            echo "════════════════════════════════════════════════════════════════"
+            exit 1
+          fi
+
+          # Test 5: Upload test object
+          echo -n "  Test 5: Upload test object... "
+          echo "test-content-$(date +%s)" > /tmp/testfile.txt
+          if ERROR=$(mc cp /tmp/testfile.txt "${ALIAS}/${TEST_BUCKET}/testfile.txt" 2>&1); then
+            echo "✅ PASS"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ FAIL"
+            echo "     Error: $ERROR"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
+
+          # Test 6: List objects in bucket
+          echo -n "  Test 6: List objects in bucket... "
+          if OBJECTS=$(mc ls "${ALIAS}/${TEST_BUCKET}" 2>&1) && [ -n "$OBJECTS" ] && case "$OBJECTS" in *testfile.txt*) true;; *) false;; esac; then
+            echo "✅ PASS"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ FAIL"
+            echo "     Error: Could not find testfile.txt"
+            echo "     Bucket contents: $OBJECTS"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
+
+          # Test 7: Download test object
+          echo -n "  Test 7: Download test object... "
+          if ERROR=$(mc cp "${ALIAS}/${TEST_BUCKET}/testfile.txt" /tmp/downloaded.txt 2>&1); then
+            echo "✅ PASS"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+          else
+            echo "❌ FAIL"
+            echo "     Error: $ERROR"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          fi
+
+          # Test 8: Verify content
+          echo -n "  Test 8: Verify downloaded content... "
+          if [ ! -f /tmp/downloaded.txt ]; then
+            echo "❌ FAIL"
+            echo "     Error: Downloaded file does not exist"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          elif [ ! -f /tmp/testfile.txt ]; then
+            echo "❌ FAIL"
+            echo "     Error: Original file does not exist"
+            TESTS_FAILED=$((TESTS_FAILED + 1))
+          else
+            # Try diff first if available
+            if command -v diff > /dev/null 2>&1; then
+              if diff /tmp/testfile.txt /tmp/downloaded.txt > /dev/null 2>&1; then
+                echo "✅ PASS"
+                TESTS_PASSED=$((TESTS_PASSED + 1))
+              else
+                echo "❌ FAIL"
+                echo "     Error: File contents do not match (diff)"
+                echo "     Original: $(cat /tmp/testfile.txt)"
+                echo "     Downloaded: $(cat /tmp/downloaded.txt)"
+                echo "     Original size: $(wc -c < /tmp/testfile.txt) bytes"
+                echo "     Downloaded size: $(wc -c < /tmp/downloaded.txt) bytes"
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+              fi
+            else
+              # Fallback: compare using cat and string comparison
+              ORIGINAL=$(cat /tmp/testfile.txt)
+              DOWNLOADED=$(cat /tmp/downloaded.txt)
+              if [ "$ORIGINAL" = "$DOWNLOADED" ]; then
+                echo "✅ PASS"
+                TESTS_PASSED=$((TESTS_PASSED + 1))
+              else
+                echo "❌ FAIL"
+                echo "     Error: File contents do not match (string comparison)"
+                echo "     Original: '$ORIGINAL'"
+                echo "     Downloaded: '$DOWNLOADED'"
+                echo "     Original length: ${#ORIGINAL}"
+                echo "     Downloaded length: ${#DOWNLOADED}"
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+              fi
+            fi
+          fi
+
+          # Cleanup: Remove test object
+          echo -n "  Cleanup: Remove test object... "
+          if mc rm "${ALIAS}/${TEST_BUCKET}/testfile.txt" > /dev/null 2>&1; then
+            echo "✅ PASS"
+          else
+            echo "⚠️  WARN (cleanup failed)"
+          fi
+
+          # Cleanup: Remove test bucket
+          echo -n "  Cleanup: Remove test bucket... "
+          if mc rb "${ALIAS}/${TEST_BUCKET}" > /dev/null 2>&1; then
+            echo "✅ PASS"
+          else
+            echo "⚠️  WARN (cleanup failed - bucket may not be empty)"
+          fi
+
+          echo
+          echo "────────────────────────────────────────────────────────────────"
+          echo "  Test Summary for Instance: ${INSTANCE_NAME}"
+          echo "────────────────────────────────────────────────────────────────"
+          echo "  ✅ Passed: ${TESTS_PASSED}"
+          echo "  ❌ Failed: ${TESTS_FAILED}"
+          echo "────────────────────────────────────────────────────────────────"
+          echo
+
+          if [ ${TESTS_FAILED} -gt 0 ]; then
+            echo "════════════════════════════════════════════════════════════════"
+            echo "  ❌ TESTS FAILED"
+            echo "════════════════════════════════════════════════════════════════"
+            exit 1
+          else
+            echo "════════════════════════════════════════════════════════════════"
+            echo "  ✅ ALL TESTS PASSED"
+            echo "════════════════════════════════════════════════════════════════"
+            exit 0
+          fi
+{{- end }}
+{{- end }}
+{{- end }}
+

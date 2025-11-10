@@ -1,0 +1,88 @@
+fullnameOverride: "qs-minio"
+
+# ServiceAccount configuration for the secret creation job
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Image configuration for secret creation jobs
+jobImage:
+  # -- Container image for kubectl in secret creation jobs
+  repository: bitnamilegacy/kubectl
+  # -- Image tag for kubectl (set to specific version for stability)
+  tag: "1.31"
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# Configuration for secret creation jobs
+jobConfig:
+  # -- Log level for secret creation jobs (debug, info, warning, error)
+  logLevel: info
+  # -- Enable colored output in logs
+  coloredOutput: true
+  # -- Dry-run mode - if true, shows what would be done without making changes
+  dryRun: false
+  # -- Fail on error - if false, job continues even if some secrets fail
+  failOnError: true
+
+# Configuration for secret cleanup on uninstall
+secretCleanup:
+  # -- Retain secrets on helm uninstall (true = keep secrets, false = delete secrets)
+  retainOnDelete: true
+
+# Global MinIO connection settings
+minio:
+  # -- Protocol to use for MinIO connections (http or https)
+  protocol: http
+  # -- Port for MinIO service
+  port: 9000
+
+# Configuration for Helm tests
+tests:
+  # -- MinIO client image to use for connection tests
+  image: minio/mc:latest
+  # -- Image pull policy for test containers
+  imagePullPolicy: IfNotPresent
+  # -- MinIO port to use for tests (deprecated, use minio.port)
+  minioPort: 9000
+
+minio-pharia-data:
+  enabled: true
+  fullnameOverride: qs-minio-pharia-data
+  ## @section Bucket provisioning
+  ## @param defaultBuckets Comma, semi-colon or space separated list of buckets to create at initialization
+  ## Format: "bucket-name" or "bucket-name:policy" where policy can be: none, download, upload, or public
+  ## e.g: "my-bucket, my-second-bucket:download, my-public-bucket:public"
+  defaultBuckets: "internal,external"
+  auth:
+    ## @param auth.existingSecret Name of existing secret containing MinIO credentials
+    existingSecret: "qs-minio-access-pharia-data"
+    ## @param auth.username Username put in existing secret
+    user: "pharia-data"
+    ## @param auth.existingSecretUserKey Key in existing secret containing username
+    existingSecretUserKey: "user"
+    ## @param auth.existingSecretPasswordKey Key in existing secret containing password
+    existingSecretPasswordKey: "password"
+
+minio-pharia-finetuning:
+  enabled: true
+  fullnameOverride: qs-minio-pharia-finetuning
+  ## @section Bucket provisioning
+  ## @param defaultBuckets Comma, semi-colon or space separated list of buckets to create at initialization
+  ## Format: "bucket-name" or "bucket-name:policy" where policy can be: none, download, upload, or public
+  ## e.g: "my-bucket, my-second-bucket:download, my-public-bucket:public"
+  defaultBuckets: "pharia-finetuning"
+  auth:
+    ## @param auth.existingSecret Name of existing secret containing MinIO credentials
+    existingSecret: "qs-minio-access-pharia-finetuning"
+    ## @param auth.username Username put in existing secret
+    user: "pharia-finetuning"
+    ## @param auth.existingSecretUserKey Key in existing secret containing username
+    existingSecretUserKey: "user"
+    ## @param auth.existingSecretPasswordKey Key in existing secret containing password
+    existingSecretPasswordKey: "password"
