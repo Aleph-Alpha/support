@@ -360,7 +360,7 @@ databases:
     enabled: true
     cluster: "qs-postgresql-cluster-temporal"
     owner: "temporal"
-    connectionLimit: 50
+    connectionLimit: 100
     extensions:
       - uuid-ossp
       - pgcrypto
@@ -372,7 +372,7 @@ databases:
     enabled: true
     cluster: "qs-postgresql-cluster-temporal"
     owner: "temporal_visibility"
-    connectionLimit: 50
+    connectionLimit: 100
     extensions:
       - uuid-ossp
       - pgcrypto
