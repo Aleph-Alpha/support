@@ -39,6 +39,12 @@ Options:
   --format FORMAT                       Report format: table|json|sarif (default: table)
   --severity SEVERITIES                 Comma-separated list of severities to include (default: LOW,MEDIUM,HIGH,CRITICAL)
   --min-cve-level LEVEL                 Minimum CVE level to consider relevant: LOW|MEDIUM|HIGH|CRITICAL (default: HIGH)
+  --cache-dir DIR                       Cache directory (default: ~/.cache/k8s-image-scanner)
+  --cache-ttl HOURS                     Cache TTL in hours (default: 24)
+  --no-cache                            Disable caching entirely
+  --clear-cache                         Clear cache before running
+  --cache-stats                         Show cache statistics and exit
+  --test-flow                           Only scan the first valid image (for testing)
   -h, --help                            Show this help
 
 Examples:
@@ -85,6 +91,12 @@ DRY_RUN=false
 FORMAT="table"
 SEVERITY="LOW,MEDIUM,HIGH,CRITICAL"
 MIN_CVE_LEVEL="HIGH"  # Minimum CVE level to consider relevant (LOW, MEDIUM, HIGH, CRITICAL)
+CACHE_DIR="${HOME}/.cache/k8s-image-scanner"
+CACHE_TTL_HOURS=24
+NO_CACHE=false
+CLEAR_CACHE=false
+CACHE_STATS=false
+TEST_FLOW=false
 
 # Global variables
 TEMP_DIR=""
@@ -128,6 +140,494 @@ log_verbose() {
     if $VERBOSE; then
         echo "🔍 $*" >&2
     fi
+}
+
+# Cache functions
+# Get image digest for cache key
+get_image_digest() {
+    local image="$1"
+    local digest=""
+
+    # Try to get digest using crane (preferred)
+    if command -v crane >/dev/null 2>&1; then
+        digest=$(crane digest "$image" 2>/dev/null || echo "")
+    fi
+
+    # Fallback to docker if crane not available
+    if [[ -z "$digest" ]] && command -v docker >/dev/null 2>&1; then
+        digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null | cut -d'@' -f2 || echo "")
+    fi
+
+    echo "$digest"
+}
+
+# Get cache key (digest or sanitized image reference)
+get_cache_key() {
+    local image="$1"
+    local digest
+    digest=$(get_image_digest "$image")
+
+    if [[ -n "$digest" ]]; then
+        # Use digest as cache key (remove sha256: prefix for directory name)
+        echo "${digest#sha256:}"
+    else
+        # Fallback to sanitized image reference
+        echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g' | sed 's|__*|_|g'
+    fi
+}
+
+# Get cache directory for an image
+get_cache_dir() {
+    local image="$1"
+    local cache_key
+    cache_key=$(get_cache_key "$image")
+    echo "$CACHE_DIR/$cache_key"
+}
+
+# Check if cache is enabled
+is_cache_enabled() {
+    if $NO_CACHE; then
+        return 1
+    fi
+    return 0
+}
+
+# Check if cache file is valid (exists and within TTL)
+is_cache_valid() {
+    local cache_file="$1"
+    local ttl_hours="${2:-$CACHE_TTL_HOURS}"
+
+    if ! is_cache_enabled; then
+        return 1
+    fi
+
+    if [[ ! -f "$cache_file" ]]; then
+        return 1
+    fi
+
+    # Check file age
+    local file_age_seconds
+    local ttl_seconds=$((ttl_hours * 3600))
+
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS
+        file_age_seconds=$(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0)))
+    else
+        # Linux
+        file_age_seconds=$(($(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0)))
+    fi
+
+    if [[ $file_age_seconds -lt $ttl_seconds ]]; then
+        return 0  # Valid
+    else
+        log_verbose "Cache expired: $cache_file (age: ${file_age_seconds}s, TTL: ${ttl_seconds}s)"
+        return 1  # Expired
+    fi
+}
+
+# Get cached attestation type
+get_cached_attestation_type() {
+    local image="$1"
+    local cache_dir
+    local cache_file
+
+    if ! is_cache_enabled; then
+        return 1
+    fi
+
+    cache_dir=$(get_cache_dir "$image")
+    cache_file="$cache_dir/attestation-type.json"
+
+    if is_cache_valid "$cache_file"; then
+        local cached_type
+        cached_type=$(jq -r '.attestation_type' "$cache_file" 2>/dev/null || echo "")
+        if [[ -n "$cached_type" && "$cached_type" != "null" ]]; then
+            echo "$cached_type"
+            log_verbose "Cache hit: attestation type for $image"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Cache attestation type
+cache_attestation_type() {
+    local image="$1"
+    local attestation_type="$2"
+    local cache_dir
+    local cache_file
+
+    if ! is_cache_enabled; then
+        return 0
+    fi
+
+    cache_dir=$(get_cache_dir "$image")
+    mkdir -p "$cache_dir"
+    cache_file="$cache_dir/attestation-type.json"
+
+    local digest
+    digest=$(get_image_digest "$image")
+
+    cat > "$cache_file" <<EOF
+{
+  "cached_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date +"%Y-%m-%dT%H:%M:%SZ")",
+  "cache_version": "1.0",
+  "image": "$image",
+  "image_digest": "${digest:-}",
+  "attestation_type": "$attestation_type",
+  "ttl_hours": $CACHE_TTL_HOURS
+}
+EOF
+    log_verbose "Cached attestation type for $image: $attestation_type"
+}
+
+# Get cached SBOM file
+get_cached_sbom() {
+    local image="$1"
+    local sbom_type="${2:-cyclonedx}"
+    local cache_dir
+    local cache_file
+
+    if ! is_cache_enabled; then
+        return 1
+    fi
+
+    cache_dir=$(get_cache_dir "$image")
+    cache_file="$cache_dir/sbom-${sbom_type}.json"
+
+    if is_cache_valid "$cache_file"; then
+        echo "$cache_file"
+        log_verbose "Cache hit: SBOM ($sbom_type) for $image"
+        return 0
+    fi
+
+    return 1
+}
+
+# Cache SBOM file
+cache_sbom() {
+    local image="$1"
+    local sbom_file="$2"
+    local sbom_type="${3:-cyclonedx}"
+    local cache_dir
+    local cache_file
+
+    if ! is_cache_enabled || [[ ! -f "$sbom_file" ]]; then
+        return 0
+    fi
+
+    cache_dir=$(get_cache_dir "$image")
+    mkdir -p "$cache_dir"
+    cache_file="$cache_dir/sbom-${sbom_type}.json"
+
+    cp "$sbom_file" "$cache_file"
+    log_verbose "Cached SBOM ($sbom_type) for $image"
+}
+
+# Get cached triage file
+get_cached_triage() {
+    local image="$1"
+    local cache_dir
+    local cache_file
+
+    if ! is_cache_enabled; then
+        return 1
+    fi
+
+    cache_dir=$(get_cache_dir "$image")
+    cache_file="$cache_dir/triage.json"
+
+    if is_cache_valid "$cache_file"; then
+        echo "$cache_file"
+        log_verbose "Cache hit: triage for $image"
+        return 0
+    fi
+
+    return 1
+}
+
+# Cache triage file
+cache_triage() {
+    local image="$1"
+    local triage_file="$2"
+    local cache_dir
+    local cache_file
+
+    if ! is_cache_enabled || [[ ! -f "$triage_file" ]]; then
+        return 0
+    fi
+
+    cache_dir=$(get_cache_dir "$image")
+    mkdir -p "$cache_dir"
+    cache_file="$cache_dir/triage.json"
+
+    cp "$triage_file" "$cache_file"
+    log_verbose "Cached triage for $image"
+}
+
+# Clear cache
+clear_cache() {
+    if [[ -d "$CACHE_DIR" ]]; then
+        log_result "Clearing cache directory: $CACHE_DIR"
+        rm -rf "$CACHE_DIR"
+        mkdir -p "$CACHE_DIR"
+        log_success "Cache cleared"
+    fi
+}
+
+# Initialize cache
+init_cache() {
+    if $CLEAR_CACHE; then
+        clear_cache
+    fi
+
+    if is_cache_enabled; then
+        mkdir -p "$CACHE_DIR"
+        log_verbose "Cache directory: $CACHE_DIR (TTL: ${CACHE_TTL_HOURS}h)"
+    else
+        log_verbose "Caching disabled"
+    fi
+}
+
+# Cache statistics functions
+# Calculate directory size in bytes
+get_dir_size() {
+    local dir="$1"
+    if [[ -d "$dir" ]]; then
+        if [[ "$(uname)" == "Darwin" ]]; then
+            # macOS
+            du -sk "$dir" 2>/dev/null | awk '{print $1 * 1024}' || echo "0"
+        else
+            # Linux
+            du -sb "$dir" 2>/dev/null | awk '{print $1}' || echo "0"
+        fi
+    else
+        echo "0"
+    fi
+}
+
+# Format bytes to human readable
+format_bytes() {
+    local bytes="$1"
+    if [[ $bytes -ge 1073741824 ]]; then
+        awk "BEGIN {printf \"%.2f GB\", $bytes / 1073741824}"
+    elif [[ $bytes -ge 1048576 ]]; then
+        awk "BEGIN {printf \"%.2f MB\", $bytes / 1048576}"
+    elif [[ $bytes -ge 1024 ]]; then
+        awk "BEGIN {printf \"%.2f KB\", $bytes / 1024}"
+    else
+        printf "%d B" "$bytes"
+    fi
+}
+
+# Get cache age in hours
+get_cache_age_hours() {
+    local file="$1"
+    if [[ ! -f "$file" ]]; then
+        echo "0"
+        return
+    fi
+
+    local file_age_seconds
+    if [[ "$(uname)" == "Darwin" ]]; then
+        file_age_seconds=$(($(date +%s) - $(stat -f %m "$file" 2>/dev/null || echo 0)))
+    else
+        file_age_seconds=$(($(date +%s) - $(stat -c %Y "$file" 2>/dev/null || echo 0)))
+    fi
+
+    awk "BEGIN {printf \"%.1f\", $file_age_seconds / 3600}"
+}
+
+# Show cache statistics
+show_cache_stats() {
+    echo "📊 Cache Statistics"
+    echo "==================="
+    echo ""
+
+    if [[ ! -d "$CACHE_DIR" ]]; then
+        echo "Cache directory does not exist: $CACHE_DIR"
+        echo "No cache statistics available."
+        return 0
+    fi
+
+    # Cache directory info
+    echo "Cache Configuration:"
+    echo "  Directory: $CACHE_DIR"
+    echo "  TTL: ${CACHE_TTL_HOURS} hours"
+    echo ""
+
+    # Count cached items
+    local total_images=0
+    local attestation_types=0
+    local sbom_cyclonedx=0
+    local sbom_spdx=0
+    local triage_files=0
+    local expired_items=0
+    local valid_items=0
+
+    # Calculate cache size
+    local cache_size_bytes
+    cache_size_bytes=$(get_dir_size "$CACHE_DIR")
+    local cache_size_formatted
+    cache_size_formatted=$(format_bytes "$cache_size_bytes")
+
+    # Count items by type
+    if [[ -d "$CACHE_DIR" ]]; then
+        for cache_entry in "$CACHE_DIR"/*; do
+            if [[ -d "$cache_entry" ]]; then
+                ((total_images++))
+
+                # Check attestation type
+                if [[ -f "$cache_entry/attestation-type.json" ]]; then
+                    if is_cache_valid "$cache_entry/attestation-type.json"; then
+                        ((attestation_types++))
+                        ((valid_items++))
+                    else
+                        ((expired_items++))
+                    fi
+                fi
+
+                # Check SBOM files
+                if [[ -f "$cache_entry/sbom-cyclonedx.json" ]]; then
+                    if is_cache_valid "$cache_entry/sbom-cyclonedx.json"; then
+                        ((sbom_cyclonedx++))
+                        ((valid_items++))
+                    else
+                        ((expired_items++))
+                    fi
+                fi
+
+                if [[ -f "$cache_entry/sbom-spdx.json" ]]; then
+                    if is_cache_valid "$cache_entry/sbom-spdx.json"; then
+                        ((sbom_spdx++))
+                        ((valid_items++))
+                    else
+                        ((expired_items++))
+                    fi
+                fi
+
+                # Check triage files
+                if [[ -f "$cache_entry/triage.json" ]]; then
+                    if is_cache_valid "$cache_entry/triage.json"; then
+                        ((triage_files++))
+                        ((valid_items++))
+                    else
+                        ((expired_items++))
+                    fi
+                fi
+            fi
+        done
+    fi
+
+    echo "Cache Size:"
+    echo "  Total: $cache_size_formatted"
+    echo "  Cached images: $total_images"
+    echo ""
+
+    echo "Cached Items:"
+    echo "  Attestation types: $attestation_types"
+    echo "  SBOM (CycloneDX): $sbom_cyclonedx"
+    echo "  SBOM (SPDX): $sbom_spdx"
+    echo "  Triage files: $triage_files"
+    echo "  Total cached items: $valid_items"
+    if [[ $expired_items -gt 0 ]]; then
+        echo "  Expired items: $expired_items"
+    fi
+    echo ""
+
+    # Show age distribution
+    if [[ $total_images -gt 0 ]]; then
+        local age_lt1h=0
+        local age_1_12h=0
+        local age_12_24h=0
+        local age_expired=0
+
+        for cache_entry in "$CACHE_DIR"/*; do
+            if [[ -d "$cache_entry" ]]; then
+                local oldest_age=0
+                for cache_file in "$cache_entry"/*.json; do
+                    if [[ -f "$cache_file" ]]; then
+                        local age
+                        age=$(get_cache_age_hours "$cache_file")
+                        if awk "BEGIN {exit !($age > $oldest_age)}"; then
+                            oldest_age=$age
+                        fi
+                    fi
+                done
+
+                if awk "BEGIN {exit !($oldest_age < 1)}"; then
+                    ((age_lt1h++))
+                elif awk "BEGIN {exit !($oldest_age < 12)}"; then
+                    ((age_1_12h++))
+                elif awk "BEGIN {exit !($oldest_age < $CACHE_TTL_HOURS)}"; then
+                    ((age_12_24h++))
+                else
+                    ((age_expired++))
+                fi
+            fi
+        done
+
+        echo "Cache Age Distribution:"
+        echo "  < 1 hour: $age_lt1h images"
+        echo "  1-12 hours: $age_1_12h images"
+        echo "  12-${CACHE_TTL_HOURS} hours: $age_12_24h images"
+        if [[ $age_expired -gt 0 ]]; then
+            echo "  Expired (>${CACHE_TTL_HOURS}h): $age_expired images"
+        fi
+        echo ""
+    fi
+
+    # Show top cached images by size
+    if [[ $total_images -gt 0 ]]; then
+        echo "Top Cached Images (by size):"
+        # Create temporary file to store size/image pairs for sorting
+        local temp_file
+        temp_file=$(mktemp 2>/dev/null || mktemp -t cache-stats)
+
+        for cache_entry in "$CACHE_DIR"/*; do
+            if [[ -d "$cache_entry" ]]; then
+                local entry_size
+                entry_size=$(get_dir_size "$cache_entry")
+
+                # Get image name from metadata if available
+                local image_name="$(basename "$cache_entry")"
+                if [[ -f "$cache_entry/attestation-type.json" ]]; then
+                    local cached_image
+                    cached_image=$(jq -r '.image // empty' "$cache_entry/attestation-type.json" 2>/dev/null || echo "")
+                    if [[ -n "$cached_image" && "$cached_image" != "null" ]]; then
+                        image_name="$cached_image"
+                    fi
+                fi
+
+                local age
+                age=$(get_cache_age_hours "$cache_entry/attestation-type.json" 2>/dev/null || echo "0")
+
+                # Store: size|image_name|age for sorting
+                printf "%d|%s|%s\n" "$entry_size" "$image_name" "$age" >> "$temp_file"
+            fi
+        done
+
+        # Sort by size (descending) and show top 10
+        local count=0
+        while IFS='|' read -r entry_size image_name age; do
+            local entry_size_formatted
+            entry_size_formatted=$(format_bytes "$entry_size")
+            printf "  %2d. %-60s %10s (cached %sh ago)\n" $((++count)) "$image_name" "$entry_size_formatted" "$age"
+            if [[ $count -ge 10 ]]; then
+                break
+            fi
+        done < <(sort -t'|' -k1 -rn "$temp_file" 2>/dev/null || sort -t'|' -k1 -rn "$temp_file")
+
+        rm -f "$temp_file"
+
+        if [[ $total_images -gt 10 ]]; then
+            echo "  ... and $((total_images - 10)) more images"
+        fi
+    fi
+
+    echo ""
+    echo "💡 Tip: Use --clear-cache to clear expired entries, or --no-cache to disable caching"
 }
 
 # Execute command with timeout if available
@@ -427,6 +927,12 @@ while [[ $# -gt 0 ]]; do
     --format) FORMAT="$2"; shift 2 ;;
     --severity) SEVERITY="$2"; shift 2 ;;
     --min-cve-level) MIN_CVE_LEVEL="$2"; shift 2 ;;
+    --cache-dir) CACHE_DIR="$2"; shift 2 ;;
+    --cache-ttl) CACHE_TTL_HOURS="$2"; shift 2 ;;
+    --no-cache) NO_CACHE=true; shift ;;
+    --clear-cache) CLEAR_CACHE=true; shift ;;
+    --cache-stats) CACHE_STATS=true; shift ;;
+    --test-flow) TEST_FLOW=true; shift ;;
     -h|--help) show_help; exit 0 ;;
     *) log_error "Unknown option: $1"; show_help; exit 1 ;;
   esac
@@ -795,6 +1301,13 @@ extract_k8s_images() {
 # Check if image is Cosign-signed and has triage attestations
 detect_attestation_type() {
     local image="$1"
+    local attestation_type=""
+
+    # Check cache first
+    if cached_type=$(get_cached_attestation_type "$image" 2>/dev/null); then
+        echo "$cached_type"
+        return 0
+    fi
 
     # Temporarily disable exit on error for this function
     set +e
@@ -858,22 +1371,27 @@ detect_attestation_type() {
 
             # Return status based on what we found
             if [[ "$has_sbom" == "true" && "$has_triage" == "true" ]]; then
-                echo "cosign-sbom-triage"
+                attestation_type="cosign-sbom-triage"
             elif [[ "$has_sbom" == "true" ]]; then
-                echo "cosign-sbom"
+                attestation_type="cosign-sbom"
             elif [[ "$has_triage" == "true" ]]; then
-                echo "cosign-no-sbom"
+                attestation_type="cosign-no-sbom"
             else
-                echo "cosign-no-sbom"
+                attestation_type="cosign-no-sbom"
             fi
         else
             log_verbose "Image is Cosign-signed but couldn't list attestations"
-            echo "cosign-no-sbom"
+            attestation_type="cosign-no-sbom"
         fi
     else
         log_verbose "Image is not Cosign-signed"
-        echo "unsigned"
+        attestation_type="unsigned"
     fi
+
+    # Cache the result
+    cache_attestation_type "$image" "$attestation_type"
+
+    echo "$attestation_type"
 
     # Re-enable exit on error
     set -e
@@ -884,6 +1402,15 @@ download_sbom() {
     local image="$1"
     local output_file="$2"
     local sbom_type="${3:-cyclonedx}"  # Default to cyclonedx
+
+    # Check cache first
+    local cached_sbom
+    if cached_sbom=$(get_cached_sbom "$image" "$sbom_type" 2>/dev/null); then
+        if cp "$cached_sbom" "$output_file" 2>/dev/null; then
+            log_verbose "Using cached SBOM ($sbom_type) for: $image"
+            return 0
+        fi
+    fi
 
     log_verbose "Downloading SBOM attestation ($sbom_type) for: $image"
 
@@ -906,6 +1433,8 @@ download_sbom() {
         # Verify the extracted SBOM is valid JSON
         if jq empty "$output_file" 2>/dev/null; then
             log_verbose "SBOM is valid JSON"
+            # Cache the SBOM
+            cache_sbom "$image" "$output_file" "$sbom_type"
             return 0
         else
             log_error "Extracted SBOM is not valid JSON"
@@ -922,6 +1451,15 @@ download_sbom() {
 download_cosign_triage() {
     local image="$1"
     local output_file="$2"
+
+    # Check cache first
+    local cached_triage
+    if cached_triage=$(get_cached_triage "$image" 2>/dev/null); then
+        if cp "$cached_triage" "$output_file" 2>/dev/null; then
+            log_verbose "Using cached triage for: $image"
+            return 0
+        fi
+    fi
 
     log_verbose "Downloading cosign triage attestation for: $image"
 
@@ -942,6 +1480,8 @@ download_cosign_triage() {
         --certificate-identity-regexp "$CERTIFICATE_IDENTITY_REGEXP" >/dev/null 2>&1; then
 
         log_verbose "Successfully downloaded cosign triage for: $image"
+        # Cache the triage
+        cache_triage "$image" "$output_file"
         return 0
     else
         log_verbose "Failed to download cosign triage for: $image"
@@ -1067,7 +1607,7 @@ process_image() {
                 triage_downloaded=true
                 log_verbose "Downloaded triage for: $image"
             else
-                log_warn "Failed to download triage for: $image"
+                # Missing triage is not an error - it just means the image has no triage data
                 triage_file=""
             fi
             ;;
@@ -1164,6 +1704,74 @@ process_all_images() {
         for img in "${images[@]}"; do
             echo "     - $img" >&2
         done
+        return 0
+    fi
+
+    # Test flow mode: process only the first valid image
+    if $TEST_FLOW; then
+        log_result "TEST FLOW: Processing only the first valid image"
+        local processed=false
+        # Disable exit on error for test flow since we want to continue trying images
+        set +e
+        for image in "${images[@]}"; do
+            log_verbose "Testing image: $image"
+            local progress_msg="🔄 Processing test image: $image"
+            printf "\r%s" "$progress_msg" >&2
+            # Call process_image (it re-enables exit on error at the end, so we disable it again)
+            process_image "$image"
+            # Re-disable exit on error (process_image re-enables it at the end)
+            set +e
+
+            # Check if this was a successful scan (not skipped)
+            local image_safe_name
+            image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
+            local image_dir="$OUTPUT_DIR/$image_safe_name"
+            if [[ -f "$image_dir/skipped.txt" ]]; then
+                # Clear progress line using ANSI escape code (clear to end of line) or spaces
+                if [[ -t 2 ]]; then
+                    # Terminal supports ANSI codes
+                    printf "\r\033[K" >&2
+                else
+                    # Fallback: clear with spaces (use large buffer to handle long image names)
+                    printf "\r%*s\r" 200 "" >&2
+                fi
+                echo "" >&2  # New line
+                log_verbose "Image was skipped, trying next image..."
+                continue
+            elif [[ -f "$image_dir/metadata.json" ]]; then
+                # Clear progress line using ANSI escape code (clear to end of line) or spaces
+                if [[ -t 2 ]]; then
+                    # Terminal supports ANSI codes
+                    printf "\r\033[K" >&2
+                else
+                    # Fallback: clear with spaces (use large buffer to handle long image names)
+                    printf "\r%*s\r" 200 "" >&2
+                fi
+                echo "" >&2  # New line
+                log_success "Test flow: Successfully processed first valid image: $image"
+                processed=true
+                break
+            fi
+        done
+        # Re-enable exit on error
+        set -e
+
+        # Clear any remaining progress line (if not already cleared)
+        if ! $processed; then
+            if [[ -t 2 ]]; then
+                # Terminal supports ANSI codes
+                printf "\r\033[K" >&2
+            else
+                # Fallback: clear with spaces
+                printf "\r%*s\r" 200 "" >&2
+            fi
+            echo "" >&2  # New line
+            log_warn "Test flow: No valid image was successfully processed"
+        fi
+
+        printf "✅ Test flow completed\n" >&2
+        log_info "Finalizing scan results..."
+        collect_scan_results
         return 0
     fi
 
@@ -1267,6 +1875,19 @@ collect_scan_results() {
         image_safe_name=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
         local image_dir="$OUTPUT_DIR/$image_safe_name"
 
+        # Skip images that were never processed (no directory exists)
+        # This happens in test-flow mode where we stop after the first valid image
+        if [[ ! -d "$image_dir" ]]; then
+            if $TEST_FLOW; then
+                log_verbose "⏭️  Not processed (test-flow): $(basename "$image")"
+            else
+                # In normal mode, if directory doesn't exist, it's a failure
+                FAILED_SCANS+=("$image")
+                log_verbose "❌ Failed (no output): $(basename "$image")"
+            fi
+            continue
+        fi
+
         # Check if image was skipped (unsigned)
         if [[ -f "$image_dir/skipped.txt" ]]; then
             SKIPPED_SCANS+=("$image")
@@ -1276,6 +1897,7 @@ collect_scan_results() {
             SUCCESSFUL_SCANS+=("$image")
             log_verbose "✅ Successful: $(basename "$image")"
         else
+            # Only mark as failed if directory exists (image was actually attempted)
             FAILED_SCANS+=("$image")
             log_verbose "❌ Failed: $(basename "$image")"
         fi
@@ -1515,19 +2137,38 @@ generate_cve_summary_table() {
 
 # Main execution
 main() {
+    # Handle cache statistics request
+    if $CACHE_STATS; then
+        init_cache
+        show_cache_stats
+        exit 0
+    fi
+
     echo "🚀 Aleph Alpha - Signed Image Scanner" >&2
     echo >&2
     echo "⚙️ Selected options:" >&2
     log_result "Namespace: $NAMESPACE"
     log_result "Output directory: $OUTPUT_DIR"
 
+    # Cache configuration
+    if $NO_CACHE; then
+        log_result "Cache: Disabled"
+    else
+        log_result "Cache: Enabled (dir: $CACHE_DIR, TTL: ${CACHE_TTL_HOURS}h)"
+    fi
+
     if $DRY_RUN; then
         log_result "Mode: DRY RUN (no actual scanning)"
+    fi
+
+    if $TEST_FLOW; then
+        log_result "Mode: TEST FLOW (only first valid image)"
     fi
 
     # Setup
     check_prerequisites
     setup_temp_dir
+    init_cache
     load_ignore_list
     setup_kubectl
 

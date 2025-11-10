@@ -118,11 +118,29 @@ case "$TYPE" in
   *) echo "❌ Unknown type: $TYPE"; exit 1 ;;
 esac
 
-if [[ -z "$TYPE" && "$CHOICE" != "all" && "$LIST_ONLY" == "false" && "$INSPECT_NULL" == "false" ]]; then
-  echo "❌ Missing required --type (or use --choice all without --type to dump everything)"
-  show_help
-  exit 1
+# If no type, list, or inspect-null is specified, default to --list
+if [[ -z "$TYPE" && "$LIST_ONLY" == "false" && "$INSPECT_NULL" == "false" ]]; then
+  LIST_ONLY=true
 fi
+
+# Spinner function for loading indicator
+spinner() {
+  local pid=$1
+  local spinstr='|/-\'
+  local first=true
+  while kill -0 "$pid" 2>/dev/null; do
+    local temp=${spinstr#?}
+    if $first; then
+      printf "%c" "$spinstr"
+      first=false
+    else
+      printf "\b%c" "$spinstr"
+    fi
+    spinstr=$temp${spinstr%"$temp"}
+    sleep 0.1
+  done
+  printf "\b \b"  # Clear spinner character (backspace, space, backspace)
+}
 
 # Map predicateType → nice filename
 pretty_name() {
@@ -200,17 +218,82 @@ fi
 
 # --list mode
 if $LIST_ONLY; then
-  echo "🔎 Available predicateTypes for this image:"
-  if $SHOW_NULL; then
-    oras discover "$IMAGE@$DIGEST" --format json \
-      | jq -r '.referrers[].annotations["dev.sigstore.bundle.predicateType"]' \
-      | sort | uniq -c | sed 's/^/  /'
-  else
-    oras discover "$IMAGE@$DIGEST" --format json \
-      | jq -r '.referrers[].annotations["dev.sigstore.bundle.predicateType"] // empty' \
-      | sed '/^$/d' \
-      | sort | uniq -c | sed 's/^/  /'
+  printf "🔎  Available predicateTypes for this image: "
+
+  # Create temp file for results before background process
+  TEMP_RESULT=$(mktemp 2>/dev/null || mktemp -t cosign-extract-result)
+
+  # Run the work in background and show spinner
+  (
+    # Get all bundle referrers
+    REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
+      | jq -r '.referrers[] | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json") | .digest')
+
+    # Extract predicateTypes from bundle payloads
+    PRED_TYPES=()
+    for d in $REFERRERS; do
+      layer_digest=$(oras manifest fetch "$IMAGE@$d" 2>/dev/null | jq -r '.layers[0].digest')
+      if [ -z "$layer_digest" ] || [ "$layer_digest" == "null" ]; then
+        continue
+      fi
+
+      bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
+      if ! oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null 2>&1; then
+        rm -f "$bundle"
+        continue
+      fi
+
+      # Try to extract predicateType from bundle payload
+      if jq -e '.dsseEnvelope.payload' "$bundle" >/dev/null 2>&1; then
+        raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D 2>/dev/null)
+        if [ -n "$raw" ]; then
+          ptype=$(echo "$raw" | jq -r '.predicateType // empty' 2>/dev/null)
+          if [ -n "$ptype" ] && [ "$ptype" != "null" ]; then
+            PRED_TYPES+=("$ptype")
+          fi
+        fi
+      fi
+
+      rm -f "$bundle"
+    done
+
+    # Store results
+    if [ ${#PRED_TYPES[@]} -eq 0 ]; then
+      echo "FALLBACK" > "$TEMP_RESULT"
+      if $SHOW_NULL; then
+        oras discover "$IMAGE@$DIGEST" --format json \
+          | jq -r '.referrers[].annotations["dev.sigstore.bundle.predicateType"]' \
+          | sort | uniq -c | sed 's/^/  /' >> "$TEMP_RESULT"
+      else
+        oras discover "$IMAGE@$DIGEST" --format json \
+          | jq -r '.referrers[].annotations["dev.sigstore.bundle.predicateType"] // empty' \
+          | sed '/^$/d' \
+          | sort | uniq -c | sed 's/^/  /' >> "$TEMP_RESULT"
+      fi
+    else
+      printf '%s\n' "${PRED_TYPES[@]}" | sort | uniq -c | sed 's/^/  /' > "$TEMP_RESULT"
+    fi
+  ) &
+  WORK_PID=$!
+
+  # Show spinner while work is running
+  spinner "$WORK_PID"
+
+  # Wait for work to complete
+  wait "$WORK_PID"
+
+  # Display results
+  echo ""  # New line after spinner
+  if [ -f "$TEMP_RESULT" ]; then
+    if head -1 "$TEMP_RESULT" | grep -q "^FALLBACK$"; then
+      echo "   (No predicateTypes found in bundles, checking annotations as fallback...)"
+      tail -n +2 "$TEMP_RESULT"
+    else
+      cat "$TEMP_RESULT"
+    fi
+    rm -f "$TEMP_RESULT"
   fi
+
   exit 0
 fi
 
@@ -340,61 +423,125 @@ if $VERIFY; then
 fi
 
 DIGESTS=()
-# Collect referrers, reversing order if --last is used for optimization
-if $USE_LAST; then
-  REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
-    | jq -r --arg pt "$PRED_TYPE" '
-        [.referrers[]
+# Collect referrers - always check inner predicateType since annotations may be unreliable
+# Get all bundle referrers (don't filter by annotation as it may be incorrect in new cosign)
+ALL_REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
+  | jq -r '.referrers[]
         | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
-        | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
-        | .digest]
-        | reverse
-        | .[]')
-
-  # When --last is used, trust the annotation filter and use the first referrer
-  # (which is the most recent after reversing). Skip expensive verification loop.
-  # We'll verify the inner predicateType only when fetching the actual content.
-  FIRST_REFERRER=$(echo "$REFERRERS" | head -n 1)
-  if [ -n "$FIRST_REFERRER" ]; then
-    DIGESTS+=("$FIRST_REFERRER")
-  fi
-else
-  REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
-    | jq -r --arg pt "$PRED_TYPE" '
-        .referrers[]
-        | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json")
-        | select(.annotations["dev.sigstore.bundle.predicateType"]==$pt)
         | .digest')
 
-  # When not using --last, verify inner predicateType for all candidates
-  for d in $REFERRERS; do
-    echo "🔎 Checking candidate referrer digest=$d"
-    layer_digest=$(oras manifest fetch "$IMAGE@$d" | jq -r '.layers[0].digest')
-    bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
-    oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null
-    raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D)
-    inner=$(echo "$raw" | jq -r '.predicateType')
-    echo "   ↳ inner predicateType=$inner"
-    rm -f "$bundle"
-
-    if [ "$inner" = "$PRED_TYPE" ]; then
-      DIGESTS+=("$d")
-    fi
-  done
+# If using --last, reverse the order to get most recent first
+# Use portable method to reverse (works on both Linux and macOS)
+if $USE_LAST; then
+  ALL_REFERRERS=$(printf '%s\n' $ALL_REFERRERS | awk '{a[i++]=$0} END {for (j=i-1; j>=0;) print a[j--]}')
 fi
+
+# Check inner predicateType for all candidates (annotations may be incorrect)
+# If no --choice is specified, we can stop after finding the first match
+# If --choice is a number or "all", we need to check all to find the right one(s)
+STOP_EARLY=false
+if [ -z "$CHOICE" ]; then
+  # Stop after first match if no choice specified (user wants the first/only one)
+  STOP_EARLY=true
+fi
+
+for d in $ALL_REFERRERS; do
+  if $USE_LAST; then
+    # When using --last, stop at first match (most recent)
+    if [ ${#DIGESTS[@]} -gt 0 ]; then
+      break
+    fi
+  elif ! $STOP_EARLY || [ ${#DIGESTS[@]} -eq 0 ]; then
+    echo "🔎 Checking candidate referrer digest=$d"
+  fi
+
+  layer_digest=$(oras manifest fetch "$IMAGE@$d" 2>/dev/null | jq -r '.layers[0].digest')
+  if [ -z "$layer_digest" ] || [ "$layer_digest" == "null" ]; then
+    continue
+  fi
+
+  bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
+  if ! oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null 2>&1; then
+    rm -f "$bundle"
+    continue
+  fi
+
+  raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D 2>/dev/null)
+  if [ -z "$raw" ]; then
+    rm -f "$bundle"
+    continue
+  fi
+
+  inner=$(echo "$raw" | jq -r '.predicateType // empty' 2>/dev/null)
+  if [ -z "$inner" ] || [ "$inner" == "null" ]; then
+    rm -f "$bundle"
+    continue
+  fi
+
+  if ! $USE_LAST && ! $STOP_EARLY; then
+    echo "   ↳ inner predicateType=$inner"
+  fi
+
+  rm -f "$bundle"
+
+  if [ "$inner" = "$PRED_TYPE" ]; then
+    DIGESTS+=("$d")
+    # When using --last or stop early, we found a match, so we're done
+    if $USE_LAST || ($STOP_EARLY && [ ${#DIGESTS[@]} -eq 1 ]); then
+      break
+    fi
+  fi
+done
 
 if [ ${#DIGESTS[@]} -eq 0 ]; then
   echo "❌ No attestations found for type=$TYPE (predicateType=$PRED_TYPE)"
   echo "ℹ️  Available predicateTypes for this image:"
-  oras discover "$IMAGE@$DIGEST" --format json \
-    | jq -r '.referrers[].annotations["dev.sigstore.bundle.predicateType"] // empty' \
-    | sed '/^$/d' \
-    | sort | uniq -c | sed 's/^/  /'
+
+  # Get all bundle referrers and extract predicateTypes from payloads
+  ALL_REFERRERS=$(oras discover "$IMAGE@$DIGEST" --format json \
+    | jq -r '.referrers[] | select(.artifactType=="application/vnd.dev.sigstore.bundle.v0.3+json") | .digest')
+
+  AVAIL_TYPES=()
+  for d in $ALL_REFERRERS; do
+    layer_digest=$(oras manifest fetch "$IMAGE@$d" 2>/dev/null | jq -r '.layers[0].digest')
+    if [ -z "$layer_digest" ] || [ "$layer_digest" == "null" ]; then
+      continue
+    fi
+
+    bundle=$(mktemp 2>/dev/null || mktemp -t cosign-extract)
+    if ! oras blob fetch "$IMAGE@$layer_digest" --output "$bundle" >/dev/null 2>&1; then
+      rm -f "$bundle"
+      continue
+    fi
+
+    if jq -e '.dsseEnvelope.payload' "$bundle" >/dev/null 2>&1; then
+      raw=$(jq -r '.dsseEnvelope.payload' "$bundle" | base64 -d 2>/dev/null || jq -r '.dsseEnvelope.payload' "$bundle" | base64 -D 2>/dev/null)
+      if [ -n "$raw" ]; then
+        ptype=$(echo "$raw" | jq -r '.predicateType // empty' 2>/dev/null)
+        if [ -n "$ptype" ] && [ "$ptype" != "null" ]; then
+          AVAIL_TYPES+=("$ptype")
+        fi
+      fi
+    fi
+
+    rm -f "$bundle"
+  done
+
+  if [ ${#AVAIL_TYPES[@]} -eq 0 ]; then
+    # Fallback to annotations
+    oras discover "$IMAGE@$DIGEST" --format json \
+      | jq -r '.referrers[].annotations["dev.sigstore.bundle.predicateType"] // empty' \
+      | sed '/^$/d' \
+      | sort | uniq -c | sed 's/^/  /'
+  else
+    printf '%s\n' "${AVAIL_TYPES[@]}" | sort | uniq -c | sed 's/^/  /'
+  fi
+
   exit 1
 fi
 
-# Skip listing when --last is used (we only validated one)
-if ! $USE_LAST; then
+# Skip listing when --last is used or when we stopped early (only one match)
+if ! $USE_LAST && ! $STOP_EARLY; then
   echo "🔎 Found ${#DIGESTS[@]} attestations for type=$TYPE:"
   i=1
   for d in "${DIGESTS[@]}"; do
