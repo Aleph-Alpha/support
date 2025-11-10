@@ -1,8 +1,8 @@
-{{- if (index .Values "redis-operator" "rbac" "create") -}}
+{{- if .Values.customRbac.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ index .Values "redis-operator" "rbac" "serviceAccountName" }}
+  name: {{ .Values.customRbac.serviceAccountName }}
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: {{ include "qs-redis-operator.name" . }}
@@ -121,4 +121,3 @@ rules:
       - update
       - watch
 {{- end }}
-

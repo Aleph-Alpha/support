@@ -17,4 +17,3 @@ dependencies:
     repository: https://ot-container-kit.github.io/helm-charts/
     alias: pharia-transcribe-app-redis
     condition: pharia-transcribe-app-redis.enabled
-

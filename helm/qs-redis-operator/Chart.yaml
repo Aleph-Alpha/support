@@ -10,4 +10,3 @@ dependencies:
   - name: redis-operator
     version: 0.22.2
     repository: https://ot-container-kit.github.io/helm-charts/
-

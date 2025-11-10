@@ -30,18 +30,18 @@ spec:
           echo "Testing Redis instance: {{ $k }}"
           echo "Host: {{ $cfg.redisStandalone.name }}"
           echo "Port: 6379"
-          
+
           # Get password from secret
           REDIS_PASSWORD=$(cat /secrets/password)
-          
+
           # Test connection with AUTH
           if redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" PING | grep -q PONG; then
             echo "✓ Redis connection successful!"
-            
+
             # Test SET/GET
             redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" SET test-key "test-value"
             VALUE=$(redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" GET test-key)
-            
+
             if [ "$VALUE" = "test-value" ]; then
               echo "✓ Redis SET/GET test successful!"
               redis-cli -h {{ $cfg.redisStandalone.name }} -p 6379 -a "$REDIS_PASSWORD" DEL test-key
