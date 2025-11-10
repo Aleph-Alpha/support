@@ -30,6 +30,11 @@ jobConfig:
   # -- Fail on error - if false, job continues even if some secrets fail
   failOnError: true
 
+# Configuration for secret cleanup on uninstall
+secretCleanup:
+  # -- Retain secrets on helm uninstall (true = keep secrets, false = delete secrets)
+  retainOnDelete: true
+
 # Configuration for Helm tests
 tests:
   # -- MinIO client image to use for connection tests
