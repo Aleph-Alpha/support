@@ -50,7 +50,10 @@ pharia-assistant-api-redis:
     redisSecret:
       secretName: qs-redis-pharia-assistant-api
       secretKey: password
-    maxMemoryPercentOfLimit: 70
+  externalConfig:
+    enabled: true
+    data: |
+      tcp-keepalive 300
   # Add any specific values for the redis chart here
   # For example:
   # kubernetesConfig:
@@ -72,7 +75,10 @@ pharia-transcribe-app-redis:
     redisSecret:
       secretName: qs-redis-pharia-transcribe-app
       secretKey: password
-    maxMemoryPercentOfLimit: 70
+  externalConfig:
+    enabled: true
+    data: |
+      tcp-keepalive 300
   # Add any specific values for the redis chart here
   # For example:
   # kubernetesConfig:
