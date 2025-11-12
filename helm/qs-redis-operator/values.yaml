@@ -5,12 +5,29 @@
 # For full configuration options, see:
 # https://github.com/OT-CONTAINER-KIT/redis-operator/blob/main/charts/redis-operator/values.yaml
 
-customRbac:
+# ServiceAccount configuration for the Redis operator
+serviceAccount:
+  # Specifies whether a service account should be created
   create: true
-  serviceAccountName: "qs-redis-operator"
+  # The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# Custom RBAC configuration for namespace-scoped Role
+customRbac:
+  # Specifies whether a role should be created
+  # If false, an existing role with the name specified in roleName will be used
+  create: true
+  # The name of the role to use or create
+  # If not set and create is true, a name is generated using the fullname template
+  # If not set and create is false, defaults to "<fullname>"
+  roleName: ""
 
 redis-operator:
-  # Must match the ServiceAccount name created by our custom RBAC
+  # IMPORTANT: Must match the ServiceAccount name generated above
+  # If serviceAccount.name is empty, the generated name will be based on release name
+  # For release "qs-redis-operator", this will be "qs-redis-operator"
+  # If you override serviceAccount.name, update this value to match
   serviceAccountName: "qs-redis-operator"
 
   redisOperator:

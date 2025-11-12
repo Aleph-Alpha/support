@@ -31,9 +31,20 @@ Create chart name and version as used by the chart label.
 Create the name of the service account to use
 */}}
 {{- define "qs-redis-operator.serviceAccountName" -}}
-{{- if .Values.customRbac.serviceAccountName }}
-{{- .Values.customRbac.serviceAccountName }}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "qs-redis-operator.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
-{{- include "qs-redis-operator.fullname" . }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Create the name of the role to use or create
+*/}}
+{{- define "qs-redis-operator.roleName" -}}
+{{- if .Values.customRbac.roleName }}
+{{- .Values.customRbac.roleName }}
+{{- else }}
+{{- include "qs-redis-operator.serviceAccountName" . }}
 {{- end }}
 {{- end }}
