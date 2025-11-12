@@ -62,6 +62,17 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Create the name of the role to use or create
+*/}}
+{{- define "qs-minio.roleName" -}}
+{{- if .Values.rbac.roleName }}
+{{- .Values.rbac.roleName }}
+{{- else }}
+{{- printf "%s-secret-creator" (include "qs-minio.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
 Generate secret creation job for MinIO instances
 Params:
   .root - root context

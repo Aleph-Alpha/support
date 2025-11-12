@@ -10,6 +10,16 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
+# RBAC configuration for the secret creation job
+rbac:
+  # Specifies whether a role should be created
+  # If false, an existing role with the name specified in roleName will be used
+  create: true
+  # The name of the role to use or create
+  # If not set and create is true, a name is generated using the fullname template
+  # If not set and create is false, defaults to "<fullname>-secret-creator"
+  roleName: ""
+
 # Image configuration for secret creation jobs
 jobImage:
   # -- Container image for kubectl in secret creation jobs
