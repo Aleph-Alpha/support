@@ -15,7 +15,7 @@ jobImage:
   # -- Container image for kubectl in secret creation jobs
   repository: bitnamilegacy/kubectl
   # -- Image tag for kubectl (set to specific version for stability)
-  tag: "1.31"
+  tag: "1.33.4"
   # -- Image pull policy
   pullPolicy: IfNotPresent
 
