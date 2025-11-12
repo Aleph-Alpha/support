@@ -11,7 +11,7 @@ serviceAccount:
   create: true
   # The name of the service account to use
   # If not set and create is true, a name is generated using the fullname template
-  name: "qs-redis-operator"
+  name: ""
 
 # Custom RBAC configuration for namespace-scoped Role
 customRbac:
@@ -24,7 +24,10 @@ customRbac:
   roleName: ""
 
 redis-operator:
-  # Must match the ServiceAccount name created by our custom RBAC
+  # IMPORTANT: Must match the ServiceAccount name generated above
+  # If serviceAccount.name is empty, the generated name will be based on release name
+  # For release "qs-redis-operator", this will be "qs-redis-operator"
+  # If you override serviceAccount.name, update this value to match
   serviceAccountName: "qs-redis-operator"
 
   redisOperator:
