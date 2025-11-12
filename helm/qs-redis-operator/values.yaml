@@ -8,6 +8,9 @@
 customRbac:
   create: true
   serviceAccountName: "qs-redis-operator"
+  # The name of the role to use or create
+  # If not set, defaults to the serviceAccountName
+  roleName: ""
 
 redis-operator:
   # Must match the ServiceAccount name created by our custom RBAC

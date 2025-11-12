@@ -37,3 +37,14 @@ Create the name of the service account to use
 {{- include "qs-redis-operator.fullname" . }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the role to use or create
+*/}}
+{{- define "qs-redis-operator.roleName" -}}
+{{- if .Values.customRbac.roleName }}
+{{- .Values.customRbac.roleName }}
+{{- else }}
+{{- include "qs-redis-operator.serviceAccountName" . }}
+{{- end }}
+{{- end }}

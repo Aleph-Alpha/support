@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "qs-redis-operator.serviceAccountName" . }}
+  name: {{ include "qs-redis-operator.roleName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     app.kubernetes.io/name: {{ include "qs-redis-operator.name" . }}

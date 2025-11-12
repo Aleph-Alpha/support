@@ -1,8 +1,8 @@
-{{- if .Values.serviceAccount.create -}}
+{{- if .Values.rbac.create }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "qs-redis.fullname" . }}-secret-manager
+  name: {{ include "qs-redis.roleName" . }}
   labels:
     {{- include "qs-redis.labels" . | nindent 4 }}
     app.kubernetes.io/component: rbac
@@ -15,6 +15,7 @@ rules:
     resources: ["secrets"]
     verbs: ["get", "list", "create", "update", "patch"]
 ---
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -32,6 +33,5 @@ subjects:
     namespace: {{ .Release.Namespace }}
 roleRef:
   kind: Role
-  name: {{ include "qs-redis.fullname" . }}-secret-manager
+  name: {{ include "qs-redis.roleName" . }}
   apiGroup: rbac.authorization.k8s.io
-{{- end }}

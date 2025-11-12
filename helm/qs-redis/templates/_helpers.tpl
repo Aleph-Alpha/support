@@ -58,3 +58,14 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the role to use or create
+*/}}
+{{- define "qs-redis.roleName" -}}
+{{- if .Values.rbac.roleName }}
+{{- .Values.rbac.roleName }}
+{{- else }}
+{{- printf "%s-secret-manager" (include "qs-redis.fullname" .) }}
+{{- end }}
+{{- end }}
