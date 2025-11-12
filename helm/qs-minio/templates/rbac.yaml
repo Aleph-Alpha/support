@@ -1,7 +1,8 @@
+{{- if .Values.rbac.create }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "qs-minio.fullname" . }}-secret-creator
+  name: {{ include "qs-minio.roleName" . }}
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "qs-minio.labels" . | nindent 4 }}
@@ -15,6 +16,7 @@ rules:
     resources: ["secrets"]
     verbs: ["get", "list", "create", "update", "patch", "delete"]
 ---
+{{- end }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -30,7 +32,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "qs-minio.fullname" . }}-secret-creator
+  name: {{ include "qs-minio.roleName" . }}
 subjects:
   - kind: ServiceAccount
     name: {{ include "qs-minio.serviceAccountName" . }}
