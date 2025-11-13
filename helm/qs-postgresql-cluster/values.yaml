@@ -70,7 +70,7 @@ clusterPharia:
       storageClass: ""
     postgresql:
       parameters:
-        max_connections: "500"
+        max_connections: "5000"
         shared_buffers: "6GB"
         effective_cache_size: "10GB"
         checkpoint_completion_target: "0.9"
