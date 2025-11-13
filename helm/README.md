@@ -5,19 +5,22 @@ This directory contains Helm charts for deploying the infrastructure components 
 ## Table of Contents
 
 - [Overview](#overview)
-- [PostgreSQL Setup](#postgresql-setup)
-- [Redis Setup](#redis-setup)
-- [MinIO Setup](#minio-setup)
+- [🐘 PostgreSQL Setup](#-postgresql-setup)
+- [⚡ Redis Setup](#-redis-setup)
+- [🪣 MinIO Setup](#-minio-setup)
+- [Additional Notes](#additional-notes)
 
 ---
 
 ## Overview
 
+> **⚠️ Important Notice:** The support charts provided in this directory are designed for **quickstart and development purposes** to help you get started with the Pharia AI stack quickly. For production deployments, we strongly recommend replacing these in-cluster services with **externally managed services** for PostgreSQL, Redis, and object storage (e.g., AWS RDS, Amazon ElastiCache, Amazon S3, or equivalent managed services from other cloud providers). Managed services provide better reliability, automated backups, monitoring, scaling, and reduced operational overhead.
+
 The Pharia AI Quick Start Helm charts in this directory provide essential **persistence and infrastructure services** that run inside your Kubernetes cluster to support the Pharia AI application stack. These charts deploy and manage:
 
-- **PostgreSQL**: Highly available relational database clusters with connection pooling for application data persistence
-- **Redis**: In-memory data stores for caching, session management, and queue processing
-- **MinIO**: S3-compatible object storage for files, artifacts, and large data objects
+- **🐘 PostgreSQL**: Highly available relational database clusters with connection pooling for application data persistence
+- **⚡ Redis**: In-memory data stores for caching, session management, and queue processing
+- **🪣 MinIO**: S3-compatible object storage for files, artifacts, and large data objects
 
 ### Purpose
 
@@ -129,7 +132,7 @@ The following sections detail the installation process for each infrastructure c
 
 ---
 
-## PostgreSQL Setup
+## 🐘 PostgreSQL Setup
 
 The PostgreSQL setup provides a highly available database infrastructure with connection pooling via PgBouncer. It consists of two separate PostgreSQL clusters: one for Pharia applications and one for Temporal workflow engine.
 
@@ -664,7 +667,7 @@ helm install qs-postgresql-cluster ./qs-postgresql-cluster \
 
 ---
 
-## Redis Setup
+## ⚡ Redis Setup
 
 The Redis setup provides standalone Redis instances for Pharia applications using the Redis Operator.
 
@@ -863,7 +866,7 @@ helm install qs-redis ./qs-redis \
 
 ---
 
-## MinIO Setup
+## 🪣 MinIO Setup
 
 The MinIO setup provides S3-compatible object storage for Pharia applications.
 
