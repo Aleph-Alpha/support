@@ -314,6 +314,112 @@ helm install qs-postgresql-cluster ./qs-postgresql-cluster \
 4. **Role Creation:** Creates database roles (users) as specified in the cluster configuration
 5. **Pooler Deployment:** Deploys PgBouncer poolers for connection management
 
+#### Controlling Secret Generation
+
+By default, the chart automatically generates secrets for all database roles. You can control this behavior using the `secretGenerationJob.enabled` flag:
+
+**Disable automatic secret generation:**
+```bash
+helm install qs-postgresql-cluster ./qs-postgresql-cluster \
+  --namespace pharia-ai \
+  --set secretGenerationJob.enabled=false
+```
+
+> **⚠️ Important:** When `secretGenerationJob.enabled=false`, you **must manually create all required secrets** before the PostgreSQL clusters can start successfully. The CloudNativePG operator will fail to create database roles if their `passwordSecret` references are missing.
+
+**Manual Secret Creation Requirements:**
+
+When automatic secret generation is disabled, you must create secrets for **each database role** defined in the cluster configuration. The secrets must follow this exact structure:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: qs-postgresql-cluster-access-{role-name}
+  namespace: pharia-ai
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    qs-postgresql-cluster/name: {cluster-name}
+    qs-postgresql-cluster/type: access-secret
+type: Opaque
+stringData:
+  username: "{role_name}"                    # e.g., "pharia_os", "document_index"
+  user: "{role_name}"                        # Alias for username (same value)
+  password: "{secure-random-password}"       # At least 16 characters recommended
+  host: "{connection-endpoint}"              # Pooler or direct endpoint
+  port: "5432"                               # PostgreSQL port
+  protocol: "postgres"                       # Connection protocol
+  databaseName: "{database-name}"            # Database name for this role
+  databaseUrl: "postgres://{username}:{password}@{host}:{port}/{databaseName}"
+```
+
+**Required Secrets for Default Configuration:**
+
+<details>
+<summary><strong>Pharia Cluster Secrets (14 secrets)</strong></summary>
+
+```bash
+# Create secrets for all Pharia cluster roles
+kubectl create secret generic qs-postgresql-cluster-access-document-index -n pharia-ai \
+  --from-literal=username="document_index" \
+  --from-literal=user="document_index" \
+  --from-literal=password="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)" \
+  --from-literal=host="qs-postgresql-cluster-pharia-pooler-transaction" \
+  --from-literal=port="5432" \
+  --from-literal=protocol="postgres" \
+  --from-literal=databaseName="document-index" \
+  --from-literal=databaseUrl="postgres://document_index:PASSWORD@qs-postgresql-cluster-pharia-pooler-transaction:5432/document-index"
+
+# Repeat for all roles: pharia_os, inference_api, pharia_studio, 
+# pharia_oauth_gateway, pharia_assistant, pharia_chat, pharia_catch, 
+# zitadel, openfga, dex, pharia_conductor, pharia_numinous, 
+# pharia_transcribe_app, pharia_data, mlflow
+```
+
+</details>
+
+<details>
+<summary><strong>Temporal Cluster Secrets (2 secrets)</strong></summary>
+
+```bash
+# Create secrets for Temporal cluster roles
+kubectl create secret generic qs-postgresql-cluster-access-temporal -n pharia-ai \
+  --from-literal=username="temporal" \
+  --from-literal=user="temporal" \
+  --from-literal=password="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)" \
+  --from-literal=host="qs-postgresql-cluster-temporal-pooler-session" \
+  --from-literal=port="5432" \
+  --from-literal=protocol="postgres" \
+  --from-literal=databaseName="temporal" \
+  --from-literal=databaseUrl="postgres://temporal:PASSWORD@qs-postgresql-cluster-temporal-pooler-session:5432/temporal"
+
+kubectl create secret generic qs-postgresql-cluster-access-temporal-visibility -n pharia-ai \
+  --from-literal=username="temporal_visibility" \
+  --from-literal=user="temporal_visibility" \
+  --from-literal=password="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)" \
+  --from-literal=host="qs-postgresql-cluster-temporal-pooler-session" \
+  --from-literal=port="5432" \
+  --from-literal=protocol="postgres" \
+  --from-literal=databaseName="temporal-visibility" \
+  --from-literal=databaseUrl="postgres://temporal_visibility:PASSWORD@qs-postgresql-cluster-temporal-pooler-session:5432/temporal-visibility"
+```
+
+</details>
+
+**Important Notes:**
+- The `host` field should point to the appropriate endpoint (pooler or direct connection)
+- For Pharia cluster roles using transaction pooler: `qs-postgresql-cluster-pharia-pooler-transaction`
+- For Temporal cluster roles using session pooler: `qs-postgresql-cluster-temporal-pooler-session`
+- For direct connections (bypassing pooler): `qs-postgresql-cluster-{name}-rw`
+- The `databaseUrl` must be a complete PostgreSQL connection string
+- Ensure passwords meet your security requirements (minimum 16 characters recommended)
+- The `username` field should use underscores (e.g., `pharia_os`), matching the role name
+- The `databaseName` field should use hyphens (e.g., `pharia-os`), matching the database name
+
+**Secret Cleanup Behavior:**
+
+When `secretGenerationJob.enabled=false`, the automatic secret cleanup on uninstall is also disabled, regardless of the `secretCleanup.retainOnDelete` setting. This ensures consistency - if secrets weren't created by the chart, they won't be deleted by it either.
+
 #### 2. Install Database Resources
 
 After the clusters are ready, install the database resources:
@@ -775,6 +881,70 @@ helm install qs-redis ./qs-redis \
 3. **Redis Instance Deployment:** Deploys Redis standalone instances as Custom Resources (Redis CRD)
 4. **Operator Processing:** The Redis operator creates the actual Redis StatefulSets and Services
 
+#### Controlling Secret Generation
+
+By default, the chart automatically generates secrets for all Redis instances. You can control this behavior using the `secretGenerationJob.enabled` flag:
+
+**Disable automatic secret generation:**
+```bash
+helm install qs-redis ./qs-redis \
+  --namespace pharia-ai \
+  --set secretGenerationJob.enabled=false
+```
+
+> **⚠️ Important:** When `secretGenerationJob.enabled=false`, you **must manually create all required secrets** before the Redis instances can start successfully. The Redis operator will fail to create Redis instances if their `redisSecret` references are missing.
+
+**Manual Secret Creation Requirements:**
+
+When automatic secret generation is disabled, you must create secrets for **each Redis instance** defined in the configuration. The secrets must follow this exact structure:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: qs-redis-{application-name}
+  namespace: pharia-ai
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    qs-redis/instance: {instance-name}
+    qs-redis/type: redis-secret
+type: Opaque
+stringData:
+  host: "{redis-service-name}"               # e.g., "qs-redis-pharia-assistant-api"
+  port: "6379"                               # Redis default port
+  username: "default"                        # Redis default user
+  password: "{secure-random-password}"       # At least 16 characters recommended
+```
+
+**Required Secrets for Default Configuration:**
+
+```bash
+# Create secret for pharia-assistant-api Redis instance
+kubectl create secret generic qs-redis-pharia-assistant-api -n pharia-ai \
+  --from-literal=host="qs-redis-pharia-assistant-api" \
+  --from-literal=port="6379" \
+  --from-literal=username="default" \
+  --from-literal=password="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)"
+
+# Create secret for pharia-transcribe-app Redis instance
+kubectl create secret generic qs-redis-pharia-transcribe-app -n pharia-ai \
+  --from-literal=host="qs-redis-pharia-transcribe-app" \
+  --from-literal=port="6379" \
+  --from-literal=username="default" \
+  --from-literal=password="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)"
+```
+
+**Important Notes:**
+- The `host` field must match the Redis instance name (the `name` field in `redisStandalone` configuration)
+- The default Redis username is `default` - do not change this unless you've configured custom Redis users
+- Ensure passwords meet your security requirements (minimum 16 characters recommended)
+- The password you set here will be configured in the Redis instance by the Redis operator
+- Add appropriate labels to help with secret lifecycle management
+
+**Secret Cleanup Behavior:**
+
+When `secretGenerationJob.enabled=false`, the automatic secret cleanup on uninstall is also disabled, regardless of the `secretCleanup.retainOnDelete` setting. This ensures consistency - if secrets weren't created by the chart, they won't be deleted by it either.
+
 ### Supported Applications
 
 The Redis setup provides the following instances for Pharia applications:
@@ -959,6 +1129,134 @@ helm install qs-minio ./qs-minio \
    - Preserves existing credentials on upgrades
 3. **MinIO Instance Deployment:** Deploys MinIO StatefulSets with the specified bucket configuration
 4. **Bucket Creation:** MinIO automatically creates the configured buckets on first startup
+
+#### Controlling Secret Generation
+
+By default, the chart automatically generates secrets for all MinIO instances. You can control this behavior using the `secretGenerationJob.enabled` flag:
+
+**Disable automatic secret generation:**
+```bash
+helm install qs-minio ./qs-minio \
+  --namespace pharia-ai \
+  --set secretGenerationJob.enabled=false
+```
+
+> **⚠️ Important:** When `secretGenerationJob.enabled=false`, you **must manually create all required secrets** before the MinIO instances can start successfully. MinIO instances reference these secrets for authentication configuration and will fail to start without them.
+
+**Manual Secret Creation Requirements:**
+
+When automatic secret generation is disabled, you must create secrets for **each MinIO instance and its buckets** defined in the configuration. The automatic generation creates two types of secrets per instance:
+
+1. **Instance-level secret:** Contains access credentials for the entire MinIO instance
+2. **Bucket-specific secrets:** Contains the same credentials plus the bucket name for each configured bucket
+
+**Instance-level Secret Structure:**
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: qs-minio-access-{application-name}
+  namespace: pharia-ai
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    qs-minio/instance: {application-name}
+    qs-minio/type: access-secret
+type: Opaque
+stringData:
+  user: "{minio-username}"                   # e.g., "pharia-data"
+  password: "{secure-random-password}"       # At least 16 characters recommended
+  endpointUrl: "{protocol}://{host}:{port}"  # e.g., "http://qs-minio-pharia-data:9000"
+```
+
+**Bucket-specific Secret Structure:**
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: qs-minio-access-{application-name}-{bucket-name}
+  namespace: pharia-ai
+  labels:
+    app.kubernetes.io/managed-by: Helm
+    qs-minio/instance: {application-name}
+    qs-minio/type: access-secret
+type: Opaque
+stringData:
+  user: "{minio-username}"                   # Same as instance secret
+  password: "{secure-random-password}"       # Same as instance secret
+  endpointUrl: "{protocol}://{host}:{port}"  # Same as instance secret
+  bucket: "{bucket-name}"                    # Specific bucket name
+```
+
+**Required Secrets for Default Configuration:**
+
+<details>
+<summary><strong>Pharia Data MinIO Secrets (3 secrets)</strong></summary>
+
+```bash
+# Generate password once for this instance
+PHARIA_DATA_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)
+
+# Instance-level secret
+kubectl create secret generic qs-minio-access-pharia-data -n pharia-ai \
+  --from-literal=user="pharia-data" \
+  --from-literal=password="$PHARIA_DATA_PASSWORD" \
+  --from-literal=endpointUrl="http://qs-minio-pharia-data:9000"
+
+# Bucket-specific secret for "internal" bucket
+kubectl create secret generic qs-minio-access-pharia-data-internal -n pharia-ai \
+  --from-literal=user="pharia-data" \
+  --from-literal=password="$PHARIA_DATA_PASSWORD" \
+  --from-literal=endpointUrl="http://qs-minio-pharia-data:9000" \
+  --from-literal=bucket="internal"
+
+# Bucket-specific secret for "external" bucket
+kubectl create secret generic qs-minio-access-pharia-data-external -n pharia-ai \
+  --from-literal=user="pharia-data" \
+  --from-literal=password="$PHARIA_DATA_PASSWORD" \
+  --from-literal=endpointUrl="http://qs-minio-pharia-data:9000" \
+  --from-literal=bucket="external"
+```
+
+</details>
+
+<details>
+<summary><strong>Pharia Finetuning MinIO Secrets (2 secrets)</strong></summary>
+
+```bash
+# Generate password once for this instance
+PHARIA_FINETUNING_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)
+
+# Instance-level secret
+kubectl create secret generic qs-minio-access-pharia-finetuning -n pharia-ai \
+  --from-literal=user="pharia-finetuning" \
+  --from-literal=password="$PHARIA_FINETUNING_PASSWORD" \
+  --from-literal=endpointUrl="http://qs-minio-pharia-finetuning:9000"
+
+# Bucket-specific secret for "pharia-finetuning" bucket
+kubectl create secret generic qs-minio-access-pharia-finetuning-pharia-finetuning -n pharia-ai \
+  --from-literal=user="pharia-finetuning" \
+  --from-literal=password="$PHARIA_FINETUNING_PASSWORD" \
+  --from-literal=endpointUrl="http://qs-minio-pharia-finetuning:9000" \
+  --from-literal=bucket="pharia-finetuning"
+```
+
+</details>
+
+**Important Notes:**
+- All secrets for a single MinIO instance **must use the same username and password**
+- The `user` field should match the `auth.user` value in the MinIO instance configuration
+- The `endpointUrl` format is `{protocol}://{instance-name}:{port}` (e.g., `http://qs-minio-pharia-data:9000`)
+- The protocol and port are configurable via `minio.protocol` and `minio.port` in values.yaml (defaults: `http`, `9000`)
+- Ensure passwords meet your security requirements (minimum 16 characters recommended)
+- The `bucket` field is only present in bucket-specific secrets, not in instance-level secrets
+- These credentials will be used to configure the MinIO instance's root user
+- Add appropriate labels to help with secret lifecycle management
+
+**Secret Cleanup Behavior:**
+
+When `secretGenerationJob.enabled=false`, the automatic secret cleanup on uninstall is also disabled, regardless of the `secretCleanup.retainOnDelete` setting. This ensures consistency - if secrets weren't created by the chart, they won't be deleted by it either.
 
 ### Supported Applications
 
