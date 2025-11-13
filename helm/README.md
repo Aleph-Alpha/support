@@ -735,8 +735,17 @@ The Redis operator must be installed before deploying Redis instances:
 ```bash
 # Install Redis operator
 helm install qs-redis-operator ./qs-redis-operator \
-  --namespace pharia-ai
+  --namespace pharia-ai \
+  --set redis-operator.redisOperator.watchNamespace=pharia-ai
 ```
+
+> **⚠️ Important - Namespace-Scoped Operator:** The Redis operator is deployed in **namespace-scoped mode only** (not cluster-scoped). This means:
+> - The operator will **only watch Redis resources in the namespace specified** by the `watchNamespace` Helm value
+> - The `watchNamespace` value **must be set to the same namespace** where you're installing the operator (e.g., `pharia-ai`)
+> - If you install the operator in a different namespace, you must update the `watchNamespace` value accordingly
+> - The operator **cannot** watch Redis resources in other namespaces or cluster-wide
+>
+> This namespace-scoped approach provides better security isolation and RBAC control by limiting the operator's permissions to a single namespace.
 
 Wait for the operator to be ready:
 
