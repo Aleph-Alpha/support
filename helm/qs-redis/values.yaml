@@ -53,7 +53,7 @@ pharia-assistant-api-redis:
   enabled: true
   # Redis instance name (used for the Redis CRD resource name)
   redisStandalone:
-    name: qs-pharia-assistant-api-redis
+    name: qs-redis-pharia-assistant-api
     # Enable password authentication using the secret
     redisSecret:
       secretName: qs-redis-pharia-assistant-api
@@ -78,7 +78,7 @@ pharia-transcribe-app-redis:
   enabled: true
   # Redis instance name (used for the Redis CRD resource name)
   redisStandalone:
-    name: qs-pharia-transcribe-app-redis
+    name: qs-redis-pharia-transcribe-app
     # Enable password authentication using the secret
     redisSecret:
       secretName: qs-redis-pharia-transcribe-app
