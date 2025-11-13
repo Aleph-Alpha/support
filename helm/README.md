@@ -97,6 +97,24 @@ pharia-data-api:
         bucketPasswordKey: "password"
 ```
 
+> **⚠️ Important:** Before adding these secret references to your Pharia AI Helm chart `values.yaml`, **verify that the respective `qs-*` secrets have been correctly generated** by the infrastructure chart deployment jobs. You can check secret creation with:
+> ```bash
+> # List all generated secrets
+> kubectl get secrets -n pharia-ai -l app.kubernetes.io/managed-by=Helm
+> 
+> # Verify a specific secret exists
+> kubectl get secret qs-postgresql-cluster-access-document-index -n pharia-ai
+> kubectl get secret qs-redis-pharia-assistant-api -n pharia-ai
+> kubectl get secret qs-minio-access-pharia-data-internal -n pharia-ai
+> 
+> # Check secret content (decode base64)
+> kubectl get secret qs-postgresql-cluster-access-document-index -n pharia-ai -o jsonpath='{.data.host}' | base64 -d
+> ```
+> If secrets are missing, check the secret generation job logs for errors:
+> ```bash
+> kubectl logs -n pharia-ai -l app.kubernetes.io/component=create-secrets
+> ```
+
 This seamless integration eliminates the need for manual credential configuration and ensures that Pharia AI applications are automatically connected to their infrastructure dependencies.
 
 ### Installation Prerequisites
@@ -192,6 +210,45 @@ graph TB
 ### Prerequisites
 
 The PostgreSQL operator must be installed before deploying the clusters.
+
+#### Cluster Configuration
+
+The PostgreSQL cluster instances are configured through the `qs-postgresql-cluster/values.yaml` file, which defines two separate clusters:
+
+- **`clusterPharia`**: PostgreSQL cluster for Pharia applications (lines 54-308 in values.yaml)
+- **`clusterTemporal`**: PostgreSQL cluster for Temporal workflows (lines 310-413 in values.yaml)
+
+Each cluster configuration includes critical parameters such as:
+- **Instance count**: Number of PostgreSQL instances (default: 3 for high availability)
+- **PostgreSQL version**: Major version to deploy (default: PostgreSQL 17)
+- **Storage size**: Persistent volume size per instance (default: 250Gi)
+- **Resource limits**: CPU and memory allocation (e.g., 24Gi RAM, 4-8 CPU cores for Pharia cluster)
+- **PostgreSQL parameters**: Database tuning parameters (`max_connections`, `shared_buffers`, `effective_cache_size`, etc.)
+- **Roles**: Database users and their permissions
+- **Poolers**: PgBouncer connection pooling configuration
+
+**Important Configuration Notes:**
+
+> **⚠️ Note:** The default configuration values provided in `values.yaml` are **recommendations for an initial setup only**. These parameters may need to be adapted based on:
+> - The specific requirements of your Pharia AI deployment
+> - Your expected workload and data volume
+> - Available infrastructure resources
+> - Performance and sizing considerations
+> 
+> Please review and adjust the configuration according to your environment before deploying to production.
+
+**Additional Resources:**
+
+For detailed information about available configuration parameters and cluster customization, refer to:
+- **CloudNativePG Cluster Helm Chart Documentation**: [https://artifacthub.io/packages/helm/cloudnative-pg/cluster](https://artifacthub.io/packages/helm/cloudnative-pg/cluster)
+- **CloudNativePG Official Documentation**: [https://cloudnative-pg.io/documentation/1.27/](https://cloudnative-pg.io/documentation/1.27/)
+
+These resources provide comprehensive guidance on:
+- PostgreSQL configuration tuning
+- Resource management and sizing
+- High availability and replication settings
+- Backup and recovery configuration
+- Storage and performance optimization
 
 #### CRD Installation
 
@@ -422,31 +479,31 @@ The PostgreSQL setup supports the following Pharia applications and components:
 
 #### Pharia Cluster Applications
 
-| Application | Database | User | Pooler Mode |
-|------------|----------|------|-------------|
-| Document Index | `document-index` | `document_index` | Transaction |
-| Pharia OS | `pharia-os` | `pharia_os` | Transaction |
-| Inference API | `inference-api` | `inference_api` | Transaction |
-| Pharia Studio | `pharia-studio` | `pharia_studio` | Transaction |
-| OAuth Gateway | `pharia-oauth-gateway` | `pharia_oauth_gateway` | Transaction |
-| Pharia Assistant | `pharia-assistant` | `pharia_assistant` | Transaction |
-| Pharia Chat | `pharia-chat` | `pharia_chat` | Transaction |
-| Pharia Catch | `pharia-catch` | `pharia_catch` | Transaction |
-| Pharia Conductor | `pharia-conductor` | `pharia_conductor` | Transaction |
-| Pharia Numinous | `pharia-numinous` | `pharia_numinous` | Transaction |
-| Pharia Transcribe | `pharia-transcribe-app` | `pharia_transcribe_app` | Transaction |
-| Pharia Data | `pharia-data` | `pharia_data` | Transaction |
-| Zitadel | `zitadel` | `zitadel` | Transaction |
-| OpenFGA | `openfga` | `openfga` | Transaction |
-| Dex | `dex` | `dex` | Transaction |
-| MLflow | `mlflow` | `mlflow` | Transaction |
+| Application | Database | User |
+|------------|----------|------|
+| Document Index | `document-index` | `document_index` |
+| Pharia OS | `pharia-os` | `pharia_os` |
+| Inference API | `inference-api` | `inference_api` |
+| Pharia Studio | `pharia-studio` | `pharia_studio` |
+| OAuth Gateway | `pharia-oauth-gateway` | `pharia_oauth_gateway` |
+| Pharia Assistant | `pharia-assistant` | `pharia_assistant` |
+| Pharia Chat | `pharia-chat` | `pharia_chat` |
+| Pharia Catch | `pharia-catch` | `pharia_catch` |
+| Pharia Conductor | `pharia-conductor` | `pharia_conductor` |
+| Pharia Numinous | `pharia-numinous` | `pharia_numinous` |
+| Pharia Transcribe | `pharia-transcribe-app` | `pharia_transcribe_app` |
+| Pharia Data | `pharia-data` | `pharia_data` |
+| Zitadel | `zitadel` | `zitadel` |
+| OpenFGA | `openfga` | `openfga` |
+| Dex | `dex` | `dex` |
+| MLflow | `mlflow` | `mlflow` |
 
 #### Temporal Cluster Applications
 
-| Application | Database | User | Pooler Mode |
-|------------|----------|------|-------------|
-| Temporal | `temporal` | `temporal` | Session |
-| Temporal Visibility | `temporal-visibility` | `temporal_visibility` | Session |
+| Application | Database | User |
+|------------|----------|------|
+| Temporal | `temporal` | `temporal` |
+| Temporal Visibility | `temporal-visibility` | `temporal_visibility` |
 
 **Connection Configuration:**
 - Applications use the pooler endpoints by default (configured via `config.defaultPooler`)
