@@ -26,7 +26,7 @@ Usage:
 Options:
   --namespace NAMESPACE                 Kubernetes namespace to scan (default: pharia-ai)
   --ignore-file FILE                    File containing images to ignore (one per line)
-  --output-dir DIR                      Output directory for reports (default: ./scan-results)
+  --output-dir DIR                      Output directory for reports (default: ./scan-results/k8s-images)
   --kubeconfig FILE                     Path to kubeconfig file (optional)
   --context CONTEXT                     Kubernetes context to use (optional)
   --trivy-config FILE                   Custom Trivy configuration file (optional)
@@ -78,7 +78,7 @@ EOF
 # Default configuration
 NAMESPACE="pharia-ai"
 IGNORE_FILE=""
-OUTPUT_DIR="./scan-results"
+OUTPUT_DIR="./scan-results/k8s-images"
 KUBECONFIG=""
 CONTEXT=""
 TRIVY_CONFIG=""
@@ -1999,7 +1999,8 @@ if [[ -d "$OUTPUT_DIR" ]]; then
                 printf ",\n"
             fi
             printf "    "
-            cat "$file" | jq -c .
+            # Use jq with error handling to ensure valid JSON output
+            jq -c . "$file" 2>/dev/null || echo "{}"
         fi
     done < <(find "$OUTPUT_DIR" -name "cve_details.json" -print0 2>/dev/null)
 fi)
