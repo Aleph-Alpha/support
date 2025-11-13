@@ -4,15 +4,15 @@ This directory contains Helm charts for deploying the infrastructure components 
 
 ## Table of Contents
 
-- [Overview](#overview)
+- [📖 Overview](#-overview)
 - [🐘 PostgreSQL Setup](#-postgresql-setup)
 - [⚡ Redis Setup](#-redis-setup)
 - [🪣 MinIO Setup](#-minio-setup)
-- [Additional Notes](#additional-notes)
+- [📝 Additional Notes](#-additional-notes)
 
 ---
 
-## Overview
+## 📖 Overview
 
 > **⚠️ Important Notice:** The support charts provided in this directory are designed for **quickstart and development purposes** to help you get started with the Pharia AI stack quickly. For production deployments, we strongly recommend replacing these in-cluster services with **externally managed services** for PostgreSQL, Redis, and object storage (e.g., AWS RDS, Amazon ElastiCache, Amazon S3, or equivalent managed services from other cloud providers). Managed services provide better reliability, automated backups, monitoring, scaling, and reduced operational overhead.
 
@@ -1081,7 +1081,7 @@ helm install qs-minio ./qs-minio \
 
 ---
 
-## Additional Notes
+## 📝 Additional Notes
 
 ### Secret Management Best Practices
 
