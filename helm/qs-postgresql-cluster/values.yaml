@@ -293,7 +293,7 @@ clusterPharia:
       # -- PgBouncer pooling mode
       poolMode: transaction
       # -- Number of PgBouncer instances
-      instances: 1
+      instances: 3
       # -- PgBouncer configuration parameters
       parameters:
         max_client_conn: "1000"
@@ -396,7 +396,7 @@ clusterTemporal:
       # -- PgBouncer pooling mode
       poolMode: session
       # -- Number of PgBouncer instances
-      instances: 1
+      instances: 3
       # -- PgBouncer configuration parameters
       parameters:
         max_client_conn: "600"
