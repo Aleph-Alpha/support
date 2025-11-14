@@ -97,17 +97,17 @@ spec:
               # Check if database exists
               if psql -lqt | cut -d \| -f 1 | grep -qw "{{ .name }}"; then
                 echo "✓ Database exists"
-                
+
                 # Check current CONNECT privilege for PUBLIC by examining the ACL
                 # Empty/NULL ACL means default privileges (PUBLIC has CONNECT)
                 # Format: {=T/owner} means PUBLIC has explicit CONNECT (T) privilege
                 CURRENT_ACL=$(psql -d postgres -t -c "SELECT COALESCE(datacl::text, '') FROM pg_database WHERE datname='{{ .name }}';" | xargs)
-                
+
                 # Empty ACL or explicit PUBLIC CONNECT means PUBLIC can connect
                 if [ -z "$CURRENT_ACL" ] || echo "$CURRENT_ACL" | grep -q "={T"; then
                   echo "  Current state: PUBLIC has CONNECT privilege"
                   echo "  Action: Revoking CONNECT from PUBLIC and granting to {{ .owner }}..."
-                  
+
                   # Revoke CONNECT from PUBLIC
                   if psql -d postgres -c "REVOKE CONNECT ON DATABASE \"{{ .name }}\" FROM PUBLIC;" 2>&1 | head -1; then
                     echo "  ✓ Revoked CONNECT from PUBLIC"
@@ -116,7 +116,7 @@ spec:
                     DATABASES_FAILED=$((DATABASES_FAILED + 1))
                     continue
                   fi
-                  
+
                   # Grant CONNECT to owner
                   if psql -d postgres -c "GRANT CONNECT ON DATABASE \"{{ .name }}\" TO {{ .owner }};" 2>&1 | head -1; then
                     echo "  ✓ Granted CONNECT to {{ .owner }}"
@@ -125,7 +125,7 @@ spec:
                     DATABASES_FAILED=$((DATABASES_FAILED + 1))
                     continue
                   fi
-                  
+
                   # Grant CONNECT to native pooler user (for CloudNativePG poolers)
                   # Check if cnpg_pooler_pgbouncer user exists
                   if psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='cnpg_pooler_pgbouncer'" | grep -q 1; then
@@ -135,7 +135,7 @@ spec:
                       echo "  ⚠ Warning: Could not grant CONNECT to cnpg_pooler_pgbouncer"
                     fi
                   fi
-                  
+
                   echo "  ✅ Database secured"
                   DATABASES_SECURED=$((DATABASES_SECURED + 1))
                 else
@@ -157,15 +157,14 @@ spec:
               echo "  Already Secured:   $DATABASES_SKIPPED"
               echo "  Failed:            $DATABASES_FAILED"
               echo "════════════════════════════════════════════════════════════════"
-              
+
               if [ $DATABASES_FAILED -gt 0 ]; then
                 echo ""
                 echo "⚠️  Warning: Some databases could not be secured"
                 exit 1
               fi
-              
+
               echo ""
               echo "✅ Database access control enforcement complete!"
 {{- end }}
 {{- end }}
-
