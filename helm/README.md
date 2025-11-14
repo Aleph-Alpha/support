@@ -101,12 +101,12 @@ pharia-data-api:
 > ```bash
 > # List all generated secrets
 > kubectl get secrets -n pharia-ai -l app.kubernetes.io/managed-by=Helm
-> 
+>
 > # Verify a specific secret exists
 > kubectl get secret qs-postgresql-cluster-access-document-index -n pharia-ai
 > kubectl get secret qs-redis-pharia-assistant-api -n pharia-ai
 > kubectl get secret qs-minio-access-pharia-data-internal -n pharia-ai
-> 
+>
 > # Check secret content (decode base64)
 > kubectl get secret qs-postgresql-cluster-access-document-index -n pharia-ai -o jsonpath='{.data.host}' | base64 -d
 > ```
@@ -167,31 +167,31 @@ graph TB
             PG3[Replica PostgreSQL<br/>Instance 2]
             PG1 -.->|Replication| PG2
             PG1 -.->|Replication| PG3
-            
+
             PGB_TX[PgBouncer Pooler<br/>Transaction Mode]
             PGB_TX -->|Connection Pool| PG1
         end
-        
+
         subgraph "Temporal Cluster"
             TG1[Primary PostgreSQL<br/>Instance]
             TG2[Replica PostgreSQL<br/>Instance 1]
             TG3[Replica PostgreSQL<br/>Instance 2]
             TG1 -.->|Replication| TG2
             TG1 -.->|Replication| TG3
-            
+
             TGB_SESSION[PgBouncer Pooler<br/>Session Mode]
             TGB_SESSION -->|Connection Pool| TG1
         end
     end
-    
+
     subgraph "Applications"
         APP1[Pharia Applications]
         APP2[Temporal Workflows]
     end
-    
+
     APP1 -->|Port 5432| PGB_TX
     APP2 -->|Port 5432| TGB_SESSION
-    
+
     style PG1 fill:#4CAF50
     style TG1 fill:#4CAF50
     style PGB_TX fill:#2196F3
@@ -203,7 +203,7 @@ graph TB
 - **PgBouncer Pooler:** Integrated connection pooler that efficiently manages database connections
   - **Transaction Mode (Pharia):** Optimized for short-lived transactions, releases connections after each transaction
   - **Session Mode (Temporal):** Maintains connection state for entire client session, required for Temporal workflows
-- **Service Endpoints:** 
+- **Service Endpoints:**
   - Direct cluster connection: `{cluster-name}-rw` (read-write), `{cluster-name}-r` (read-only)
   - Pooler connection: `{cluster-name}-pooler-{pooler-name}` (recommended)
 
@@ -234,7 +234,7 @@ Each cluster configuration includes critical parameters such as:
 > - Your expected workload and data volume
 > - Available infrastructure resources
 > - Performance and sizing considerations
-> 
+>
 > Please review and adjust the configuration according to your environment before deploying to production.
 
 **Additional Resources:**
@@ -370,9 +370,9 @@ kubectl create secret generic qs-postgresql-cluster-access-document-index -n pha
   --from-literal=databaseName="document-index" \
   --from-literal=databaseUrl="postgres://document_index:PASSWORD@qs-postgresql-cluster-pharia-pooler-transaction:5432/document-index"
 
-# Repeat for all roles: pharia_os, inference_api, pharia_studio, 
-# pharia_oauth_gateway, pharia_assistant, pharia_chat, pharia_catch, 
-# zitadel, openfga, dex, pharia_conductor, pharia_numinous, 
+# Repeat for all roles: pharia_os, inference_api, pharia_studio,
+# pharia_oauth_gateway, pharia_assistant, pharia_chat, pharia_catch,
+# zitadel, openfga, dex, pharia_conductor, pharia_numinous,
 # pharia_transcribe_app, pharia_data, mlflow
 ```
 
@@ -514,7 +514,7 @@ helm upgrade qs-postgresql-db ./qs-postgresql-db \
    - Random password
    - Connection details (host, port)
    - Database connection URL
-   
+
 2. **Role Creation:** CloudNativePG operator creates the new PostgreSQL role with the password from the secret
 
 3. **Database Creation:** The Database CRD creates the new database owned by the role

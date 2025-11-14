@@ -159,4 +159,3 @@ spec:
         runAsUser: 1001
         fsGroup: 1001
 {{- end }}
-

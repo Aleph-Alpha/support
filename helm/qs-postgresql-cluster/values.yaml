@@ -266,26 +266,26 @@ clusterPharia:
     # If empty or not set, unmapped roles use direct cluster connection
     # If set, unmapped roles will use this pooler
     defaultPooler: "transaction"  # All Pharia roles use transaction pooler by default
-    
+
     # Role-specific pooler mappings (overrides defaultPooler)
     # Maps each role to a specific pooler (optional)
     # Empty means all roles use the default pooler above
     rolePoolerMappings: {}
       # Examples of role-specific overrides:
-      
+
       # Override to use direct connection (bypass pooler)
       # Useful for: admin users, long-running jobs, debugging
       # admin_user: ""
-      
+
       # Override to use a different pooler (if you have multiple)
       # pharia_os: "session"  # Would need session pooler defined
-      
+
       # Real-world example: Admin needs direct access for maintenance
       # pharia_admin: ""
-      
+
       # Real-world example: Background jobs that hold long transactions
       # background_worker: ""
-      
+
       # Note: Most applications should use the default pooler
       # Only override when you have specific requirements
   # -- List of PgBouncer poolers
@@ -384,7 +384,7 @@ clusterTemporal:
     # If empty or not set, unmapped roles use direct cluster connection
     # If set, unmapped roles will use this pooler
     defaultPooler: "session"  # All temporal roles use session pooler by default
-    
+
     # Role-specific pooler mappings (overrides defaultPooler)
     # Maps each role to a specific pooler (optional)
     rolePoolerMappings:

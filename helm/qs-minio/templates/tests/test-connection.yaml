@@ -60,11 +60,11 @@ spec:
           # Use endpoint URL from secret
           MINIO_URL="${MINIO_ENDPOINT_URL}"
           ALIAS="test-${INSTANCE_NAME}"
-          
+
           # Extract hostname for DNS checks (using shell built-ins)
           MINIO_HOST="${MINIO_URL#*://}"  # Remove protocol
           MINIO_HOST="${MINIO_HOST%%:*}"  # Remove port and path
-          
+
           echo "  Target: ${MINIO_URL}"
           echo "  User: ${MINIO_USER}"
           echo
@@ -75,13 +75,13 @@ spec:
           # Function to check DNS resolution
           check_dns() {
             echo "🔍 Checking DNS resolution for: ${MINIO_HOST}"
-            
+
             # Try ping first (most likely to be available)
             if ping -c 1 -W 2 "${MINIO_HOST}" > /dev/null 2>&1; then
               echo "✅ DNS resolution successful (ping)"
               return 0
             fi
-            
+
             # Try nslookup if available
             if command -v nslookup > /dev/null 2>&1; then
               if nslookup "${MINIO_HOST}" > /dev/null 2>&1; then
@@ -90,7 +90,7 @@ spec:
                 return 0
               fi
             fi
-            
+
             # Try getent if available
             if command -v getent > /dev/null 2>&1; then
               if getent hosts "${MINIO_HOST}" > /dev/null 2>&1; then
@@ -99,7 +99,7 @@ spec:
                 return 0
               fi
             fi
-            
+
             echo "⚠️  Unable to verify DNS resolution with available tools"
             echo "   Proceeding anyway - MinIO client will fail if host is unreachable"
             return 0
@@ -111,15 +111,15 @@ spec:
             if command -v wget > /dev/null 2>&1; then
               wget --spider --quiet --timeout=5 "${MINIO_URL}/minio/health/live" 2>/dev/null && return 0
             fi
-            
+
             # Try curl
             if command -v curl > /dev/null 2>&1; then
               curl -f -s --connect-timeout 5 --max-time 5 "${MINIO_URL}/minio/health/live" > /dev/null 2>&1 && return 0
             fi
-            
+
             # Try using mc (MinIO client itself)
             mc alias set test-health "${MINIO_URL}" "${MINIO_USER}" "${MINIO_PASSWORD}" > /dev/null 2>&1 && return 0
-            
+
             return 1
           }
 
@@ -128,11 +128,11 @@ spec:
             echo "⏳ Waiting for MinIO to be ready..."
             MAX_RETRIES=60
             RETRY=0
-            
+
             # First check DNS
             check_dns
             echo
-            
+
             until check_minio_health || [ $RETRY -eq $MAX_RETRIES ]; do
               echo "   Waiting... (attempt $((RETRY+1))/${MAX_RETRIES})"
               if [ $((RETRY % 6)) -eq 0 ] && [ $RETRY -gt 0 ]; then
@@ -364,4 +364,3 @@ spec:
 {{- end }}
 {{- end }}
 {{- end }}
-
