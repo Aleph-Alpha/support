@@ -4,169 +4,169 @@ databases:
       host: "document-index-postgresql"
       port: 5432
       username: "document-index"
-      password: "FWUoN59pZS"
+      password: ""
       database: "document-index"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "document_index"
-      password: "hT0CEV0ChzgUakepXybFOJUnC"
+      password: ""
       database: "document-index"
   - name: "inference-api"
     source:
       host: "inference-api-postgresql"
       port: 5432
       username: "inference-api"
-      password: "TVgBTpWhpB"
+      password: ""
       database: "inference-api"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "inference_api"
-      password: "uCDyifg5d54P2UyiKiRBVgNB4"
+      password: ""
       database: "inference-api"
   - name: "pharia-assistant-api"
     source:
       host: "pharia-assistant-api-postgresql"
       port: 5432
       username: "pharia-assistant-api"
-      password: "mnJFWraAg7"
+      password: ""
       database: "pharia-assistant-api"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_assistant"
-      password: "XtK9BesZ2owzNhqDFxN9lhRkQ"
+      password: ""
       database: "pharia-assistant"
   - name: "pharia-catch"
     source:
       host: "pharia-catch-postgresql"
       port: 5432
       username: "pharia_catch"
-      password: "YpuIcVxKKf"
+      password: ""
       database: "postgres"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_catch"
-      password: "C5rX2hDzAe0u66uTc3m01sndC"
+      password: ""
       database: "pharia-catch"
   - name: "pharia-chat"
     source:
       host: "pharia-chat-postgresql"
       port: 5432
       username: "pharia_chat"
-      password: "Apz9Lh0fbJ"
+      password: ""
       database: "postgres"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_chat"
-      password: "XI9PYGlrYuGee7orjgSHfWnkh"
+      password: ""
       database: "pharia-chat"
   - name: "pharia-conductor"
     source:
       host: "pharia-conductor-postgresql"
       port: 5432
       username: "pharia_conductor"
-      password: "s654uiHR4E"
+      password: ""
       database: "postgres"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_conductor"
-      password: "eLk1plSJoch10Jugq3DCwImjm"
+      password: ""
       database: "pharia-conductor"
   - name: "pharia-data"
     source:
       host: "pharia-data-api-postgresql"
       port: 5432
       username: "pharia-data"
-      password: "uujnZYXJ11"
+      password: ""
       database: "pharia-data"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_data"
-      password: "TIaH7YNPgrg57xoKLpdI6YzD7"
+      password: ""
       database: "pharia-data"
   - name: "pharia-iam-openfga"
     source:
       host: "pharia-iam-openfga-postgresql"
       port: 5432
       username: "openfga"
-      password: "zskfZSP6UlDDQOF0sIkEnunppKLPRhZYKtHyI"
+      password: ""
       database: "openfga"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "openfga"
-      password: "gQzckRRnsjzNozgbgdghHWsjk"
+      password: ""
       database: "openfga"
   - name: "pharia-iam-zitadel"
     source:
       host: "pharia-iam-zitadel-postgresql"
       port: 5432
       username: "zitadel"
-      password: "zskfZSP6UlDDQOF0sIkEnunppKLPRhZYKtHyI"
+      password: ""
       database: "zitadel"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "zitadel"
-      password: "UhHaiaPFCouX4BL6rVApkapZy"
+      password: ""
       database: "zitadel"
   - name: "pharia-oauth-gateway"
     source:
       host: "pharia-oauth-gateway-postgresql"
       port: 5432
       username: "pharia-oauth-gateway"
-      password: "VQik6TDWu0"
+      password: ""
       database: "pharia-oauth-gateway"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_oauth_gateway"
-      password: "IEBCZn7IvUFuMoWcAxdfBRPCi"
+      password: ""
       database: "pharia-oauth-gateway"
   - name: "pharia-studio-api"
     source:
       host: "pharia-studio-api-postgresql"
       port: 5432
       username: "pharia-studio"
-      password: "Ymqvt0Sjuc"
+      password: ""
       database: "pharia-studio"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_studio"
-      password: "uP85pxAKVWP9hSt2UZY6JxWAz"
+      password: ""
       database: "pharia-studio"
   - name: "pharia-os-manager"
     source:
       host: "phariaos-manager-postgresql"
       port: 5432
       username: "pharia-os-manager"
-      password: "RhyAeDK9fK"
+      password: ""
       database: "pharia-os-manager"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "pharia_os"
-      password: "79HyBvTFCDS5ykPESGkUA9aiU"
+      password: ""
       database: "pharia-os"
   - name: "pharia-mlflow"
     source:
       host: "pharia-ai-postgresql"
       port: 5432
       username: "bn_mlflow"
-      password: "admin"
+      password: ""
       database: "bitnami_mlflow"
     destination:
       host: "qs-postgresql-cluster-pharia-rw"
       port: 5432
       username: "mlflow"
-      password: "zZ3O4et5jHgma3OJstw2OKuSh"
+      password: ""
       database: "mlflow"
 
 
