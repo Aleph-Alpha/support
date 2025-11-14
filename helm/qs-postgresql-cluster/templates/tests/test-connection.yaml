@@ -39,7 +39,7 @@ spec:
           wait_for_service() {
             local host=$1
             local description=$2
-            
+
             echo "⏳ Waiting for $description to be ready..."
             MAX_RETRIES=30
             RETRY=0
@@ -65,13 +65,13 @@ spec:
             local password=$4
             local tests_passed=0
             local tests_failed=0
-            
+
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Connection: $connection_type"
             echo "  Host: $host"
             echo "  User: $user"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
+
             # Test 1: Basic connectivity
             echo -n "  Test 1: Basic connectivity... "
             if PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -c "SELECT 1;" > /dev/null 2>&1; then
@@ -103,10 +103,10 @@ spec:
               echo "❌ FAIL"
               tests_failed=$((tests_failed + 1))
             fi
-            
+
             echo "  Summary: $tests_passed passed, $tests_failed failed"
             echo
-            
+
             return $tests_failed
           }
 
@@ -115,7 +115,7 @@ spec:
             local role=$1
             local cluster_host="{{ .Values.clusterPharia.fullnameOverride }}-rw"
             local default_pooler="{{ .Values.clusterPharia.config.defaultPooler | default "" }}"
-            
+
             # Check for specific mapping first
             {{- if $.Values.clusterPharia.config }}
             {{- if $.Values.clusterPharia.config.rolePoolerMappings }}
@@ -131,7 +131,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
-            
+
             # No specific mapping, check default pooler
             if [ -n "$default_pooler" ] && [ "$default_pooler" != "null" ]; then
               echo "{{ $.Values.clusterPharia.fullnameOverride }}-pooler-$default_pooler"
@@ -171,20 +171,20 @@ spec:
           USER_NAME="{{ .name }}"
           USER_PASSWORD=$(cat /secrets/{{ .name }}/password)
           SECRET_HOST=$(cat /secrets/{{ .name }}/host)
-          
+
           # Test 0: Verify secret configuration
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  Test 0: Secret Configuration Validation"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
+
           EXPECTED_HOST=$(get_expected_host_pharia "{{ .name }}")
           echo "  Expected host: $EXPECTED_HOST"
           echo "  Secret host:   $SECRET_HOST"
-          
+
           if [ "$SECRET_HOST" = "$EXPECTED_HOST" ]; then
             echo "  ✅ PASS - Secret contains correct host based on config"
             SECRET_CONFIG_TESTS=$((SECRET_CONFIG_TESTS + 1))
-            
+
             # Determine connection type for display
             if [[ "$SECRET_HOST" == *"-pooler-"* ]]; then
               {{- if and ($.Values.clusterPharia.config) ($.Values.clusterPharia.config.rolePoolerMappings) }}
@@ -204,7 +204,7 @@ spec:
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
           echo
-          
+
           # Test connection using the configured endpoint from secret
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
           if run_tests "$SECRET_HOST" "Configured Endpoint (from secret)" "$USER_NAME" "$USER_PASSWORD"; then
@@ -372,7 +372,7 @@ spec:
           wait_for_service() {
             local host=$1
             local description=$2
-            
+
             echo "⏳ Waiting for $description to be ready..."
             MAX_RETRIES=30
             RETRY=0
@@ -398,13 +398,13 @@ spec:
             local password=$4
             local tests_passed=0
             local tests_failed=0
-            
+
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Connection: $connection_type"
             echo "  Host: $host"
             echo "  User: $user"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            
+
             # Test 1: Basic connectivity
             echo -n "  Test 1: Basic connectivity... "
             if PGPASSWORD="$password" psql -h "$host" -U "$user" -d postgres -c "SELECT 1;" > /dev/null 2>&1; then
@@ -436,10 +436,10 @@ spec:
               echo "❌ FAIL"
               tests_failed=$((tests_failed + 1))
             fi
-            
+
             echo "  Summary: $tests_passed passed, $tests_failed failed"
             echo
-            
+
             return $tests_failed
           }
 
@@ -448,7 +448,7 @@ spec:
             local role=$1
             local cluster_host="{{ .Values.clusterTemporal.fullnameOverride }}-rw"
             local default_pooler="{{ .Values.clusterTemporal.config.defaultPooler | default "" }}"
-            
+
             # Check for specific mapping first
             {{- if $.Values.clusterTemporal.config }}
             {{- if $.Values.clusterTemporal.config.rolePoolerMappings }}
@@ -464,7 +464,7 @@ spec:
             {{- end }}
             {{- end }}
             {{- end }}
-            
+
             # No specific mapping, check default pooler
             if [ -n "$default_pooler" ] && [ "$default_pooler" != "null" ]; then
               echo "{{ $.Values.clusterTemporal.fullnameOverride }}-pooler-$default_pooler"
@@ -504,20 +504,20 @@ spec:
           USER_NAME="{{ .name }}"
           USER_PASSWORD=$(cat /secrets/{{ .name }}/password)
           SECRET_HOST=$(cat /secrets/{{ .name }}/host)
-          
+
           # Test 0: Verify secret configuration
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "  Test 0: Secret Configuration Validation"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          
+
           EXPECTED_HOST=$(get_expected_host_temporal "{{ .name }}")
           echo "  Expected host: $EXPECTED_HOST"
           echo "  Secret host:   $SECRET_HOST"
-          
+
           if [ "$SECRET_HOST" = "$EXPECTED_HOST" ]; then
             echo "  ✅ PASS - Secret contains correct host based on config"
             SECRET_CONFIG_TESTS=$((SECRET_CONFIG_TESTS + 1))
-            
+
             # Determine connection type for display
             if [[ "$SECRET_HOST" == *"-pooler-"* ]]; then
               {{- if and ($.Values.clusterTemporal.config) ($.Values.clusterTemporal.config.rolePoolerMappings) }}
@@ -537,7 +537,7 @@ spec:
             FAILED_TESTS=$((FAILED_TESTS + 1))
           fi
           echo
-          
+
           # Test connection using the configured endpoint from secret
           TOTAL_CONNECTIONS=$((TOTAL_CONNECTIONS + 1))
           if run_tests "$SECRET_HOST" "Configured Endpoint (from secret)" "$USER_NAME" "$USER_PASSWORD"; then
@@ -664,4 +664,3 @@ spec:
     {{- end }}
     {{- end }}
 {{- end }}
-

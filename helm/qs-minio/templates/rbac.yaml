@@ -37,4 +37,3 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "qs-minio.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
-

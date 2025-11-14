@@ -65,7 +65,7 @@ spec:
             export PGPASSWORD
             export PGDATABASE="{{ .name }}"
             export PGUSER="{{ .owner }}"
-            
+
             # Determine connection type for display
             if [[ "$PGHOST" == *"-pooler-"* ]]; then
               if [[ "$PGHOST" == *"-pooler-transaction"* ]]; then
@@ -78,7 +78,7 @@ spec:
             else
               CONNECTION_TYPE="Direct Cluster"
             fi
-            
+
             echo "  Connection: $CONNECTION_TYPE"
             echo "  Host: $PGHOST"
             echo

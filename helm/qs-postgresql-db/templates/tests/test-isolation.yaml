@@ -112,7 +112,7 @@ spec:
 
           {{- $firstDb := index $databases 0 }}
           {{- $secondDb := index $databases 1 }}
-          
+
           # Test 1: User from first database trying to access second database
           echo "────────────────────────────────────────────────────────────────"
           echo "Test 1: Cross-Database Access Prevention"
@@ -125,7 +125,7 @@ spec:
 
           echo -n "  Attempting connection... "
           OUTPUT=$(psql -h "$PGHOST" -U "{{ $firstDb.owner }}" -d "{{ $secondDb.name }}" -c "SELECT 1;" 2>&1 || true)
-          
+
           if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
             echo "✅ PASS: Access correctly denied"
             echo "   $(echo "$OUTPUT" | grep -E 'FATAL|ERROR' | head -1)"
@@ -167,7 +167,7 @@ spec:
 
           echo -n "  Attempting connection... "
           OUTPUT=$(psql -h "$PGHOST" -U "{{ $secondDb.owner }}" -d "{{ $firstDb.name }}" -c "SELECT 1;" 2>&1 || true)
-          
+
           if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
             echo "✅ PASS: Access correctly denied"
             echo "   $(echo "$OUTPUT" | grep -E 'FATAL|ERROR' | head -1)"
@@ -205,12 +205,12 @@ spec:
             echo "Test {{ add $idx 3 }}: Additional Cross-Database Check"
             echo "────────────────────────────────────────────────────────────────"
             echo "User: {{ $firstDb.owner }} → {{ $db.name }}"
-            
+
             TEST_DB_NAME="{{ $db.name }}"
 
             export PGPASSWORD="$FIRST_PASSWORD"
             OUTPUT=$(psql -h "$PGHOST" -U "{{ $firstDb.owner }}" -d "$TEST_DB_NAME" -c "SELECT 1;" 2>&1 || true)
-            
+
             if echo "$OUTPUT" | grep -qE "FATAL|ERROR|permission denied"; then
               echo "  ✅ PASS: Cross-access denied"
               PASSED_TESTS=$((PASSED_TESTS + 1))
@@ -267,4 +267,3 @@ spec:
     {{- end }}
 {{- end }}
 {{- end }}
-

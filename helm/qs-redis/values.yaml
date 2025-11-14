@@ -38,6 +38,11 @@ jobConfig:
   # -- Fail on error - if false, job continues even if some secrets fail
   failOnError: true
 
+# Configuration for secret generation job
+secretGenerationJob:
+  # -- Enable secret generation job (true = run job, false = skip job)
+  enabled: true
+
 # Configuration for Helm tests
 tests:
   # -- Redis image to use for connection tests
