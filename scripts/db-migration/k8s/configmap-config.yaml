@@ -1,0 +1,224 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-migration-config
+  namespace: pharia-ai
+  labels:
+    app: db-migration
+    component: config
+data:
+  db_config.yaml: |
+    databases:
+      - name: "document-index"
+        source:
+          host: "document-index-postgresql"
+          port: 5432
+          username: "document-index"
+          password: ""
+          database: "document-index"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "document_index"
+          password: ""
+          database: "document-index"
+      - name: "inference-api"
+        source:
+          host: "inference-api-postgresql"
+          port: 5432
+          username: "inference-api"
+          password: ""
+          database: "inference-api"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "inference_api"
+          password: ""
+          database: "inference-api"
+      - name: "pharia-assistant-api"
+        source:
+          host: "pharia-assistant-api-postgresql"
+          port: 5432
+          username: "pharia-assistant-api"
+          password: ""
+          database: "pharia-assistant-api"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_assistant"
+          password: ""
+          database: "pharia-assistant"
+      - name: "pharia-catch"
+        source:
+          host: "pharia-catch-postgresql"
+          port: 5432
+          username: "pharia_catch"
+          password: ""
+          database: "postgres"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_catch"
+          password: ""
+          database: "pharia-catch"
+      - name: "pharia-chat"
+        source:
+          host: "pharia-chat-postgresql"
+          port: 5432
+          username: "pharia_chat"
+          password: ""
+          database: "postgres"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_chat"
+          password: ""
+          database: "pharia-chat"
+      - name: "pharia-conductor"
+        source:
+          host: "pharia-conductor-postgresql"
+          port: 5432
+          username: "pharia_conductor"
+          password: ""
+          database: "postgres"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_conductor"
+          password: ""
+          database: "pharia-conductor"
+      - name: "pharia-data"
+        source:
+          host: "pharia-data-api-postgresql"
+          port: 5432
+          username: "pharia-data"
+          password: ""
+          database: "pharia-data"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_data"
+          password: ""
+          database: "pharia-data"
+      - name: "pharia-iam-openfga"
+        source:
+          host: "pharia-iam-openfga-postgresql"
+          port: 5432
+          username: "openfga"
+          password: ""
+          database: "openfga"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "openfga"
+          password: ""
+          database: "openfga"
+      - name: "pharia-iam-zitadel"
+        source:
+          host: "pharia-iam-zitadel-postgresql"
+          port: 5432
+          username: "zitadel"
+          password: ""
+          database: "zitadel"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "zitadel"
+          password: ""
+          database: "zitadel"
+      - name: "pharia-oauth-gateway"
+        source:
+          host: "pharia-oauth-gateway-postgresql"
+          port: 5432
+          username: "pharia-oauth-gateway"
+          password: ""
+          database: "pharia-oauth-gateway"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_oauth_gateway"
+          password: ""
+          database: "pharia-oauth-gateway"
+      - name: "pharia-studio-api"
+        source:
+          host: "pharia-studio-api-postgresql"
+          port: 5432
+          username: "pharia-studio"
+          password: ""
+          database: "pharia-studio"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_studio"
+          password: ""
+          database: "pharia-studio"
+      - name: "pharia-os-manager"
+        source:
+          host: "phariaos-manager-postgresql"
+          port: 5432
+          username: "pharia-os-manager"
+          password: ""
+          database: "pharia-os-manager"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "pharia_os"
+          password: ""
+          database: "pharia-os"
+      - name: "pharia-mlflow"
+        source:
+          host: "pharia-ai-postgresql"
+          port: 5432
+          username: "bn_mlflow"
+          password: ""
+          database: "bitnami_mlflow"
+        destination:
+          host: "qs-postgresql-cluster-pharia-rw"
+          port: 5432
+          username: "mlflow"
+          password: ""
+          database: "mlflow"
+
+
+    # Production-grade configuration for PostgreSQL
+    config:
+      # Directory to store dump files
+      dump_directory: "./dumps"
+
+      # Log file location
+      log_file: "./migration.log"
+
+      # Timestamp format for backup files
+      timestamp_format: "%Y%m%d_%H%M%S"
+
+      # PostgreSQL specific options
+      postgresql:
+        # Production-grade dump options
+        dump_options:
+          - "no-owner"
+          - "format=plain"
+          - "verbose"
+        required_version: "17"
+
+      timeouts:
+        restore: 3600
+        dump: 3600
+
+      # Retry configuration for production
+      retry:
+        max_attempts: 5
+        delay_seconds: 10
+
+      # Security options
+      security:
+        hide_passwords: true
+        backup_config: true
+
+      # Performance settings
+      performance:
+        # Enable compression for dumps
+        compress_dumps: true
+        # Verify checksums after operations
+        verify_checksums: true
+        # Clean up old dumps (keep last N dumps)
+        cleanup_old_dumps: 5

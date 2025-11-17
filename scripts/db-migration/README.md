@@ -18,7 +18,62 @@ Automate backup and restore of multiple PostgreSQL databases using a YAML config
 
 ## Quick Start
 
-### 1. Prepare Configuration
+### Option 1: Kubernetes Job (Recommended)
+
+This is the easiest and most automated way to run the migration.
+
+#### 1. Update Configuration
+Edit the database passwords in the ConfigMap:
+```sh
+# Edit k8s/configmap-config.yaml and fill in the password fields
+vim scripts/db-migration/k8s/configmap-config.yaml
+```
+
+Update the `password: ""` fields with actual credentials for each database.
+
+#### 2. Deploy the Job
+Apply the Kubernetes manifests:
+```sh
+kubectl apply -k scripts/db-migration/k8s/
+```
+
+Or apply them individually:
+```sh
+kubectl apply -f scripts/db-migration/k8s/configmap-script.yaml
+kubectl apply -f scripts/db-migration/k8s/configmap-config.yaml
+kubectl apply -f scripts/db-migration/k8s/job.yaml
+```
+
+#### 3. Monitor the Job
+Watch the job progress:
+```sh
+# Check job status
+kubectl get job db-migration -n pharia-ai
+
+# View logs
+kubectl logs -f job/db-migration -n pharia-ai
+
+# Get detailed job info
+kubectl describe job db-migration -n pharia-ai
+```
+
+#### 4. Cleanup
+After successful migration:
+```sh
+# Delete the job (will be auto-deleted after 24 hours)
+kubectl delete job db-migration -n pharia-ai
+
+# Delete the ConfigMaps if no longer needed
+kubectl delete configmap db-migration-script db-migration-config -n pharia-ai
+```
+
+---
+
+### Option 2: Manual Pod Execution
+
+If you prefer manual control or need to debug:
+
+#### 1. Prepare Configuration
 Copy the example config and fill in your credentials:
 ```sh
 cp example.db_config.yaml db_config.yaml
@@ -65,28 +120,27 @@ config:
     cleanup_old_dumps: 5
 ```
 
-### 2. Launch PostgreSQL Pod
-We recommend launching a PostgreSQL pod in the `pharia-ai` namespace:
+#### 2. Launch PostgreSQL Pod
+Launch a PostgreSQL pod in the `pharia-ai` namespace:
 ```sh
-kubectl run psql17 --rm -it --image=postgres:17 --command -- bash
+kubectl run psql17 --rm -it --image=postgres:17 --namespace=pharia-ai --command -- bash
 ```
 
-### 3. Install Tools in Pod
-Inside the pod, install wget and yq:
+#### 3. Install Tools in Pod
+Inside the pod, install yq:
 ```sh
-apt update && apt install wget -y
-wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+curl -L "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -o /usr/bin/yq
 chmod +x /usr/bin/yq
 ```
 
-### 4. Copy Script & Config to Pod
+#### 4. Copy Script & Config to Pod
 Copy the migration script and config file to the pod **from a different terminal** (not inside the pod):
 ```sh
-kubectl cp scripts/db-migration/database_migrator.sh psql17:/tmp/database_migrator.sh
-kubectl cp scripts/db-migration/db_config.yaml psql17:/tmp/db_config.yaml
+kubectl cp scripts/db-migration/database_migrator.sh pharia-ai/psql17:/tmp/database_migrator.sh
+kubectl cp scripts/db-migration/db_config.yaml pharia-ai/psql17:/tmp/db_config.yaml
 ```
 
-### 5. Run Migration
+#### 5. Run Migration
 In the pod, run:
 ```sh
 cd /tmp
@@ -94,11 +148,8 @@ chmod +x database_migrator.sh
 ./database_migrator.sh
 ```
 
-### 6. Cleanup
-After migration is complete, delete the `psql17` pod:
-```sh
-kubectl delete pod psql17
-```
+#### 6. Cleanup
+After migration is complete, exit the pod (it will auto-delete with `--rm` flag)
 
 ---
 
