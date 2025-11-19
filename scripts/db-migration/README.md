@@ -1,196 +1,257 @@
-
 # PostgreSQL Multi-Database Migration Utility
 
 Automate backup and restore of multiple PostgreSQL databases using a YAML configuration. This utility is designed for Kubernetes environments and supports advanced features for reliability and security.
 
----
-
 ## Features
+
 - Backup and restore multiple databases in one run
-- YAML config for flexible source/destination mapping
+- YAML configuration for flexible source/destination mapping
 - Comprehensive logging and error handling
+- Pre-flight permission checks
 - Dry-run mode for safe testing
 - Colored output for clarity
 - Retry logic and version validation
 - Security options (password hiding, config backup)
-
----
+- Automatic cleanup and retention policies
 
 ## Quick Start
 
-### Option 1: Kubernetes Job (Recommended)
+### 1. Update Configuration
 
-This is the easiest and most automated way to run the migration.
-
-#### 1. Update Configuration
 Edit the database passwords in the ConfigMap:
+
 ```sh
-# Edit k8s/configmap-config.yaml and fill in the password fields
-vim scripts/db-migration/k8s/configmap-config.yaml
+vim k8s/configmap-config.yaml
 ```
 
-Update the `password: ""` fields with actual credentials for each database.
+Update all `password: ""` fields with actual credentials for each database.
 
-#### 2. Deploy the Job
-Apply the Kubernetes manifests:
+### 2. Deploy the Job
+
+Apply the Kubernetes manifests using Kustomize:
+
 ```sh
-kubectl apply -k scripts/db-migration/k8s/
+kubectl apply -k k8s/
 ```
 
 Or apply them individually:
+
 ```sh
-kubectl apply -f scripts/db-migration/k8s/configmap-script.yaml
-kubectl apply -f scripts/db-migration/k8s/configmap-config.yaml
-kubectl apply -f scripts/db-migration/k8s/job.yaml
+kubectl apply -f k8s/configmap-script.yaml
+kubectl apply -f k8s/configmap-config.yaml
+kubectl apply -f k8s/job.yaml
 ```
 
-#### 3. Monitor the Job
+### 3. Monitor the Job
+
 Watch the job progress:
+
 ```sh
 # Check job status
 kubectl get job db-migration -n pharia-ai
 
-# View logs
+# View logs in real-time
 kubectl logs -f job/db-migration -n pharia-ai
 
 # Get detailed job info
 kubectl describe job db-migration -n pharia-ai
 ```
 
-#### 4. Cleanup
+### 4. Cleanup
+
 After successful migration:
+
 ```sh
-# Delete the job (will be auto-deleted after 24 hours)
+# Delete the job (auto-deletes after 24 hours by default)
 kubectl delete job db-migration -n pharia-ai
 
 # Delete the ConfigMaps if no longer needed
 kubectl delete configmap db-migration-script db-migration-config -n pharia-ai
 ```
 
----
+## Directory Structure
 
-### Option 2: Manual Pod Execution
-
-If you prefer manual control or need to debug:
-
-#### 1. Prepare Configuration
-Copy the example config and fill in your credentials:
-```sh
-cp example.db_config.yaml db_config.yaml
-# Edit db_config.yaml with your database credentials
+```
+db-migration/
+├── k8s/                       # Kubernetes manifests
+│   ├── configmap-config.yaml  # Database configuration (embedded)
+│   ├── configmap-script.yaml  # Migration script (embedded)
+│   ├── job.yaml               # Job definition
+│   ├── kustomization.yaml     # Kustomize config
+│   └── README.md              # Detailed k8s documentation
+└── README.md                  # This file
 ```
 
-The config file supports multiple databases and advanced options. See `example.db_config.yaml` for structure:
-```yaml
-databases:
-  - name: "mydb"
-    source:
-      host: "src-host"
-      port: 5432
-      username: "src-user"
-      password: "src-pass"
-      database: "src-db"
-    destination:
-      host: "dest-host"
-      port: 5432
-      username: "dest-user"
-      password: "dest-pass"
-      database: "dest-db"
-config:
-  dump_directory: "./dumps"
-  log_file: "./migration.log"
-  postgresql:
-    dump_options:
-      - "no-owner"
-      - "format=plain"
-      - "verbose"
-    required_version: "17"
-  timeouts:
-    restore: 3600
-    dump: 3600
-  retry:
-    max_attempts: 5
-    delay_seconds: 10
-  security:
-    hide_passwords: true
-    backup_config: true
-  performance:
-    compress_dumps: true
-    verify_checksums: true
-    cleanup_old_dumps: 5
-```
+**Note**: The migration script (`database_migrator.sh`) and configuration (`db_config.yaml`) are embedded directly in the ConfigMaps for simplified deployment.
 
-#### 2. Launch PostgreSQL Pod
-Launch a PostgreSQL pod in the `pharia-ai` namespace:
-```sh
-kubectl run psql17 --rm -it --image=postgres:17 --namespace=pharia-ai --command -- bash
-```
+## Configuration
 
-#### 3. Install Tools in Pod
-Inside the pod, install yq:
-```sh
-curl -L "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -o /usr/bin/yq
-chmod +x /usr/bin/yq
-```
+The migration is configured via `k8s/configmap-config.yaml` which supports:
 
-#### 4. Copy Script & Config to Pod
-Copy the migration script and config file to the pod **from a different terminal** (not inside the pod):
-```sh
-kubectl cp scripts/db-migration/database_migrator.sh pharia-ai/psql17:/tmp/database_migrator.sh
-kubectl cp scripts/db-migration/db_config.yaml pharia-ai/psql17:/tmp/db_config.yaml
-```
+**Database Configuration:**
+- Multiple source/destination database pairs
+- Connection parameters (host, port, username, password, database)
+- Per-database settings
 
-#### 5. Run Migration
-In the pod, run:
-```sh
-cd /tmp
-chmod +x database_migrator.sh
-./database_migrator.sh
-```
+**Migration Settings:**
+- Dump and restore timeouts
+- Retry attempts and delays
+- PostgreSQL version requirements
+- Dump options (format, compression, etc.)
 
-#### 6. Cleanup
-After migration is complete, exit the pod (it will auto-delete with `--rm` flag)
+**Security Options:**
+- Hide passwords in logs
+- Backup original config
+- Secure credential handling
 
----
-
-## Script Usage & Options
-
-```sh
-./database_migrator.sh [OPTIONS]
-
-OPTIONS:
-  -c, --config FILE       Path to YAML configuration file (default: db_config.yaml)
-  -d, --dry-run           Show what would be done without executing commands
-  -v, --verbose           Enable verbose output
-  -h, --help              Show help message
-  --version               Show version information
-```
-
----
+**Performance:**
+- Compress dumps
+- Verify checksums
+- Cleanup old dumps (retention policy)
 
 ## Prerequisites
-- PostgreSQL client tools (`psql`, `pg_dump`)
-- `yq` for YAML parsing
-- Bash shell
 
-The script checks for required tools and PostgreSQL version before running.
+The migration job uses a pre-built container image (`ghcr.io/aleph-alpha/shared-images/pharia-helper:latest`) that includes:
 
----
+- PostgreSQL 17.x client tools (`psql`, `pg_dump`)
+- `yq` YAML processor
+- `bash` shell
+
+### For Airgapped Environments
+
+See [k8s/README.md](k8s/README.md#for-airgapped-environments-without-internet-access) for instructions on:
+- Preparing the helper container image
+- Using internal container registries
+- Verification checklist
+
+## Job Configuration
+
+The Kubernetes Job is configured with:
+
+- **Timeout**: 2 hours (configurable)
+- **Retries**: 2 attempts
+- **Retention**: 24 hours after completion
+- **Resources**: Configurable CPU/memory limits
+- **Storage**: Ephemeral volumes for dumps and logs
+
+## Pre-flight Checks
+
+Before migration, the script verifies:
+
+- ✅ Required PostgreSQL client version (17.x)
+- ✅ Required tools available (`yq`, `bash`)
+- ✅ Source database permissions (CONNECT, SELECT)
+- ✅ Destination database permissions (CONNECT, CREATE)
+- ✅ Network connectivity to databases
+- ✅ Configuration validity
+
+If any check fails, the script provides clear error messages and suggested fixes.
 
 ## Troubleshooting
-- Check logs in `./logs/` for details on failures
-- Ensure all credentials and hostnames are correct in `db_config.yaml`
-- Use `--dry-run` to validate config and environment before actual migration
-- For large databases, adjust `timeouts` in config
 
----
+### Job Failed
+
+```sh
+# Get pod name
+kubectl get pods -n pharia-ai -l app=db-migration
+
+# View logs
+kubectl logs <pod-name> -n pharia-ai
+
+# View logs from previous run (if restarted)
+kubectl logs <pod-name> -n pharia-ai --previous
+```
+
+### Permission Issues
+
+If permission checks fail, grant the required privileges:
+
+**Source database (read permissions):**
+```sql
+GRANT CONNECT ON DATABASE <database_name> TO <username>;
+GRANT USAGE ON SCHEMA public TO <username>;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO <username>;
+```
+
+**Destination database (write permissions):**
+```sql
+GRANT CONNECT ON DATABASE <database_name> TO <username>;
+GRANT CREATE ON DATABASE <database_name> TO <username>;
+GRANT ALL PRIVILEGES ON SCHEMA public TO <username>;
+```
+
+### Resource/Timeout Issues
+
+For large databases, adjust settings in `k8s/job.yaml`:
+
+```yaml
+spec:
+  activeDeadlineSeconds: 14400  # 4 hours
+  template:
+    spec:
+      containers:
+      - resources:
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+```
+
+And in `k8s/configmap-config.yaml`:
+
+```yaml
+config:
+  timeouts:
+    restore: 7200  # 2 hours
+    dump: 7200     # 2 hours
+```
 
 ## Advanced Usage
-- Supports retry logic for transient failures
-- Dumps are stored in the directory specified in config
-- Old dumps can be cleaned up automatically
-- Passwords are hidden in logs if enabled
 
----
+### Dry Run Mode
 
-For more details, see comments in the script and config file.
+Test the migration without executing commands:
+
+Edit `k8s/job.yaml` command:
+
+```yaml
+command:
+- /bin/bash
+- -c
+- |
+  ./database_migrator.sh --config db_config.yaml --dry-run --verbose
+```
+
+### Selective Migration
+
+To migrate only specific databases, edit `k8s/configmap-config.yaml` and remove unwanted entries from the `databases` list.
+
+### Custom Configuration
+
+Customize the migration behavior by modifying `k8s/configmap-config.yaml`:
+
+- Adjust timeouts for large databases
+- Change dump options (compression, format, etc.)
+- Modify retry behavior
+- Update storage locations
+- Configure security settings
+
+## Documentation
+
+For detailed information, see:
+
+- [k8s/README.md](k8s/README.md) - Comprehensive Kubernetes deployment guide
+- `k8s/configmap-script.yaml` - Migration script with inline documentation
+- `k8s/configmap-config.yaml` - Configuration examples and options
+
+## Security Considerations
+
+1. **Credentials**: Consider using Kubernetes Secrets instead of ConfigMaps for sensitive data
+2. **RBAC**: Use dedicated service accounts with minimal permissions
+3. **Network Policies**: Ensure pod has network access to required databases only
+4. **Audit**: Review logs for sensitive information before sharing
+
+## References
+
+- [Kubernetes Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/)
+- [ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/17/)

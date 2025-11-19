@@ -171,14 +171,14 @@ kubectl delete configmap db-migration-script db-migration-config -n pharia-ai
 The Job is configured with:
 
 - **Timeout**: 2 hours (`activeDeadlineSeconds: 7200`)
-- **Retries**: 2 attempts (`backoffLimit: 2`)
+- **Retries**: 0 attempts (`backoffLimit: 0`) - fails fast on errors
 - **Restart Policy**: Never (`restartPolicy: Never`)
 - **Retention**: Kept for 24 hours after completion (`ttlSecondsAfterFinished: 86400`)
 - **Resources**:
   - Requests: 256Mi memory, 250m CPU
   - Limits: 1Gi memory, 1000m CPU
 - **Storage**:
-  - Dumps: 30Gi ephemeral storage
+  - Dumps: 50Gi ephemeral storage
   - Logs: 1Gi ephemeral storage
 
 ## Features
@@ -215,17 +215,16 @@ This pre-flight check prevents partial migrations and helps diagnose permission 
 
 ## Architecture
 
-### Main Container
+The Job uses a single container (`migrator`) that runs the migration script:
 
-The main container (`migrator`) runs the migration script using the `pharia-helper` image:
-
-- Uses `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest` image
-- Includes all required tools pre-installed:
+- **Image**: `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest`
+- **Pre-installed tools**:
   - PostgreSQL 17.x client tools (`psql`, `pg_dump`)
   - `yq` YAML processor
   - `bash` shell
-- Mounts script and config from ConfigMaps
-- Uses ephemeral volumes for dumps and logs
+- **Configuration**: Mounted from ConfigMaps
+- **Storage**: Ephemeral volumes for dumps and logs
+- **Execution**: Runs `database_migrator.sh` with verbose logging
 
 ## Volumes
 
@@ -401,5 +400,5 @@ You can override the configuration by updating the `configmap-config.yaml` file.
 
 - [Kubernetes Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/)
 - [ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/)
-- [Init Containers](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
+- [Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)
 - [PostgreSQL Documentation](https://www.postgresql.org/docs/17/)
