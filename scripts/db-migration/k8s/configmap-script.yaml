@@ -207,7 +207,7 @@ data:
 
         # Check PostgreSQL version
         if command -v psql >/dev/null 2>&1; then
-            local pg_version
+            local pg_version=""
             pg_version=$(psql --version 2>/dev/null | head -n1 || echo "unknown")
             log_success "Found: $pg_version"
         fi
@@ -240,7 +240,7 @@ data:
         fi
 
         # Count databases
-        local db_count
+        local db_count=""
         db_count=$(yq eval '.databases | length' "$config_file" 2>/dev/null || echo "0")
 
         if [[ "$db_count" -eq 0 ]]; then
@@ -253,7 +253,7 @@ data:
 
         # Validate each database configuration
         for ((i=0; i<db_count; i++)); do
-            local db_name
+            local db_name=""
             db_name=$(yq eval ".databases[$i].name" "$config_file" 2>/dev/null || echo "")
 
             if [[ -z "$db_name" || "$db_name" == "null" ]]; then
@@ -267,7 +267,7 @@ data:
 
                 # Check required connection fields
                 for field in "host" "port" "username" "password" "database"; do
-                    local value
+                    local value=""
                     value=$(yq eval ".databases[$i].$conn_type.$field" "$config_file" 2>/dev/null || echo "")
 
                     if [[ -z "$value" || "$value" == "null" ]]; then
@@ -288,7 +288,7 @@ data:
         log_info "Setting up environment..."
 
         # Get dump directory from config or use default
-        local config_dump_dir
+        local config_dump_dir=""
         config_dump_dir=$(yq eval '.config.dump_directory // "./dumps"' "$CONFIG_FILE" 2>/dev/null || echo "./dumps")
 
         # Convert relative paths to absolute
@@ -312,7 +312,7 @@ data:
         fi
 
         # Create log file
-        local timestamp
+        local timestamp=""
         timestamp=$(date '+%Y%m%d_%H%M%S')
         LOG_FILE="${LOG_DIR}/migration_${timestamp}.log"
 
@@ -351,7 +351,7 @@ data:
 
         log_debug "Testing $conn_type connection to $host:$port/$database"
 
-        local error_output
+        local error_output=""
         error_output=$(PGPASSWORD="$password" psql --host="$host" --port="$port" --username="$username" --dbname="$database" --command="SELECT 1;" 2>&1)
         local exit_code=$?
 
@@ -383,12 +383,12 @@ data:
         AND table_type = 'BASE TABLE';
         "
 
-        local error_output table_count
+        local error_output="" table_count=""
         table_count=$(PGPASSWORD="$password" psql --host="$host" --port="$port" --username="$username" --dbname="$database" --tuples-only --no-align --command="$check_query" 2>&1)
         local exit_code=$?
 
         if [[ $exit_code -ne 0 ]]; then
-            log_error "$db_name: Cannot query source database tables - $error_output"
+            log_error "$db_name: Cannot query source database tables - $table_count"
             return 1
         fi
 
@@ -443,12 +443,12 @@ data:
                has_database_privilege('$username', '$database', 'TEMP') as can_temp;
         "
 
-        local error_output result
+        local error_output="" result=""
         result=$(PGPASSWORD="$password" psql --host="$host" --port="$port" --username="$username" --dbname="$database" --tuples-only --no-align --command="$permission_check" 2>&1)
         local exit_code=$?
 
         if [[ $exit_code -ne 0 ]]; then
-            log_error "$db_name: Cannot verify destination database permissions - $error_output"
+            log_error "$db_name: Cannot verify destination database permissions - $result"
             return 1
         fi
 
@@ -495,11 +495,11 @@ data:
         log_info "Performing pre-flight permission checks..."
 
         local permission_errors=0
-        local db_count
+        local db_count=""
         db_count=$(yq eval '.databases | length' "$config_file" 2>/dev/null || echo "0")
 
         for ((i=0; i<db_count; i++)); do
-            local db_name
+            local db_name=""
             db_name=$(yq eval ".databases[$i].name" "$config_file" 2>/dev/null || echo "")
 
             echo -e "\n${CYAN}Checking permissions for: $db_name${NC}"
@@ -556,7 +556,7 @@ data:
         local conn_type="$3"  # "source" or "destination"
         local field="$4"
 
-        local value
+        local value=""
         value=$(yq eval ".databases[$db_index].$conn_type.$field" "$config_file" 2>/dev/null || echo "")
 
         # Expand environment variables
@@ -569,7 +569,7 @@ data:
         local db_index="$2"
         local db_name="$3"
 
-        local start_time
+        local start_time=""
         start_time=$(date +%s)
 
         log_info "Dumping PostgreSQL database: $db_name"
@@ -598,7 +598,7 @@ data:
         fi
 
         # Get dump options from config (removed --verbose to prevent output interference)
-        local dump_options
+        local dump_options=""
         dump_options=$(yq eval '.config.postgresql.dump_options // ["--no-owner", "--format=plain"]' "$config_file" 2>/dev/null | yq eval '.[] | "--" + .' | tr '\n' ' ')
 
         # Build pg_dump command
@@ -615,7 +615,7 @@ data:
         cmd_args+=("$database")
 
         # Execute pg_dump with timeout
-        local timeout
+        local timeout=""
         timeout=$(yq eval '.config.timeouts.dump // 3600' "$config_file" 2>/dev/null || echo "3600")
 
         log_debug "Executing: pg_dump [ARGS_HIDDEN] $database"
@@ -677,7 +677,7 @@ data:
             return 1
         fi
 
-        local file_size
+        local file_size=""
         file_size=$(du -h "$dump_file" | cut -f1)
         local duration=$(($(date +%s) - start_time))
 
@@ -694,7 +694,7 @@ data:
         local db_name="$3"
         local dump_file="$4"
 
-        local start_time
+        local start_time=""
         start_time=$(date +%s)
 
         log_info "Restoring PostgreSQL database: $db_name"
@@ -743,7 +743,7 @@ data:
         )
 
         # Execute psql with timeout
-        local timeout
+        local timeout=""
         timeout=$(yq eval '.config.timeouts.restore // 7200' "$config_file" 2>/dev/null || echo "7200")
 
         log_debug "Executing: psql [ARGS_HIDDEN] --file=$dump_file"
@@ -811,7 +811,7 @@ data:
         local config_file="$1"
         local db_index="$2"
 
-        local db_name
+        local db_name=""
         db_name=$(yq eval ".databases[$db_index].name" "$config_file")
 
         log_info "Processing database $((db_index + 1))/$TOTAL_DATABASES: $db_name"
@@ -867,7 +867,7 @@ data:
 
     # Print migration summary
     print_summary() {
-        local end_time
+        local end_time=""
         end_time=$(date +%s)
         local total_duration=$((end_time - START_TIME))
 
