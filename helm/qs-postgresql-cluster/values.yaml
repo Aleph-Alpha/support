@@ -59,6 +59,11 @@ tests:
 # PG Cluster for Pharia Applications
 clusterPharia:
   enabled: true
+  # -- Cluster mode of operation. Available modes:
+  # * `standalone` - default mode. Creates new or updates an existing CNPG cluster.
+  # * `replica` - Creates a replica cluster from an existing CNPG cluster. # TODO
+  # * `recovery` - Same as standalone but creates a cluster from a backup, object store or via pg_basebackup.
+  mode: standalone
   fullnameOverride: qs-postgresql-cluster-pharia
   type: postgresql
   version:
@@ -259,7 +264,138 @@ clusterPharia:
         replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
+    # For detailed configuration options, see: https://github.com/cloudnative-pg/charts/tree/main/charts/cluster
     enabled: false
+    # -- Preferred backup target: prefer-standby to avoid impacting primary
+    target: prefer-standby
+    # -- Overrides the provider specific default endpoint. Defaults to: https://s3.<region>.amazonaws.com
+    endpointURL: ""  # Leave empty if using the default S3 endpoint
+    # -- Specifies a CA bundle to validate a privately signed certificate.
+    endpointCA:
+      # -- Creates a secret with the given value if true, otherwise uses an existing secret.
+      create: false
+      name: ""
+      key: ""
+      value: ""
+    # -- Overrides the provider specific default path. Format: s3://<bucket><path>
+    # Recommended naming: Use timestamp/version to enable same-name cluster recovery
+    # Examples:
+    #   - s3://my-backups/postgresql-prod-2025-11-17/
+    #   - s3://my-backups/pharia-cluster-2025-11/
+    #   - s3://my-backups/prod-YYYY-MM-DD/
+    # When recovering, use a NEW timestamp (e.g., 2025-11-18) for post-recovery backups
+    # This allows recovery to read from old path while writing new backups to a fresh timestamped path
+    destinationPath: ""
+    # -- Provider type (only S3-compatible storage is configured)
+    provider: s3
+    s3:
+      region: ""
+      bucket: ""
+      path: "/"
+      accessKey: ""
+      secretKey: ""
+      # -- Use the role based authentication without providing explicitly the keys
+      inheritFromIAMRole: false
+    secret:
+      # -- Whether to create a secret for the backup credentials
+      create: true
+      # -- Name of the backup credentials secret
+      name: ""
+    wal:
+      # -- WAL compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
+      compression: gzip
+      # -- Whether to instruct the storage provider to encrypt WAL files. One of `` (use the storage container default), `AES256` or `aws:kms`.
+      encryption: ""
+      # -- Number of WAL files to be archived or restored in parallel.
+      maxParallel: 8
+    data:
+      # -- Data compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
+      compression: gzip
+      # -- Whether to instruct the storage provider to encrypt data files. One of `` (use the storage container default), `AES256` or `aws:kms`.
+      encryption: ""
+      # -- Number of data files to be archived or restored in parallel.
+      jobs: 2
+    scheduledBackups:
+      - name: daily-backup
+        # -- Schedule in cron format
+        schedule: "0 0 0 * * *"
+        # -- Backup owner reference
+        backupOwnerReference: self
+        # -- Backup method, can be `barmanObjectStore` (default) or `volumeSnapshot`
+        method: barmanObjectStore
+    # -- Retention policy for backups
+    retentionPolicy: "30d"
+  recovery:
+    # -- For detailed configuration options, see: https://github.com/cloudnative-pg/charts/tree/main/charts/cluster
+    ##
+    # -- Available recovery methods:
+    # * `backup` - Recovers a CNPG cluster from a CNPG backup (PITR supported) Needs to be on the same cluster in the same namespace.
+    # * `object_store` - Recovers a CNPG cluster from a barman object store (PITR supported).
+    # * `pg_basebackup` - Recovers a CNPG cluster viaa streaming replication protocol. Useful if you want to
+    #        migrate databases to CloudNativePG, even from outside Kubernetes.
+    # * `import` - Import one or more databases from an existing Postgres cluster.
+    method: object_store
+
+    ## -- Point in time recovery target. Specify one of the following:
+    pitrTarget:
+      # -- Time in RFC3339 format
+      time: ""
+    
+    ## -- Recovery target settings for controlling recovery behavior
+    # Options: pause, promote, shutdown
+    # 'promote' is recommended - promotes to read-write immediately after recovery
+    recoveryTarget: "promote"
+
+    ##
+    # -- Backup Recovery Method
+    backupName: ""  # Name of the backup to recover from. Required if method is `backup`.
+
+    ##
+    # -- The original cluster name when used in backups. Also known as serverName.
+    clusterName: "qs-postgresql-cluster-pharia"
+    # -- Name of the database used by the application. Default: `app`.
+    database: app
+    # -- Name of the owner of the database in the instance to be used by applications. Defaults to the value of the `database` key.
+    owner: ""
+    # -- Overrides the provider specific default endpoint. Defaults to: https://s3.<region>.amazonaws.com
+    # Leave empty if using the default S3 endpoint
+    endpointURL: ""
+    # -- Specifies a CA bundle to validate a privately signed certificate.
+    endpointCA:
+      # -- Creates a secret with the given value if true, otherwise uses an existing secret.
+      create: false
+      name: ""
+      key: ""
+      value: ""
+    # -- Overrides the provider specific default path. Format: s3://<bucket><path>
+    # IMPORTANT: For disaster recovery with same cluster name:
+    #   - Set this to READ from the production backup path (e.g., s3://my-backups/prod-2025-11-17/)
+    #   - Set backups.destinationPath to WRITE to a NEW timestamped path (e.g., s3://my-backups/prod-2025-11-18/)
+    # This prevents "Expected empty archive" errors during recovery while maintaining same cluster name
+    # Example recovery scenario:
+    #   1. Production backups: s3://my-backups/postgresql-prod-2025-11-17/ (original)
+    #   2. Disaster occurs on 2025-11-18, cluster deleted
+    #   3. Recovery reads FROM: s3://my-backups/postgresql-prod-2025-11-17/ (this field)
+    #   4. New backups write TO: s3://my-backups/postgresql-prod-2025-11-18/ (backups.destinationPath)
+    # Benefits: Clear timeline, allows multiple recoveries, consistent naming pattern
+    destinationPath: ""
+    # -- Provider type (only S3-compatible storage is configured)
+    provider: s3
+    s3:
+      region: ""
+      bucket: ""
+      path: "/"
+      accessKey: ""
+      secretKey: ""
+      # -- Use the role based authentication without providing explicitly the keys
+      inheritFromIAMRole: false
+    secret:
+      # -- Whether to create a secret for the backup credentials
+      create: true
+      # -- Name of the backup credentials secret
+      name: ""
+
+
   # -- Configuration for role-to-pooler mappings
   config:
     # Default pooler for roles without specific mapping
@@ -377,7 +513,138 @@ clusterTemporal:
         replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
+    # For detailed configuration options, see: https://github.com/cloudnative-pg/charts/tree/main/charts/cluster
     enabled: false
+    # -- Preferred backup target: prefer-standby to avoid impacting primary
+    target: prefer-standby
+    # -- Overrides the provider specific default endpoint. Defaults to: https://s3.<region>.amazonaws.com
+    endpointURL: ""  # Leave empty if using the default S3 endpoint
+    # -- Specifies a CA bundle to validate a privately signed certificate.
+    endpointCA:
+      # -- Creates a secret with the given value if true, otherwise uses an existing secret.
+      create: false
+      name: ""
+      key: ""
+      value: ""
+    # -- Overrides the provider specific default path. Format: s3://<bucket><path>
+    # Recommended naming: Use timestamp/version to enable same-name cluster recovery
+    # Examples:
+    #   - s3://my-backups/postgresql-temporal-2025-11-17/
+    #   - s3://my-backups/temporal-cluster-2025-11/
+    #   - s3://my-backups/temporal-YYYY-MM-DD/
+    # When recovering, use a NEW timestamp (e.g., 2025-11-18) for post-recovery backups
+    # This allows recovery to read from old path while writing new backups to a fresh timestamped path
+    destinationPath: ""
+    # -- Provider type (only S3-compatible storage is configured)
+    provider: s3
+    s3:
+      region: ""
+      bucket: ""
+      path: "/"
+      accessKey: ""
+      secretKey: ""
+      # -- Use the role based authentication without providing explicitly the keys
+      inheritFromIAMRole: false
+    secret:
+      # -- Whether to create a secret for the backup credentials
+      create: true
+      # -- Name of the backup credentials secret
+      name: ""
+    wal:
+      # -- WAL compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
+      compression: gzip
+      # -- Whether to instruct the storage provider to encrypt WAL files. One of `` (use the storage container default), `AES256` or `aws:kms`.
+      encryption: ""
+      # -- Number of WAL files to be archived or restored in parallel.
+      maxParallel: 8
+    data:
+      # -- Data compression method. One of `` (for no compression), `gzip`, `bzip2` or `snappy`.
+      compression: gzip
+      # -- Whether to instruct the storage provider to encrypt data files. One of `` (use the storage container default), `AES256` or `aws:kms`.
+      encryption: ""
+      # -- Number of data files to be archived or restored in parallel.
+      jobs: 2
+    scheduledBackups:
+      - name: daily-backup
+        # -- Schedule in cron format
+        schedule: "0 0 0 * * *"
+        # -- Backup owner reference
+        backupOwnerReference: self
+        # -- Backup method, can be `barmanObjectStore` (default) or `volumeSnapshot`
+        method: barmanObjectStore
+    # -- Retention policy for backups
+    retentionPolicy: "30d"
+  recovery:
+    # -- For detailed configuration options, see: https://github.com/cloudnative-pg/charts/tree/main/charts/cluster
+    ##
+    # -- Available recovery methods:
+    # * `backup` - Recovers a CNPG cluster from a CNPG backup (PITR supported) Needs to be on the same cluster in the same namespace.
+    # * `object_store` - Recovers a CNPG cluster from a barman object store (PITR supported).
+    # * `pg_basebackup` - Recovers a CNPG cluster viaa streaming replication protocol. Useful if you want to
+    #        migrate databases to CloudNativePG, even from outside Kubernetes.
+    # * `import` - Import one or more databases from an existing Postgres cluster.
+    method: object_store
+
+    ## -- Point in time recovery target. Specify one of the following:
+    pitrTarget:
+      # -- Time in RFC3339 format
+      time: ""
+    
+    ## -- Recovery target settings for controlling recovery behavior
+    # Options: pause, promote, shutdown
+    # 'promote' is recommended - promotes to read-write immediately after recovery
+    recoveryTarget: "promote"
+
+    ##
+    # -- Backup Recovery Method
+    backupName: ""  # Name of the backup to recover from. Required if method is `backup`.
+
+    ##
+    # -- The original cluster name when used in backups. Also known as serverName.
+    clusterName: "qs-postgresql-cluster-temporal"
+    # -- Name of the database used by the application. Default: `app`.
+    database: app
+    # -- Name of the owner of the database in the instance to be used by applications. Defaults to the value of the `database` key.
+    owner: ""
+    # -- Overrides the provider specific default endpoint. Defaults to: https://s3.<region>.amazonaws.com
+    # Leave empty if using the default S3 endpoint
+    endpointURL: ""
+    # -- Specifies a CA bundle to validate a privately signed certificate.
+    endpointCA:
+      # -- Creates a secret with the given value if true, otherwise uses an existing secret.
+      create: false
+      name: ""
+      key: ""
+      value: ""
+    # -- Overrides the provider specific default path. Format: s3://<bucket><path>
+    # IMPORTANT: For disaster recovery with same cluster name:
+    #   - Set this to READ from the production backup path (e.g., s3://my-backups/temporal-2025-11-17/)
+    #   - Set backups.destinationPath to WRITE to a NEW timestamped path (e.g., s3://my-backups/temporal-2025-11-18/)
+    # This prevents "Expected empty archive" errors during recovery while maintaining same cluster name
+    # Example recovery scenario:
+    #   1. Production backups: s3://my-backups/postgresql-temporal-2025-11-17/ (original)
+    #   2. Disaster occurs on 2025-11-18, cluster deleted
+    #   3. Recovery reads FROM: s3://my-backups/postgresql-temporal-2025-11-17/ (this field)
+    #   4. New backups write TO: s3://my-backups/postgresql-temporal-2025-11-18/ (backups.destinationPath)
+    # Benefits: Clear timeline, allows multiple recoveries, consistent naming pattern
+    destinationPath: ""
+    # -- Provider type (only S3-compatible storage is configured)
+    provider: s3
+    s3:
+      region: ""
+      bucket: ""
+      path: "/"
+      accessKey: ""
+      secretKey: ""
+      # -- Use the role based authentication without providing explicitly the keys
+      inheritFromIAMRole: false
+    secret:
+      # -- Whether to create a secret for the backup credentials
+      create: true
+      # -- Name of the backup credentials secret
+      name: ""
+
+
   # -- Configuration for role-to-pooler mappings
   config:
     # Default pooler for roles without specific mapping

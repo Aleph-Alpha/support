@@ -1560,7 +1560,9 @@ process_image() {
 
     local image_dir="$OUTPUT_DIR/$image_safe_name"
     if ! mkdir -p "$image_dir"; then
-        log_error "Failed to create directory: $image_dir"
+        local error_msg="Failed to create directory: $image_dir"
+        log_error "$error_msg"
+        echo "$error_msg" > "$image_dir/error.txt" 2>/dev/null || true
         return 1
     fi
 
@@ -1568,14 +1570,29 @@ process_image() {
 
     # Detect attestation type
     local attestation_type
+    local detect_error_file
+    detect_error_file=$(mktemp 2>/dev/null || mktemp -t detect-error)
     # Disable exit on error for this command substitution
     set +e
-    attestation_type=$(detect_attestation_type "$image")
+    attestation_type=$(detect_attestation_type "$image" 2>"$detect_error_file")
     local detect_exit_code=$?
+    local detect_error_output=""
+    if [[ -f "$detect_error_file" ]]; then
+        detect_error_output=$(cat "$detect_error_file" 2>/dev/null || echo "")
+        rm -f "$detect_error_file"
+    fi
     set -e
 
     if [[ $detect_exit_code -ne 0 ]]; then
-        log_error "Failed to detect attestation type for: $image (exit code: $detect_exit_code)"
+        local error_msg="Failed to detect attestation type for: $image (exit code: $detect_exit_code)"
+        if [[ -n "$detect_error_output" ]]; then
+            error_msg="$error_msg
+
+Error details:
+$detect_error_output"
+        fi
+        log_error "$error_msg"
+        echo "$error_msg" > "$image_dir/error.txt" 2>/dev/null || true
         return 1
     fi
     log_verbose "Detected attestation type: $attestation_type"
@@ -1593,11 +1610,27 @@ process_image() {
 
             # Download SBOM
             sbom_file="$image_dir/sbom.json"
-            if download_sbom "$image" "$sbom_file"; then
+            local sbom_error_file
+            sbom_error_file=$(mktemp 2>/dev/null || mktemp -t sbom-error)
+            if download_sbom "$image" "$sbom_file" 2>"$sbom_error_file"; then
                 sbom_downloaded=true
                 log_verbose "Downloaded SBOM for: $image"
+                rm -f "$sbom_error_file"
             else
-                log_error "Failed to download SBOM for: $image"
+                local sbom_error_output=""
+                if [[ -f "$sbom_error_file" ]]; then
+                    sbom_error_output=$(cat "$sbom_error_file" 2>/dev/null || echo "")
+                fi
+                rm -f "$sbom_error_file"
+                local error_msg="Failed to download SBOM for: $image"
+                if [[ -n "$sbom_error_output" ]]; then
+                    error_msg="$error_msg
+
+Error details:
+$sbom_error_output"
+                fi
+                log_error "$error_msg"
+                echo "$error_msg" > "$image_dir/error.txt" 2>/dev/null || true
                 return 1
             fi
 
@@ -1617,11 +1650,27 @@ process_image() {
 
             # Download SBOM
             sbom_file="$image_dir/sbom.json"
-            if download_sbom "$image" "$sbom_file"; then
+            local sbom_error_file
+            sbom_error_file=$(mktemp 2>/dev/null || mktemp -t sbom-error)
+            if download_sbom "$image" "$sbom_file" 2>"$sbom_error_file"; then
                 sbom_downloaded=true
                 log_verbose "Downloaded SBOM for: $image"
+                rm -f "$sbom_error_file"
             else
-                log_error "Failed to download SBOM for: $image"
+                local sbom_error_output=""
+                if [[ -f "$sbom_error_file" ]]; then
+                    sbom_error_output=$(cat "$sbom_error_file" 2>/dev/null || echo "")
+                fi
+                rm -f "$sbom_error_file"
+                local error_msg="Failed to download SBOM for: $image"
+                if [[ -n "$sbom_error_output" ]]; then
+                    error_msg="$error_msg
+
+Error details:
+$sbom_error_output"
+                fi
+                log_error "$error_msg"
+                echo "$error_msg" > "$image_dir/error.txt" 2>/dev/null || true
                 return 1
             fi
             ;;
@@ -1650,13 +1699,17 @@ process_image() {
 
     # Verify we have an SBOM to scan
     if [[ ! -f "$sbom_file" ]]; then
-        log_error "No SBOM file available for scanning: $image"
+        local error_msg="No SBOM file available for scanning: $image"
+        log_error "$error_msg"
+        echo "$error_msg" > "$image_dir/error.txt" 2>/dev/null || true
         return 1
     fi
 
     # Run Trivy scan on SBOM
     local scan_output="$image_dir/trivy-report.$FORMAT"
-    if run_trivy_scan "$sbom_file" "$triage_file" "$scan_output"; then
+    local trivy_error_file
+    trivy_error_file=$(mktemp 2>/dev/null || mktemp -t trivy-error)
+    if run_trivy_scan "$sbom_file" "$triage_file" "$scan_output" 2>"$trivy_error_file"; then
         # Create metadata file to indicate successful scan
         cat > "$image_dir/metadata.json" <<EOF
 {
@@ -1673,8 +1726,23 @@ EOF
         # Analyze CVEs for summary table
         analyze_cves "$image" "$image_dir" "$triage_file"
         log_verbose "Scan completed for: $image"
+        rm -f "$trivy_error_file"
     else
-        log_verbose "Scan failed for: $image"
+        local trivy_error_output=""
+        if [[ -f "$trivy_error_file" ]]; then
+            trivy_error_output=$(cat "$trivy_error_file" 2>/dev/null || echo "")
+        fi
+        rm -f "$trivy_error_file"
+        local error_msg="Trivy scan failed for: $image"
+        if [[ -n "$trivy_error_output" ]]; then
+            error_msg="$error_msg
+
+Error details:
+$trivy_error_output"
+        fi
+        log_verbose "$error_msg"
+        echo "$error_msg" > "$image_dir/error.txt" 2>/dev/null || true
+        return 1
     fi
 
     # Re-enable exit on error
@@ -1882,6 +1950,10 @@ collect_scan_results() {
                 log_verbose "⏭️  Not processed (test-flow): $(basename "$image")"
             else
                 # In normal mode, if directory doesn't exist, it's a failure
+                # Try to create the directory and save an error message
+                if mkdir -p "$image_dir" 2>/dev/null; then
+                    echo "Image processing failed before any output was generated. This usually indicates a critical error during initialization." > "$image_dir/error.txt" 2>/dev/null || true
+                fi
                 FAILED_SCANS+=("$image")
                 log_verbose "❌ Failed (no output): $(basename "$image")"
             fi
@@ -1899,7 +1971,12 @@ collect_scan_results() {
         else
             # Only mark as failed if directory exists (image was actually attempted)
             FAILED_SCANS+=("$image")
-            log_verbose "❌ Failed: $(basename "$image")"
+            local error_file="$image_dir/error.txt"
+            if [[ -f "$error_file" ]]; then
+                log_verbose "❌ Failed: $(basename "$image") (error details in $error_file)"
+            else
+                log_verbose "❌ Failed: $(basename "$image") (no error details available)"
+            fi
         fi
     done < "$TEMP_DIR/images_to_scan.txt"
 
@@ -1968,10 +2045,28 @@ fi)
   "failed_scans": [
 $(if [[ ${#FAILED_SCANS[@]} -gt 0 ]]; then
     for i in "${!FAILED_SCANS[@]}"; do
+        local failed_image="${FAILED_SCANS[$i]}"
+        local image_safe_name
+        image_safe_name=$(echo "$failed_image" | sed 's|[^A-Za-z0-9._-]|_|g')
+        local image_dir="$OUTPUT_DIR/$image_safe_name"
+        local error_file="$image_dir/error.txt"
+        local error_details=""
+        if [[ -f "$error_file" ]]; then
+            # Read error file and escape JSON special characters
+            error_details=$(cat "$error_file" 2>/dev/null | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g' || echo "")
+        fi
         if [[ $i -eq $((${#FAILED_SCANS[@]} - 1)) ]]; then
-            printf '    "%s"\n' "${FAILED_SCANS[$i]}"
+            if [[ -n "$error_details" ]]; then
+                printf '    {\n      "image": "%s",\n      "error": "%s"\n    }\n' "$failed_image" "$error_details"
+            else
+                printf '    {\n      "image": "%s",\n      "error": "No error details available"\n    }\n' "$failed_image"
+            fi
         else
-            printf '    "%s",\n' "${FAILED_SCANS[$i]}"
+            if [[ -n "$error_details" ]]; then
+                printf '    {\n      "image": "%s",\n      "error": "%s"\n    },\n' "$failed_image" "$error_details"
+            else
+                printf '    {\n      "image": "%s",\n      "error": "No error details available"\n    },\n' "$failed_image"
+            fi
         fi
     done
 fi)

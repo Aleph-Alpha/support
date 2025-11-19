@@ -712,6 +712,295 @@ helm test qs-postgresql-db -n pharia-ai
 ✅ All tests passed successfully!
 ```
 
+### Backup and Disaster Recovery
+
+The PostgreSQL clusters support automated backups to S3-compatible storage (AWS S3, MinIO, etc.) using CloudNativePG's built-in backup capabilities. Both `clusterPharia` and `clusterTemporal` have identical backup configuration structures.
+
+#### Backup Configuration
+
+Backups are **disabled by default** and must be explicitly enabled and configured. The backup configuration is located in `qs-postgresql-cluster/values.yaml`:
+
+- **`clusterPharia.backups`**: Backup configuration for Pharia applications cluster
+- **`clusterTemporal.backups`**: Backup configuration for Temporal workflows cluster
+
+**Key Backup Features:**
+- **Continuous WAL Archiving**: Write-Ahead Log files are continuously archived to S3
+- **Scheduled Base Backups**: Full database backups on a configurable schedule
+- **Point-in-Time Recovery (PITR)**: Restore to any point in time using base backups + WAL files
+- **Compression**: WAL and data files are compressed (gzip) to save storage space
+- **Retention Policy**: Automatic cleanup of old backups based on configured retention period
+
+#### Enabling Backups
+
+To enable backups for a PostgreSQL cluster, update the `values.yaml` file:
+
+```yaml
+# Example for clusterPharia (same structure for clusterTemporal)
+clusterPharia:
+  backups:
+    enabled: true  # Enable backups
+    target: prefer-standby  # Run backups on standby replicas to avoid impacting primary
+    
+    # S3 endpoint (leave empty for AWS S3, set for MinIO or other S3-compatible storage)
+    endpointURL: "https://s3.eu-central-1.amazonaws.com"  # or "http://minio.example.com:9000"
+    
+    # Backup destination path with timestamp for versioning
+    destinationPath: "s3://my-backups/postgresql-pharia-2025-11-17/"
+    
+    # S3 provider configuration
+    provider: s3
+    s3:
+      region: "eu-central-1"
+      bucket: "my-backups"
+      path: "/"
+      accessKey: "YOUR_ACCESS_KEY"
+      secretKey: "YOUR_SECRET_KEY"
+      # OR use IAM role-based authentication (recommended for AWS):
+      inheritFromIAMRole: false  # Set to true to use IAM roles instead of keys
+    
+    # WAL archiving configuration
+    wal:
+      compression: gzip
+      maxParallel: 8  # Number of parallel WAL archive/restore operations
+    
+    # Base backup configuration
+    data:
+      compression: gzip
+      jobs: 2  # Number of parallel backup jobs
+    
+    # Scheduled backup configuration
+    scheduledBackups:
+      - name: daily-backup
+        schedule: "0 0 2 * * *"  # Daily at 2:00 AM (cron format)
+        backupOwnerReference: self
+        method: barmanObjectStore
+    
+    # Backup retention policy
+    retentionPolicy: "30d"  # Keep backups for 30 days
+```
+
+**Important Configuration Notes:**
+
+> **💡 Backup Path Naming Convention:**
+> Use timestamp-based paths (e.g., `postgresql-pharia-2025-11-17/`) to enable same-name cluster recovery. This allows the recovery process to read from the old backup path while writing new backups to a fresh timestamped path, preventing WAL archive conflicts.
+
+> **🔒 Security Best Practice:**
+> For production, use IAM role-based authentication (`inheritFromIAMRole: true`) instead of hardcoded access keys when running on AWS. For other environments, consider using Kubernetes secrets to manage credentials.
+
+After updating the configuration, apply the changes:
+
+```bash
+# Upgrade the PostgreSQL cluster with backup configuration
+helm upgrade qs-postgresql-cluster ./qs-postgresql-cluster -n pharia-ai
+
+# Verify backup configuration
+kubectl get cluster -n pharia-ai qs-postgresql-cluster-pharia -o jsonpath='{.spec.backup}' | jq
+```
+
+#### Verifying Backups
+
+Monitor backup execution and verify backups are working:
+
+```bash
+# List all backups
+kubectl get backup -n pharia-ai
+
+# Check backup status
+kubectl get backup <backup-name> -n pharia-ai -o yaml
+
+# View backup logs
+kubectl logs -n pharia-ai -l cnpg.io/cluster=qs-postgresql-cluster-pharia | grep backup
+```
+
+**Successful Backup Example:**
+```
+NAME                                              AGE    CLUSTER                        PHASE       ERROR
+qs-postgresql-cluster-pharia-daily-backup-...    5m     qs-postgresql-cluster-pharia   completed   
+```
+
+#### Disaster Recovery Guide
+
+Follow these steps to recover a PostgreSQL cluster after a disaster:
+
+##### Step 1: Prepare Recovery Configuration
+
+Update `qs-postgresql-cluster/values.yaml` to configure recovery mode:
+
+```yaml
+clusterPharia:
+  mode: recovery  # Change from 'standalone' to 'recovery'
+  fullnameOverride: qs-postgresql-cluster-pharia  # Keep the SAME cluster name
+  
+  backups:
+    enabled: true
+    # NEW timestamp for post-recovery backups
+    destinationPath: "s3://my-backups/postgresql-pharia-2025-11-18/"
+    # ... (keep same S3 credentials configuration)
+  
+  recovery:
+    method: object_store  # Recover from S3 backup
+    
+    # The original cluster name in backups (must match the backed-up cluster)
+    clusterName: "qs-postgresql-cluster-pharia"
+    
+    # OLD timestamp to read backups from
+    destinationPath: "s3://my-backups/postgresql-pharia-2025-11-17/"
+    
+    # Recovery target (promote immediately after recovery)
+    recoveryTarget: "promote"
+    
+    # Point-in-Time Recovery (optional)
+    pitrTarget:
+      time: ""  # Leave empty to recover to latest, or specify RFC3339 timestamp
+    
+    # S3 configuration (must match backup configuration)
+    endpointURL: "https://s3.eu-central-1.amazonaws.com"
+    provider: s3
+    s3:
+      region: "eu-central-1"
+      bucket: "my-backups"
+      path: "/"
+      accessKey: "YOUR_ACCESS_KEY"
+      secretKey: "YOUR_SECRET_KEY"
+```
+
+**Critical Configuration Points:**
+
+| Configuration | Purpose | Example |
+|--------------|---------|---------|
+| `mode: recovery` | Enables recovery mode | Required for disaster recovery |
+| `backups.destinationPath` | Where NEW backups go | `s3://.../2025-11-18/` (today) |
+| `recovery.destinationPath` | Where to READ backups from | `s3://.../2025-11-17/` (yesterday) |
+| `recovery.clusterName` | Original cluster name | Must match backed-up cluster |
+
+> **⚠️ Important:** The backup path (`backups.destinationPath`) and recovery path (`recovery.destinationPath`) **must be different** to prevent "Expected empty archive" errors during same-name cluster recovery.
+
+##### Step 2: Delete Old Cluster Resources (if still present)
+
+If the cluster still exists, remove it along with its PVCs:
+
+```bash
+# Uninstall the cluster
+helm uninstall qs-postgresql-cluster -n pharia-ai
+
+# Delete PVCs (data is in S3 backups)
+kubectl delete pvc -n pharia-ai -l cnpg.io/cluster=qs-postgresql-cluster-pharia
+
+# Delete backup resources (optional, data is in S3)
+kubectl delete backup -n pharia-ai --all
+```
+
+##### Step 3: Install Cluster in Recovery Mode
+
+Deploy the cluster with recovery configuration:
+
+```bash
+# Install in recovery mode
+helm install qs-postgresql-cluster ./qs-postgresql-cluster -n pharia-ai --timeout=15m
+
+# Monitor recovery progress
+kubectl get pods -n pharia-ai -w | grep pharia
+```
+
+**Expected Recovery Process:**
+1. A recovery job pod (`*-full-recovery-*`) will start
+2. The recovery job downloads the base backup from S3
+3. WAL files are replayed to reach the recovery target
+4. Once complete, the recovery pod shows `Completed` status
+5. Primary and replica PostgreSQL pods start normally
+
+```bash
+# Check recovery job status
+kubectl get pods -n pharia-ai | grep full-recovery
+
+# View recovery logs
+kubectl logs -n pharia-ai <recovery-pod-name>
+```
+
+##### Step 4: Reinstall Database Resources
+
+After the cluster is recovered, reinstall database definitions:
+
+```bash
+# Install database resources (creates databases, extensions, etc.)
+helm install qs-postgresql-db ./qs-postgresql-db -n pharia-ai
+
+# Verify databases were created
+kubectl get database -n pharia-ai
+```
+
+##### Step 5: Verify Data Recovery
+
+Verify that your data was successfully recovered:
+
+```bash
+# Connect to the recovered cluster
+kubectl exec -n pharia-ai qs-postgresql-cluster-pharia-1 -- psql -U postgres
+
+# Check databases
+\l
+
+# Check table data
+\c pharia-os
+SELECT COUNT(*) FROM your_table;
+```
+
+##### Step 6: Switch Back to Standalone Mode
+
+Once recovery is verified, update the configuration for normal operation:
+
+```yaml
+clusterPharia:
+  mode: standalone  # Switch back to standalone
+  # Keep the new backup path for ongoing backups
+  backups:
+    destinationPath: "s3://my-backups/postgresql-pharia-2025-11-18/"
+```
+
+Apply the changes:
+
+```bash
+# Upgrade to standalone mode
+helm upgrade qs-postgresql-cluster ./qs-postgresql-cluster -n pharia-ai
+```
+
+#### Recovery Troubleshooting
+
+**Common Issues:**
+
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| "Expected empty archive" error | Same path for backup and recovery | Use different `destinationPath` for backups vs recovery |
+| "WAL ends before consistent recovery point" | Insufficient WAL files archived | Wait longer after backup before deleting cluster (10-15 min) |
+| Recovery pod stuck in Error | Incorrect S3 credentials | Verify `accessKey`, `secretKey`, and `endpointURL` |
+| "Backup not found" | Wrong `clusterName` or path | Verify `recovery.clusterName` matches original cluster |
+
+**Recovery Timeline Example:**
+
+```
+Day 1 (2025-11-17): Normal Operations
+├─ Backups: s3://my-backups/postgresql-pharia-2025-11-17/
+└─ Status: Running normally
+
+Day 2 (2025-11-18): DISASTER!
+├─ Event: Cluster deleted/corrupted
+├─ Action: Configure recovery mode
+├─ Recovery FROM: s3://my-backups/postgresql-pharia-2025-11-17/
+├─ New backups TO: s3://my-backups/postgresql-pharia-2025-11-18/
+└─ Result: Data recovered, cluster operational
+
+Day 3 (2025-11-19): Continue Operations
+├─ Switch to: standalone mode
+├─ Backups: s3://my-backups/postgresql-pharia-2025-11-19/
+└─ Status: Business as usual
+```
+
+#### Additional Resources
+
+For detailed backup and recovery configuration options, refer to:
+- **CloudNativePG Backup Documentation**: [https://cloudnative-pg.io/documentation/current/backup_recovery/](https://cloudnative-pg.io/documentation/current/backup_recovery/)
+- **CloudNativePG Cluster Chart**: [https://github.com/cloudnative-pg/charts/tree/main/charts/cluster](https://github.com/cloudnative-pg/charts/tree/main/charts/cluster)
+
 ### Uninstall Process
 
 To uninstall the PostgreSQL setup:
