@@ -1,45 +1,45 @@
-# Database Migration Kubernetes Job
+# ☸️ Database Migration Kubernetes Job
 
 This directory contains Kubernetes manifests to run the database migration as a Job, eliminating the need for manual pod setup and file copying.
 
-## Contents
+## 📁 Contents
 
-- `configmap-script.yaml` - ConfigMap containing the `database_migrator.sh` script
-- `configmap-config.yaml` - ConfigMap containing the `db_config.yaml` configuration
-- `job.yaml` - Job definition (adaptable for both standard and airgapped environments)
-- `kustomization.yaml` - Kustomize configuration for deployment
+- 📜 `configmap-script.yaml` - ConfigMap containing the `database_migrator.sh` script
+- ⚙️ `configmap-config.yaml` - ConfigMap containing the `db_config.yaml` configuration
+- 🚀 `job.yaml` - Job definition (adaptable for both standard and airgapped environments)
+- 🔧 `kustomization.yaml` - Kustomize configuration for deployment
 
-## Prerequisites
+## 📋 Prerequisites
 
-### For Standard Environments
+### 🌐 For Standard Environments
 
-- Kubernetes cluster with internet access
-- kubectl configured and connected to your cluster
-- Access to pull images from:
+- ☸️ Kubernetes cluster with internet access
+- 🔧 kubectl configured and connected to your cluster
+- 📦 Access to pull images from:
   - `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest`
 
-### For Airgapped Environments
+### 🔒 For Airgapped Environments
 
 ⚠️ **IMPORTANT**: For airgapped environments, you **must** prepare the following:
 
-#### Required: Helper Container Image
+#### 🛠️ Required: Helper Container Image
 
 The migration script requires a container image with these tools pre-installed:
-- **PostgreSQL 17.x client tools**: `psql`, `pg_dump` (version 17.x)
-- **yq**: YAML processor for parsing configuration files
-- **bash**: Shell for running the migration script
+- 🐘 **PostgreSQL 17.x client tools**: `psql`, `pg_dump` (version 17.x)
+- 📄 **yq**: YAML processor for parsing configuration files
+- 🐚 **bash**: Shell for running the migration script
 
 The default image used is `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest` which includes all required tools.
 
-#### Required: Images in Internal Registry
+#### 📦 Required: Images in Internal Registry
 
 Ensure the helper image is available in your internal container registry:
 
-| Image Purpose | Source Image | Required In Registry |
+| 📷 Image Purpose | 🌐 Source Image | 🏢 Required In Registry |
 |---------------|--------------|---------------------|
-| Migration container | `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest` | `your-registry.com/pharia-helper:latest` |
+| 🚀 Migration container | `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest` | `your-registry.com/pharia-helper:latest` |
 
-**Steps to prepare:**
+**🔧 Steps to prepare:**
 
 1. Pull the image from the source registry:
 ```bash
@@ -53,22 +53,22 @@ docker tag ghcr.io/aleph-alpha/shared-images/pharia-helper:latest \
 docker push your-registry.company.com/pharia-helper:latest
 ```
 
-#### Verification Checklist
+#### ✅ Verification Checklist
 
 Before deploying to airgapped environment:
 
-- [ ] Helper image available in internal registry
-- [ ] Internal registry accessible from Kubernetes cluster
-- [ ] Image pull secrets configured (if required)
-- [ ] Network policies allow pod to connect to source and destination databases
-- [ ] Database credentials configured in `configmap-config.yaml`
-- [ ] `job.yaml` updated with internal registry URL
+- [ ] 📦 Helper image available in internal registry
+- [ ] 🏢 Internal registry accessible from Kubernetes cluster
+- [ ] 🔑 Image pull secrets configured (if required)
+- [ ] 🌐 Network policies allow pod to connect to source and destination databases
+- [ ] 🔐 Database credentials configured in `configmap-config.yaml`
+- [ ] 📝 `job.yaml` updated with internal registry URL
 
-## Quick Start
+## 🚀 Quick Start
 
-### For Standard Environments (with Internet Access)
+### 🌐 For Standard Environments (with Internet Access)
 
-#### 1. Update Credentials
+#### 1. 🔐 Update Credentials
 
 Edit `configmap-config.yaml` and fill in the database passwords:
 
@@ -78,7 +78,7 @@ vim configmap-config.yaml
 
 Find and replace all `password: ""` fields with actual credentials.
 
-#### 2. Deploy with Kustomize
+#### 2. 🚀 Deploy with Kustomize
 
 ```sh
 kubectl apply -k .
@@ -92,13 +92,13 @@ kubectl apply -f configmap-config.yaml
 kubectl apply -f job.yaml
 ```
 
-### For Airgapped Environments (without Internet Access)
+### 🔒 For Airgapped Environments (without Internet Access)
 
-#### 1. Ensure Helper Image is Available
+#### 1. 📦 Ensure Helper Image is Available
 
 Make sure the helper image is available in your internal registry (see Prerequisites section above).
 
-#### 2. Modify job.yaml for Airgapped Use
+#### 2. 🔧 Modify job.yaml for Airgapped Use
 
 Edit `job.yaml` to use your internal registry:
 
@@ -110,7 +110,7 @@ cp job.yaml job.yaml.bak
 vim job.yaml
 ```
 
-**Required changes in job.yaml:**
+**⚠️ Required changes in job.yaml:**
 
 Update the container image reference (around line 36):
 
@@ -143,7 +143,7 @@ Or using Kustomize:
 kubectl apply -k .
 ```
 
-### 3. Monitor Progress
+### 3. 👀 Monitor Progress
 
 ```sh
 # Watch job status
@@ -156,7 +156,7 @@ kubectl logs -f job/db-migration -n pharia-ai
 kubectl get pods -n pharia-ai -l app=db-migration
 ```
 
-### 4. Cleanup
+### 4. 🧹 Cleanup
 
 ```sh
 # Delete the job
@@ -166,38 +166,38 @@ kubectl delete job db-migration -n pharia-ai
 kubectl delete configmap db-migration-script db-migration-config -n pharia-ai
 ```
 
-## Job Configuration
+## ⚙️ Job Configuration
 
 The Job is configured with:
 
-- **Timeout**: 2 hours (`activeDeadlineSeconds: 7200`)
-- **Retries**: 0 attempts (`backoffLimit: 0`) - fails fast on errors
-- **Restart Policy**: Never (`restartPolicy: Never`)
-- **Retention**: Kept for 24 hours after completion (`ttlSecondsAfterFinished: 86400`)
-- **Resources**:
-  - Requests: 256Mi memory, 250m CPU
-  - Limits: 1Gi memory, 1000m CPU
-- **Storage**:
-  - Dumps: 50Gi ephemeral storage
-  - Logs: 1Gi ephemeral storage
+- ⏰ **Timeout**: 2 hours (`activeDeadlineSeconds: 7200`)
+- 🔄 **Retries**: 0 attempts (`backoffLimit: 0`) - fails fast on errors
+- 🔁 **Restart Policy**: Never (`restartPolicy: Never`)
+- 🗓️ **Retention**: Kept for 24 hours after completion (`ttlSecondsAfterFinished: 86400`)
+- 💻 **Resources**:
+  - 📊 Requests: 256Mi memory, 250m CPU
+  - 🚫 Limits: 1Gi memory, 1000m CPU
+- 💾 **Storage**:
+  - 🗃️ Dumps: 50Gi ephemeral storage
+  - 📝 Logs: 1Gi ephemeral storage
 
-## Features
+## ✨ Features
 
-### Pre-flight Permission Checks
+### 🛡️ Pre-flight Permission Checks
 
 Before starting the actual migration, the script performs comprehensive permission checks to ensure users have the necessary privileges:
 
-**For Source Databases (Dump Operations):**
-- CONNECT privilege to the database
-- Ability to read from `information_schema` tables
-- Access to schema information (required for `pg_dump`)
-- Proper database access permissions
+**📖 For Source Databases (Dump Operations):**
+- 🔗 CONNECT privilege to the database
+- 📊 Ability to read from `information_schema` tables
+- 🏗️ Access to schema information (required for `pg_dump`)
+- 🔐 Proper database access permissions
 
-**For Destination Databases (Restore Operations):**
-- CONNECT privilege to the database
-- CREATE privilege on the database (required for creating tables)
-- CREATE privilege on the `public` schema (or target schemas)
-- Proper database access permissions
+**✏️ For Destination Databases (Restore Operations):**
+- 🔗 CONNECT privilege to the database
+- 🏗️ CREATE privilege on the database (required for creating tables)
+- 📝 CREATE privilege on the `public` schema (or target schemas)
+- 🔐 Proper database access permissions
 
 If any permission issues are detected, the script will:
 1. Display clear error messages indicating which permissions are missing
@@ -213,31 +213,31 @@ If any permission issues are detected, the script will:
 
 This pre-flight check prevents partial migrations and helps diagnose permission issues early.
 
-## Architecture
+## 🏗️ Architecture
 
 The Job uses a single container (`migrator`) that runs the migration script:
 
-- **Image**: `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest`
-- **Pre-installed tools**:
-  - PostgreSQL 17.x client tools (`psql`, `pg_dump`)
-  - `yq` YAML processor
-  - `bash` shell
-- **Configuration**: Mounted from ConfigMaps
-- **Storage**: Ephemeral volumes for dumps and logs
-- **Execution**: Runs `database_migrator.sh` with verbose logging
+- 📦 **Image**: `ghcr.io/aleph-alpha/shared-images/pharia-helper:latest`
+- 🛠️ **Pre-installed tools**:
+  - 🐘 PostgreSQL 17.x client tools (`psql`, `pg_dump`)
+  - 📄 `yq` YAML processor
+  - 🐚 `bash` shell
+- ⚙️ **Configuration**: Mounted from ConfigMaps
+- 💾 **Storage**: Ephemeral volumes for dumps and logs
+- 🚀 **Execution**: Runs `database_migrator.sh` with verbose logging
 
-## Volumes
+## 📂 Volumes
 
-| Volume | Type | Purpose | Size |
+| 📁 Volume | 📋 Type | 🎯 Purpose | 📏 Size |
 |--------|------|---------|------|
 | `migration-script` | configMap | The migration shell script | N/A |
 | `migration-config` | configMap | Database configuration YAML | N/A |
 | `dumps` | emptyDir | Temporary storage for database dumps | 50Gi |
 | `logs` | emptyDir | Migration logs | 1Gi |
 
-## Troubleshooting
+## 🔧 Troubleshooting
 
-### Job Failed
+### ❌ Job Failed
 
 Check the pod logs:
 
@@ -252,7 +252,7 @@ kubectl logs <pod-name> -n pharia-ai
 kubectl logs <pod-name> -n pharia-ai --previous
 ```
 
-### Connection Issues
+### 🌐 Connection Issues
 
 Verify that the pod can reach the database services:
 
@@ -264,11 +264,11 @@ kubectl exec -it <pod-name> -n pharia-ai -- bash
 psql -h <database-host> -p 5432 -U <username> -d <database>
 ```
 
-### Permission Issues
+### 🔐 Permission Issues
 
 If the pre-flight checks fail due to missing permissions, you'll need to grant them on the respective databases:
 
-**For Source Database (Dump) Permissions:**
+**📖 For Source Database (Dump) Permissions:**
 
 ```sql
 -- Connect as a superuser or database owner
@@ -282,7 +282,7 @@ GRANT USAGE ON SCHEMA <schema_name> TO <username>;
 GRANT SELECT ON ALL TABLES IN SCHEMA <schema_name> TO <username>;
 ```
 
-**For Destination Database (Restore) Permissions:**
+**✏️ For Destination Database (Restore) Permissions:**
 
 ```sql
 -- Connect as a superuser or database owner
@@ -294,7 +294,7 @@ GRANT ALL PRIVILEGES ON SCHEMA public TO <username>;
 GRANT ALL PRIVILEGES ON SCHEMA <schema_name> TO <username>;
 ```
 
-**Quick Permission Check:**
+**🔍 Quick Permission Check:**
 
 You can manually verify permissions by connecting to the database:
 
@@ -310,7 +310,7 @@ kubectl exec -it <pod-name> -n pharia-ai -- \
   -c "SELECT has_database_privilege('<username>', '<database>', 'CREATE');"
 ```
 
-### Insufficient Resources
+### 💻 Insufficient Resources
 
 If the job fails due to resource constraints, adjust the limits in `job.yaml`:
 
@@ -324,7 +324,7 @@ resources:
     cpu: "2000m"
 ```
 
-### Timeout Issues
+### ⏰ Timeout Issues
 
 For large databases, increase the timeout:
 
@@ -342,36 +342,15 @@ config:
     dump: 7200     # 2 hours
 ```
 
-## Security Considerations
+## 🔒 Security Considerations
 
-1. **Passwords in ConfigMaps**: Consider using Kubernetes Secrets instead of ConfigMaps for sensitive credentials:
+1. 👮 **RBAC**: The job uses the default service account. For production, create a dedicated service account with minimal permissions.
 
-```yaml
-# Create a secret
-kubectl create secret generic db-migration-secrets \
-  --from-literal=source-password=<password> \
-  --from-literal=dest-password=<password> \
-  -n pharia-ai
-```
+2. 🌐 **Network Policies**: Ensure the job pod has network access to both source and destination databases.
 
-Then reference the secret in the pod:
+## 🔬 Advanced Usage
 
-```yaml
-env:
-- name: SOURCE_PASSWORD
-  valueFrom:
-    secretKeyRef:
-      name: db-migration-secrets
-      key: source-password
-```
-
-2. **RBAC**: The job uses the default service account. For production, create a dedicated service account with minimal permissions.
-
-3. **Network Policies**: Ensure the job pod has network access to both source and destination databases.
-
-## Advanced Usage
-
-### Dry Run Mode
+### 🧪 Dry Run Mode
 
 To test without actually migrating data, edit the job command in `job.yaml`:
 
@@ -383,11 +362,11 @@ command:
   ./database_migrator.sh --config db_config.yaml --dry-run --verbose
 ```
 
-### Selective Migration
+### 🎯 Selective Migration
 
 To migrate only specific databases, edit `configmap-config.yaml` and remove unwanted database entries from the `databases` list.
 
-### Custom Configuration
+### 🛠️ Custom Configuration
 
 You can override the configuration by updating the `configmap-config.yaml` file. Common customizations:
 
@@ -396,9 +375,9 @@ You can override the configuration by updating the `configmap-config.yaml` file.
 - Modify retry behavior
 - Update dump directory location
 
-## References
+## 📚 References
 
-- [Kubernetes Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/)
-- [ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/)
-- [Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)
-- [PostgreSQL Documentation](https://www.postgresql.org/docs/17/)
+- ☸️ [Kubernetes Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/)
+- 📝 [ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/)
+- 🔧 [Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/)
+- 🐘 [PostgreSQL Documentation](https://www.postgresql.org/docs/17/)
