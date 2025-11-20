@@ -252,6 +252,28 @@ kubectl logs <pod-name> -n pharia-ai
 kubectl logs <pod-name> -n pharia-ai --previous
 ```
 
+### 🔄 Restarting a Failed Job
+
+If a job fails and you need to restart it after making configuration changes, you must delete the existing job before reapplying:
+
+```sh
+# Delete the failed job
+kubectl delete job db-migration -n pharia-ai
+
+# Reapply the job (and ConfigMaps if deleted)
+kubectl apply -f configmap-script.yaml
+kubectl apply -f configmap-config.yaml
+kubectl apply -f job.yaml
+
+# Or use Kustomize to reapply everything
+kubectl apply -k .
+```
+
+**⚠️ Important Notes:**
+- Kubernetes Jobs are immutable once created, so you cannot modify a running or completed job
+- Always delete the job first before making changes to the configuration
+- If you only need to update credentials, you can delete just the config ConfigMap and reapply it, but you'll still need to delete and recreate the job
+
 ### 🌐 Connection Issues
 
 Verify that the pod can reach the database services:
