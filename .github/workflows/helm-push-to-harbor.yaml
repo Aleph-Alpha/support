@@ -1,11 +1,14 @@
 name: Build and Push Helm Charts to Harbor
 
 on:
+  push:
+    branches:
+      - 'test/**'  # Temporary: for testing on test branches
   workflow_dispatch:
     inputs:
       charts:
         description: 'Select chart(s) to build and push (comma-separated or "all")'
-        required: true
+        required: false
         type: choice
         options:
           - 'all'
@@ -43,8 +46,8 @@ jobs:
           if [ -n "${{ inputs.custom_charts }}" ]; then
             # Use custom charts input if provided
             CHARTS="${{ inputs.custom_charts }}"
-          elif [ "${{ inputs.charts }}" = "all" ]; then
-            # Build all charts
+          elif [ "${{ inputs.charts }}" = "all" ] || [ -z "${{ inputs.charts }}" ]; then
+            # Build all charts (default for push events or when "all" selected)
             CHARTS="qs-minio,qs-postgresql-cluster,qs-postgresql-db,qs-postgresql-operator,qs-redis,qs-redis-operator"
           else
             # Use selected chart
