@@ -1,88 +1,262 @@
+# 🐘 PostgreSQL Multi-Database Migration Utility
 
-# PostgreSQL Backup & Restore Migration Guide
+Automate backup and restore of multiple PostgreSQL databases using a YAML configuration. This utility is designed for Kubernetes environments and supports advanced features for reliability and security.
 
-This guide describes the process for migrating PostgreSQL databases from Bitnami pods (per-app DB pods in Kubernetes) to a single PG Cloud Native cluster using the `backup_restore.sh` script.
+## ✨ Features
 
-## Overview
+- 🔄 Backup and restore multiple databases in one run
+- 📝 YAML configuration for flexible source/destination mapping
+- 📊 Comprehensive logging and error handling
+- ✅ Pre-flight permission checks
+- 🧪 Dry-run mode for safe testing
+- 🎨 Colored output for clarity
+- 🔁 Retry logic and version validation
+- 🔒 Security options (password hiding, config backup)
+- 🧹 Automatic cleanup and retention policies
 
-**Migration Path:** Bitnami PostgreSQL (individual pods) → PG Cloud Native (shared cluster)
-- **Source:** Per-application database pods in Kubernetes
-- **Target:** Single PostgreSQL cluster with multiple databases
-- **Method:** Dump and restore using custom backup script
+## 🚀 Quick Start
 
-## Prerequisites
-- Downtime is required during backup and restore. Block access to the database service (scale down application pods, disable ingress, or update NetworkPolicy) to prevent new data insertion.
-- The script requires a `.env` file with DB credentials. For PG Cloud Native, credentials are stored in Kubernetes secrets with prefix `qs-postgresql-cluster-access-`.
-- The script must be run in an environment with `psql` (version 17) and `pg_dump` installed.
+### 1. 📝 Update Configuration
 
-## Migration Steps
+Edit the database passwords in the ConfigMap:
 
-### 1. Backup from Bitnami PostgreSQL
-
-**Option A: kubectl port-forward**
 ```sh
-kubectl port-forward svc/<bitnami-db-service> 5432:5432
-# Example:
-kubectl port-forward svc/bitnami-postgresql-pharia 5432:5432
+vim k8s/configmap-config.yaml
 ```
-Create a `.env` file with DB credentials (host: `localhost`, port: `5432`).
-Run the backup script:
+
+Update all `password: ""` fields with actual credentials for each database. Also verify that other connection details are correct:
+
+- 🌐 **Hostnames**: Ensure source and destination hostnames match your actual service names
+- 👤 **Usernames**: Verify usernames exist and have appropriate permissions
+- 🗄️ **Database names**: Confirm database names match actual database instances
+- 🔌 **Ports**: Check that ports match your PostgreSQL service configurations (default: 5432)
+
+### 2. 🚀 Deploy the Job
+
+Apply the Kubernetes manifests using Kustomize:
+
 ```sh
-./pg_backup_restore.sh backup <output_file.sql>
+kubectl apply -k k8s/
 ```
 
-**Option B: Pod with psql 17**
-1. Launch a pod with psql 17 installed.
-2. Inside the pod, create the `.env` file and copy the `backup_restore.sh` script.
-3. In `.env`, set `DB_HOST` to the Bitnami database service name and `DB_PORT` to `5432`.
-4. Run:
+Or apply them individually:
+
 ```sh
-./pg_backup_restore.sh backup <output_file.sql>
+kubectl apply -f k8s/configmap-script.yaml
+kubectl apply -f k8s/configmap-config.yaml
+kubectl apply -f k8s/job.yaml
 ```
 
-### 2. Restore to PG Cloud Native
+### 3. 👀 Monitor the Job
 
-PG Cloud Native exposes a single service endpoint for all databases. The endpoint will be either `qs-postgresql-cluster-pharia-rw` or `qs-postgresql-cluster-temporal-rw` based on the database.
-Retrieve DB credentials from the Kubernetes secret (prefix: `qs-postgresql-cluster-access-`).
-Create a `.env` file with the new credentials.
+Watch the job progress:
 
-If needed, port-forward the PG Cloud Native service:
 ```sh
-kubectl port-forward svc/qs-postgresql-cluster-pharia-rw 5432:5432
-# Or for temporal:
-kubectl port-forward svc/qs-postgresql-cluster-temporal-rw 5432:5432
+# Check job status
+kubectl get job db-migration -n pharia-ai
+
+# View logs in real-time
+kubectl logs -f job/db-migration -n pharia-ai
+
+# Get detailed job info
+kubectl describe job db-migration -n pharia-ai
 ```
-Run the restore script:
+
+### 4. 🧹 Cleanup
+
+After successful migration:
+
 ```sh
-./pg_backup_restore.sh restore <input_file.sql>
-# Example:
-./pg_backup_restore.sh restore backup-pharia.sql
+# Delete the job (auto-deletes after 24 hours by default)
+kubectl delete job db-migration -n pharia-ai
+
+# Delete the ConfigMaps if no longer needed
+kubectl delete configmap db-migration-script db-migration-config -n pharia-ai
 ```
 
-### 3. Switch Application Configuration
-- Update application config to use the new PG Cloud Native database endpoint and credentials.
-- Redeploy applications if needed.
+## 📁 Directory Structure
 
-### 4. Validate Migration
-- Test application connectivity and data integrity.
-- Resume normal operations.
-
-## Example .env File
 ```
-DB_HOST=your_host
-DB_PORT=5432
-DB_USER=your_user
-DB_PASSWORD=your_password
-DB_NAME=your_dbname
+db-migration/
+├── k8s/                       # Kubernetes manifests
+│   ├── configmap-config.yaml  # Database configuration (embedded)
+│   ├── configmap-script.yaml  # Migration script (embedded)
+│   ├── job.yaml               # Job definition
+│   ├── kustomization.yaml     # Kustomize config
+│   └── README.md              # Detailed k8s documentation
+└── README.md                  # This file
 ```
 
-## Notes
-- The script reads credentials from `.env` in the same directory.
-- For PG Cloud Native, all databases share one cluster and endpoint through the PG pooler.
-- Always use psql 17 for compatibility.
-- Ensure backups are stored securely and tested before deleting old databases.
+📝 **Note**: The migration script (`database_migrator.sh`) and configuration (`db_config.yaml`) are embedded directly in the ConfigMaps for simplified deployment.
 
-## Troubleshooting
-- If you see connection errors, verify port-forwarding, credentials, and network access.
-- Ensure downtime is enforced to prevent data loss.
-- For restore, make sure the target database exists and is empty or ready for import.
+## ⚙️ Configuration
+
+The migration is configured via `k8s/configmap-config.yaml` which supports:
+
+**Database Configuration:**
+- Multiple source/destination database pairs
+- Connection parameters (host, port, username, password, database)
+- Per-database settings
+
+**Migration Settings:**
+- Dump and restore timeouts
+- Retry attempts and delays
+- PostgreSQL version requirements
+- Dump options (format, compression, etc.)
+
+**Security Options:**
+- Hide passwords in logs
+- Backup original config
+- Secure credential handling
+
+**Performance:**
+- Compress dumps
+- Verify checksums
+- Cleanup old dumps (retention policy)
+
+## 📋 Prerequisites
+
+The migration job uses a pre-built container image (`ghcr.io/aleph-alpha/shared-images/pharia-helper:latest`) that includes:
+
+- 🐘 PostgreSQL 17.x client tools (`psql`, `pg_dump`)
+- 📄 `yq` YAML processor
+- 🐚 `bash` shell
+
+### 🔒 For Airgapped Environments
+
+See [k8s/README.md](k8s/README.md#for-airgapped-environments-without-internet-access) for instructions on:
+- 📦 Preparing the helper container image
+- 🏢 Using internal container registries
+- ✅ Verification checklist
+
+## ⚡ Job Configuration
+
+The Kubernetes Job is configured with:
+
+- **Timeout**: 2 hours (configurable)
+- **Retries**: 2 attempts
+- **Retention**: 24 hours after completion
+- **Resources**: Configurable CPU/memory limits
+- **Storage**: Ephemeral volumes for dumps and logs
+
+## 🛡️ Pre-flight Checks
+
+Before migration, the script verifies:
+
+- ✅ Required PostgreSQL client version (17.x)
+- ✅ Required tools available (`yq`, `bash`)
+- ✅ Source database permissions (CONNECT, SELECT)
+- ✅ Destination database permissions (CONNECT, CREATE)
+- ✅ Network connectivity to databases
+- ✅ Configuration validity
+
+If any check fails, the script provides clear error messages and suggested fixes.
+
+## 🔧 Troubleshooting
+
+### ❌ Job Failed
+
+```sh
+# Get pod name
+kubectl get pods -n pharia-ai -l app=db-migration
+
+# View logs
+kubectl logs <pod-name> -n pharia-ai
+
+# View logs from previous run (if restarted)
+kubectl logs <pod-name> -n pharia-ai --previous
+```
+
+### 🔐 Permission Issues
+
+If permission checks fail, grant the required privileges:
+
+**📖 Source database (read permissions):**
+```sql
+GRANT CONNECT ON DATABASE <database_name> TO <username>;
+GRANT USAGE ON SCHEMA public TO <username>;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO <username>;
+```
+
+**✏️ Destination database (write permissions):**
+```sql
+GRANT CONNECT ON DATABASE <database_name> TO <username>;
+GRANT CREATE ON DATABASE <database_name> TO <username>;
+GRANT ALL PRIVILEGES ON SCHEMA public TO <username>;
+```
+
+### ⏱️ Resource/Timeout Issues
+
+For large databases, adjust settings in `k8s/job.yaml`:
+
+```yaml
+spec:
+  activeDeadlineSeconds: 14400  # 4 hours
+  template:
+    spec:
+      containers:
+      - resources:
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+```
+
+And in `k8s/configmap-config.yaml`:
+
+```yaml
+config:
+  timeouts:
+    restore: 7200  # 2 hours
+    dump: 7200     # 2 hours
+```
+
+## 🔬 Advanced Usage
+
+### 🧪 Dry Run Mode
+
+Test the migration without executing commands:
+
+Edit `k8s/job.yaml` command:
+
+```yaml
+command:
+- /bin/bash
+- -c
+- |
+  ./database_migrator.sh --config db_config.yaml --dry-run --verbose
+```
+
+### 🎯 Selective Migration
+
+To migrate only specific databases, edit `k8s/configmap-config.yaml` and remove unwanted entries from the `databases` list.
+
+### 🛠️ Custom Configuration
+
+Customize the migration behavior by modifying `k8s/configmap-config.yaml`:
+
+- Adjust timeouts for large databases
+- Change dump options (compression, format, etc.)
+- Modify retry behavior
+- Update storage locations
+- Configure security settings
+
+## 📚 Documentation
+
+For detailed information, see:
+
+- 📖 [k8s/README.md](k8s/README.md) - Comprehensive Kubernetes deployment guide
+- 📜 `k8s/configmap-script.yaml` - Migration script with inline documentation
+- ⚙️ `k8s/configmap-config.yaml` - Configuration examples and options
+
+## 🔒 Security Considerations
+
+1. 🔑 **Credentials**: Consider using Kubernetes Secrets instead of ConfigMaps for sensitive data
+2. 👮 **RBAC**: Use dedicated service accounts with minimal permissions
+3. 🌐 **Network Policies**: Ensure pod has network access to required databases only
+4. 📝 **Audit**: Review logs for sensitive information before sharing
+
+## References
+
+- [Kubernetes Jobs](https://kubernetes.io/docs/concepts/workloads/controllers/job/)
+- [ConfigMaps](https://kubernetes.io/docs/concepts/configuration/configmap/)
+- [PostgreSQL Documentation](https://www.postgresql.org/docs/17/)

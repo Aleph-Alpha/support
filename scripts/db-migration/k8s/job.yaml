@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration
+  namespace: pharia-ai
+  labels:
+    app: db-migration
+spec:
+  # Number of retries before marking as failed
+  backoffLimit: 0
+  # Job timeout - 2 hours
+  activeDeadlineSeconds: 7200
+  # Keep the job for debugging
+  ttlSecondsAfterFinished: 86400  # Keep for 24 hours
+  template:
+    metadata:
+      labels:
+        app: db-migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+
+      # ========================================================================
+      # AIRGAPPED ENVIRONMENT NOTICE
+      # ========================================================================
+      # For airgapped environments:
+      #   - Ensure the pharia-helper image is available in your internal registry
+      #   - Update the image reference below to point to your internal registry
+      #   - Example: your-registry.company.com/pharia-helper:latest
+      # ========================================================================
+
+      containers:
+      - name: migrator
+        # AIRGAPPED: Replace with your internal registry URL
+        # Example: your-registry.company.com/pharia-helper:latest
+        image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -e
+          echo "Starting database migration..."
+          cd /migration
+          bash database_migrator.sh --config db_config.yaml --verbose
+        env:
+        # Add any environment variables needed for the migration
+        - name: PGCONNECT_TIMEOUT
+          value: "30"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: migration-script
+          mountPath: /migration/database_migrator.sh
+          subPath: database_migrator.sh
+        - name: migration-config
+          mountPath: /migration/db_config.yaml
+          subPath: db_config.yaml
+        - name: dumps
+          mountPath: /migration/dumps
+        - name: logs
+          mountPath: /migration/logs
+
+      volumes:
+      - name: migration-script
+        configMap:
+          name: db-migration-script
+          defaultMode: 0755
+      - name: migration-config
+        configMap:
+          name: db-migration-config
+      - name: dumps
+        emptyDir:
+          sizeLimit: 50Gi # 50Gi is the maximum size of the dump directory, if you need more, you can increase it.
+      - name: logs
+        emptyDir:
+          sizeLimit: 1Gi
