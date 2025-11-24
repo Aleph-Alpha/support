@@ -23,9 +23,9 @@ rbac:
 # Image configuration for secret creation jobs
 jobImage:
   # -- Container image for kubectl in secret creation jobs
-  repository: bitnamilegacy/kubectl
+  repository: ghcr.io/aleph-alpha/shared-images/pharia-helper
   # -- Image tag for kubectl (set to specific version for stability)
-  tag: "1.33.4"
+  tag: "latest"
   # -- Image pull policy
   pullPolicy: IfNotPresent
 
@@ -60,7 +60,7 @@ minio:
 # Configuration for Helm tests
 tests:
   # -- MinIO client image to use for connection tests
-  image: minio/mc:latest
+  image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
   # -- Image pull policy for test containers
   imagePullPolicy: IfNotPresent
   # -- MinIO port to use for tests (deprecated, use minio.port)

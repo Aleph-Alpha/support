@@ -22,9 +22,9 @@ rbac:
 # Image configuration for secret creation jobs
 jobImage:
   # -- Container image for kubectl in secret creation jobs
-  repository: bitnamilegacy/kubectl
+  repository: ghcr.io/aleph-alpha/shared-images/pharia-helper
   # -- Image tag for kubectl (set to specific version for stability)
-  tag: "1.33.4"
+  tag: "latest"
   # -- Image pull policy
   pullPolicy: IfNotPresent
 
@@ -52,7 +52,7 @@ secretCleanup:
 # Configuration for Helm tests
 tests:
   # -- PostgreSQL image to use for connection tests (alpine variant is ~40% smaller)
-  image: postgres:17-alpine
+  image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
   # -- SSL mode for PostgreSQL connections (disable, allow, prefer, require, verify-ca, verify-full)
   sslMode: prefer
 
