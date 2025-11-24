@@ -3,7 +3,7 @@ name: qs-postgresql-db
 home: https://aleph-alpha.com/phariaai/
 icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
 description: Helm chart for declaratively managing CloudNativePG PostgreSQL databases with full CRD specification support
-version: 0.1.0
+version: 0.1.1
 keywords:
   - postgresql
   - cloudnative-pg
