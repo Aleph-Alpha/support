@@ -16,7 +16,7 @@
 # Configuration for the Kubernetes Job that enables PostgreSQL extensions
 extensionJob:
   # Container image to use for extension enablement
-  image: "docker pull ghcr.io/aleph-alpha/shared-images/pharia-helper"
+  image: "ghcr.io/aleph-alpha/shared-images/pharia-helper"
   # SSL mode for PostgreSQL connection
   sslMode: "prefer"
 
@@ -31,7 +31,7 @@ extensionJob:
 # in the qs-postgresql-cluster chart, not configured here.
 tests:
   # Container image to use for tests (alpine variant is ~40% smaller)
-  image: "docker pull ghcr.io/aleph-alpha/shared-images/pharia-helper"
+  image: "ghcr.io/aleph-alpha/shared-images/pharia-helper"
   # SSL mode for PostgreSQL connections during tests
   sslMode: "prefer"
 
