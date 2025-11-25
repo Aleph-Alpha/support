@@ -16,3 +16,8 @@ dependencies:
     alias: minio-pharia-finetuning
     condition: minio-pharia-finetuning.enabled
     repository: oci://registry-1.docker.io/cloudpirates
+  - name: minio
+    version: 0.5.5
+    alias: minio-creance
+    condition: minio-creance.enabled
+    repository: oci://registry-1.docker.io/cloudpirates

@@ -262,6 +262,16 @@ clusterPharia:
         login: true
         superuser: false
         replication: false
+      - name: "creance"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
+        # `password` and `username` key should exist in secret. username key should be the name of the user (mlflow)
+        passwordSecret:
+          name: "qs-postgresql-cluster-access-creance"
+        login: true
+        superuser: false
+        replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
     # For detailed configuration options, see: https://github.com/cloudnative-pg/charts/tree/main/charts/cluster
@@ -340,7 +350,7 @@ clusterPharia:
     pitrTarget:
       # -- Time in RFC3339 format
       time: ""
-    
+
     ## -- Recovery target settings for controlling recovery behavior
     # Options: pause, promote, shutdown
     # 'promote' is recommended - promotes to read-write immediately after recovery
@@ -589,7 +599,7 @@ clusterTemporal:
     pitrTarget:
       # -- Time in RFC3339 format
       time: ""
-    
+
     ## -- Recovery target settings for controlling recovery behavior
     # Options: pause, promote, shutdown
     # 'promote' is recommended - promotes to read-write immediately after recovery

@@ -375,3 +375,15 @@ databases:
       - pg_stat_statements
       - pg_trgm
       - btree_gin
+
+  - name: "creance"
+    enabled: false
+    cluster: "qs-postgresql-cluster-pharia"
+    owner: "creance"
+    connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
