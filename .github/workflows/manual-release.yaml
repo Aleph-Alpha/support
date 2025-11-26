@@ -1,0 +1,237 @@
+name: Tag and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., v1.0.0, v1.2.3)'
+        required: true
+        type: string
+      action_type:
+        description: 'What to create'
+        required: true
+        default: 'tag_and_release'
+        type: choice
+        options:
+          - tag_only
+          - tag_and_release
+      release_type:
+        description: 'Type of release (if creating release)'
+        required: false
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - prerelease
+      draft:
+        description: 'Create as draft release (if creating release)'
+        required: false
+        default: false
+        type: boolean
+      tag_message:
+        description: 'Custom tag message (optional)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.validate.outputs.version }}
+      tag_exists: ${{ steps.check_tag.outputs.exists }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version format
+        id: validate
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          
+          # Remove 'v' prefix if present for validation
+          VERSION_NUMBER=${VERSION#v}
+          
+          # Validate semantic version format
+          if [[ ! $VERSION_NUMBER =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?(\+[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Please use semantic versioning format (e.g., v1.0.0, v1.2.3-beta.1)"
+            exit 1
+          fi
+          
+          # Ensure version starts with 'v'
+          if [[ ! $VERSION =~ ^v ]]; then
+            VERSION="v$VERSION"
+          fi
+          
+          echo "✅ Valid version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          VERSION="${{ steps.validate.outputs.version }}"
+          if git rev-parse "$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "⚠️ Tag $VERSION already exists!"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "✅ Tag $VERSION is available"
+          fi
+
+  create-tag:
+    needs: validate-version
+    runs-on: ubuntu-latest
+    if: needs.validate-version.outputs.tag_exists == 'false'
+    outputs:
+      tag_created: ${{ steps.create_tag.outputs.tag_created }}
+      tag_name: ${{ steps.create_tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Create and push tag
+        id: create_tag
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+          TAG_MESSAGE="${{ github.event.inputs.tag_message }}"
+          
+          if [ -n "$TAG_MESSAGE" ]; then
+            echo "🏷️ Creating tag: $VERSION with message: $TAG_MESSAGE"
+            git tag -a "$VERSION" -m "$TAG_MESSAGE"
+          else
+            echo "🏷️ Creating tag: $VERSION"
+            git tag -a "$VERSION" -m "Release $VERSION"
+          fi
+          
+          echo "📤 Pushing tag to repository"
+          git push origin "$VERSION"
+          
+          echo "✅ Tag $VERSION created and pushed successfully"
+          echo "tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_created=true" >> $GITHUB_OUTPUT
+
+  create-release:
+    needs: [validate-version, create-tag]
+    runs-on: ubuntu-latest
+    if: |
+      needs.validate-version.outputs.tag_exists == 'false' && 
+      needs.create-tag.outputs.tag_created == 'true' && 
+      github.event.inputs.action_type == 'tag_and_release'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create release artifacts
+        run: |
+          VERSION="${{ needs.create-tag.outputs.tag_name }}"
+          
+          echo "📦 Creating release artifacts for $VERSION"
+          
+          # Create comprehensive archive
+          tar -czf "support-tools-${VERSION}.tar.gz" \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='*.tar.gz' \
+            --exclude='node_modules' \
+            --exclude='.DS_Store' \
+            *.sh \
+            helm/ \
+            scanner/ \
+            scripts/ \
+            README.md \
+            CHANGELOG.md \
+            LICENSE
+          
+          # Create checksums
+          sha256sum "support-tools-${VERSION}.tar.gz" > "support-tools-${VERSION}.tar.gz.sha256"
+          
+          echo "✅ Created artifacts:"
+          echo "  - support-tools-${VERSION}.tar.gz"
+          echo "  - support-tools-${VERSION}.tar.gz.sha256"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.create-tag.outputs.tag_name }}
+          name: Release ${{ needs.create-tag.outputs.tag_name }}
+          body: 'Release ${{ needs.create-tag.outputs.tag_name }} created via GitHub Actions workflow.'
+          draft: ${{ github.event.inputs.draft }}
+          prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
+          files: |
+            support-tools-${{ needs.create-tag.outputs.tag_name }}.tar.gz
+            support-tools-${{ needs.create-tag.outputs.tag_name }}.tar.gz.sha256
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    needs: [validate-version, create-tag, create-release]
+    runs-on: ubuntu-latest
+    if: always() && needs.validate-version.outputs.tag_exists == 'false'
+    steps:
+      - name: Generate summary
+        run: |
+          VERSION="${{ needs.create-tag.outputs.tag_name }}"
+          ACTION_TYPE="${{ github.event.inputs.action_type }}"
+          
+          if [ "$ACTION_TYPE" = "tag_only" ]; then
+            echo "## 🏷️ Tag Created Successfully!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Tag**: $VERSION" >> $GITHUB_STEP_SUMMARY
+            echo "- **Message**: ${{ github.event.inputs.tag_message || 'Release ' }}$VERSION" >> $GITHUB_STEP_SUMMARY
+            echo "- **Commit**: $(git rev-parse HEAD 2>/dev/null || echo 'Unknown')" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. Create a release from this tag if needed using the same workflow" >> $GITHUB_STEP_SUMMARY
+            echo "2. Update any documentation that references the new version" >> $GITHUB_STEP_SUMMARY
+          else
+            RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$VERSION"
+            
+            echo "## 🎉 Tag and Release Created Successfully!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
+            echo "- **Type**: ${{ github.event.inputs.release_type }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Draft**: ${{ github.event.inputs.draft }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Release URL**: [$VERSION]($RELEASE_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "- support-tools-${VERSION}.tar.gz" >> $GITHUB_STEP_SUMMARY
+            echo "- support-tools-${VERSION}.tar.gz.sha256" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
+            echo "1. Review the release at $RELEASE_URL" >> $GITHUB_STEP_SUMMARY
+            echo "2. Update any documentation that references the new version" >> $GITHUB_STEP_SUMMARY
+            echo "3. Announce the release to your team/community" >> $GITHUB_STEP_SUMMARY
+
+  tag-exists-error:
+    needs: validate-version
+    runs-on: ubuntu-latest
+    if: needs.validate-version.outputs.tag_exists == 'true'
+    steps:
+      - name: Tag already exists
+        run: |
+          echo "❌ Cannot create release: Tag ${{ needs.validate-version.outputs.version }} already exists"
+          echo ""
+          echo "Options:"
+          echo "1. Choose a different version number"
+          echo "2. Delete the existing tag if it was created in error:"
+          echo "   git push --delete origin ${{ needs.validate-version.outputs.version }}"
+          echo "   git tag -d ${{ needs.validate-version.outputs.version }}"
+          echo ""
+          exit 1
