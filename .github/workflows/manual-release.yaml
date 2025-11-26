@@ -143,20 +143,19 @@ jobs:
           
           echo "📦 Creating release artifacts for $VERSION"
           
-          # Create comprehensive archive
-          tar -czf "support-${VERSION}.tar.gz" \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='*.tar.gz' \
-            --exclude='node_modules' \
-            --exclude='.DS_Store' \
-            *.sh \
-            helm/ \
-            scanner/ \
-            scripts/ \
-            README.md \
-            CHANGELOG.md \
-            LICENSE
+          # Create comprehensive archive with directory structure
+          mkdir -p "support-${VERSION}"
+          
+          # Copy files to the versioned directory
+          cp *.sh "support-${VERSION}/" 2>/dev/null
+          cp -r helm scanner scripts "support-${VERSION}/" 2>/dev/null
+          cp README.md CHANGELOG.md LICENSE "support-${VERSION}/" 2>/dev/null
+
+          # Create the archive
+          tar -czf "support-${VERSION}.tar.gz" "support-${VERSION}"
+          
+          # Clean up temporary directory
+          rm -rf "support-${VERSION}"
           
           # Create checksums
           sha256sum "support-${VERSION}.tar.gz" > "support-${VERSION}.tar.gz.sha256"
