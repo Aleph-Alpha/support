@@ -189,12 +189,17 @@ jobs:
         run: |
           VERSION="${{ needs.create-tag.outputs.tag_name }}"
           ACTION_TYPE="${{ github.event.inputs.action_type }}"
+          TAG_MESSAGE="${{ github.event.inputs.tag_message }}"
           
           if [ "$ACTION_TYPE" = "tag_only" ]; then
             echo "## 🏷️ Tag Created Successfully!" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "- **Tag**: $VERSION" >> $GITHUB_STEP_SUMMARY
-            echo "- **Message**: ${{ github.event.inputs.tag_message || 'Release ' }}$VERSION" >> $GITHUB_STEP_SUMMARY
+            if [ -n "$TAG_MESSAGE" ]; then
+              echo "- **Message**: $TAG_MESSAGE" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **Message**: Release $VERSION" >> $GITHUB_STEP_SUMMARY
+            fi
             echo "- **Commit**: $(git rev-parse HEAD 2>/dev/null || echo 'Unknown')" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
@@ -218,6 +223,7 @@ jobs:
             echo "1. Review the release at $RELEASE_URL" >> $GITHUB_STEP_SUMMARY
             echo "2. Update any documentation that references the new version" >> $GITHUB_STEP_SUMMARY
             echo "3. Announce the release to your team/community" >> $GITHUB_STEP_SUMMARY
+          fi
 
   tag-exists-error:
     needs: validate-version
