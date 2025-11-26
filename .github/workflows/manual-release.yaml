@@ -166,7 +166,7 @@ jobs:
           echo "  - support-tools-${VERSION}.tar.gz.sha256"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
         with:
           tag_name: ${{ needs.create-tag.outputs.tag_name }}
           name: Release ${{ needs.create-tag.outputs.tag_name }}
