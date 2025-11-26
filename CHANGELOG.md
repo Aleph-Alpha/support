@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/Aleph-Alpha/support/compare/v1.2.3...v1.3.0) (2025-11-26)
+
+
+### Features
+
+* add flag to control execution of secret generation job and allo… ([#56](https://github.com/Aleph-Alpha/support/issues/56)) ([79ba441](https://github.com/Aleph-Alpha/support/commit/79ba441a758d762c1c264c35beaa0275aa5a74d7))
+* add helm config options for pg cluster backup to s3 object storage ([#59](https://github.com/Aleph-Alpha/support/issues/59)) ([c37d327](https://github.com/Aleph-Alpha/support/commit/c37d3272edbcc06551e54afb81b7ec44419f2e51))
+* Db migration script ([#54](https://github.com/Aleph-Alpha/support/issues/54)) ([4af53ec](https://github.com/Aleph-Alpha/support/commit/4af53ec1464f84bb62aeff99cb83a28f75ff0015))
+
+
+### Bug Fixes
+
+* improve scanners to support cosign v3+ ([b8e4197](https://github.com/Aleph-Alpha/support/commit/b8e419792e4f7aea70a9ba2cd08599eac5ca5058))
+* redisConfig ([2ec9371](https://github.com/Aleph-Alpha/support/commit/2ec9371db6b32d71ab1eec59f05f8720d86018e4))
+
 ## [1.2.2](https://github.com/Aleph-Alpha/support/compare/v1.2.1...v1.2.2) (2025-10-01)
 
 
