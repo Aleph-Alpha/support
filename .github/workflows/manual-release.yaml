@@ -114,7 +114,7 @@ jobs:
             git tag -a "$VERSION" -m "$TAG_MESSAGE"
           else
             echo "🏷️ Creating tag: $VERSION"
-            git tag -a "$VERSION" -m "Release $VERSION"
+            git tag -a "$VERSION" -m "$VERSION"
           fi
           
           echo "📤 Pushing tag to repository"
@@ -144,7 +144,7 @@ jobs:
           echo "📦 Creating release artifacts for $VERSION"
           
           # Create comprehensive archive
-          tar -czf "support-tools-${VERSION}.tar.gz" \
+          tar -czf "support-${VERSION}.tar.gz" \
             --exclude='.git' \
             --exclude='.github' \
             --exclude='*.tar.gz' \
@@ -159,11 +159,11 @@ jobs:
             LICENSE
           
           # Create checksums
-          sha256sum "support-tools-${VERSION}.tar.gz" > "support-tools-${VERSION}.tar.gz.sha256"
+          sha256sum "support-${VERSION}.tar.gz" > "support-${VERSION}.tar.gz.sha256"
           
           echo "✅ Created artifacts:"
-          echo "  - support-tools-${VERSION}.tar.gz"
-          echo "  - support-tools-${VERSION}.tar.gz.sha256"
+          echo "  - support-${VERSION}.tar.gz"
+          echo "  - support-${VERSION}.tar.gz.sha256"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@5be0e66d93ac7ed76da52eca8bb058f665c3a5fe # v2.4.2
@@ -174,8 +174,8 @@ jobs:
           draft: ${{ github.event.inputs.draft }}
           prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
           files: |
-            support-tools-${{ needs.create-tag.outputs.tag_name }}.tar.gz
-            support-tools-${{ needs.create-tag.outputs.tag_name }}.tar.gz.sha256
+            support-${{ needs.create-tag.outputs.tag_name }}.tar.gz
+            support-${{ needs.create-tag.outputs.tag_name }}.tar.gz.sha256
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -216,8 +216,10 @@ jobs:
             echo "- **Release URL**: [$VERSION]($RELEASE_URL)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 📦 Artifacts" >> $GITHUB_STEP_SUMMARY
-            echo "- support-tools-${VERSION}.tar.gz" >> $GITHUB_STEP_SUMMARY
-            echo "- support-tools-${VERSION}.tar.gz.sha256" >> $GITHUB_STEP_SUMMARY
+            echo "- support-${VERSION}.tar.gz" >> $GITHUB_STEP_SUMMARY
+            echo "- support-${VERSION}.tar.gz.sha256" >> $GITHUB_STEP_SUMMARY
+            echo "- Source code (zip)" >> $GITHUB_STEP_SUMMARY
+            echo "- Source code (tar.gz)" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
             echo "1. Review the release at $RELEASE_URL" >> $GITHUB_STEP_SUMMARY
