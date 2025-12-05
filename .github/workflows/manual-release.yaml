@@ -53,22 +53,22 @@ jobs:
         id: validate
         run: |
           VERSION="${{ github.event.inputs.version }}"
-          
+
           # Remove 'v' prefix if present for validation
           VERSION_NUMBER=${VERSION#v}
-          
+
           # Validate semantic version format
           if [[ ! $VERSION_NUMBER =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?(\+[a-zA-Z0-9]+(\.[a-zA-Z0-9]+)*)?$ ]]; then
             echo "❌ Invalid version format: $VERSION"
             echo "Please use semantic versioning format (e.g., v1.0.0, v1.2.3-beta.1)"
             exit 1
           fi
-          
+
           # Ensure version starts with 'v'
           if [[ ! $VERSION =~ ^v ]]; then
             VERSION="v$VERSION"
           fi
-          
+
           echo "✅ Valid version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -108,7 +108,7 @@ jobs:
         run: |
           VERSION="${{ needs.validate-version.outputs.version }}"
           TAG_MESSAGE="${{ github.event.inputs.tag_message }}"
-          
+
           if [ -n "$TAG_MESSAGE" ]; then
             echo "🏷️ Creating tag: $VERSION with message: $TAG_MESSAGE"
             git tag -a "$VERSION" -m "$TAG_MESSAGE"
@@ -116,10 +116,10 @@ jobs:
             echo "🏷️ Creating tag: $VERSION"
             git tag -a "$VERSION" -m "$VERSION"
           fi
-          
+
           echo "📤 Pushing tag to repository"
           git push origin "$VERSION"
-          
+
           echo "✅ Tag $VERSION created and pushed successfully"
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
           echo "tag_created=true" >> $GITHUB_OUTPUT
@@ -128,8 +128,8 @@ jobs:
     needs: [validate-version, create-tag]
     runs-on: ubuntu-latest
     if: |
-      needs.validate-version.outputs.tag_exists == 'false' && 
-      needs.create-tag.outputs.tag_created == 'true' && 
+      needs.validate-version.outputs.tag_exists == 'false' &&
+      needs.create-tag.outputs.tag_created == 'true' &&
       github.event.inputs.action_type == 'tag_and_release'
     steps:
       - name: Checkout
@@ -140,12 +140,12 @@ jobs:
       - name: Create release artifacts
         run: |
           VERSION="${{ needs.create-tag.outputs.tag_name }}"
-          
+
           echo "📦 Creating release artifacts for $VERSION"
-          
+
           # Create comprehensive archive with directory structure
           mkdir -p "support-${VERSION}"
-          
+
           # Copy files to the versioned directory
           cp *.sh "support-${VERSION}/" 2>/dev/null
           cp -r helm scanner scripts "support-${VERSION}/" 2>/dev/null
@@ -153,13 +153,13 @@ jobs:
 
           # Create the archive
           tar -czf "support-${VERSION}.tar.gz" "support-${VERSION}"
-          
+
           # Clean up temporary directory
           rm -rf "support-${VERSION}"
-          
+
           # Create checksums
           sha256sum "support-${VERSION}.tar.gz" > "support-${VERSION}.tar.gz.sha256"
-          
+
           echo "✅ Created artifacts:"
           echo "  - support-${VERSION}.tar.gz"
           echo "  - support-${VERSION}.tar.gz.sha256"
@@ -189,7 +189,7 @@ jobs:
           VERSION="${{ needs.create-tag.outputs.tag_name }}"
           ACTION_TYPE="${{ github.event.inputs.action_type }}"
           TAG_MESSAGE="${{ github.event.inputs.tag_message }}"
-          
+
           if [ "$ACTION_TYPE" = "tag_only" ]; then
             echo "## 🏷️ Tag Created Successfully!" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -206,7 +206,7 @@ jobs:
             echo "2. Update any documentation that references the new version" >> $GITHUB_STEP_SUMMARY
           else
             RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/$VERSION"
-            
+
             echo "## 🎉 Tag and Release Created Successfully!" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY

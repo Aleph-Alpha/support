@@ -740,13 +740,13 @@ clusterPharia:
   backups:
     enabled: true  # Enable backups
     target: prefer-standby  # Run backups on standby replicas to avoid impacting primary
-    
+
     # S3 endpoint (leave empty for AWS S3, set for MinIO or other S3-compatible storage)
     endpointURL: "https://s3.eu-central-1.amazonaws.com"  # or "http://minio.example.com:9000"
-    
+
     # Backup destination path with timestamp for versioning
     destinationPath: "s3://my-backups/postgresql-pharia-2025-11-17/"
-    
+
     # S3 provider configuration
     provider: s3
     s3:
@@ -757,24 +757,24 @@ clusterPharia:
       secretKey: "YOUR_SECRET_KEY"
       # OR use IAM role-based authentication (recommended for AWS):
       inheritFromIAMRole: false  # Set to true to use IAM roles instead of keys
-    
+
     # WAL archiving configuration
     wal:
       compression: gzip
       maxParallel: 8  # Number of parallel WAL archive/restore operations
-    
+
     # Base backup configuration
     data:
       compression: gzip
       jobs: 2  # Number of parallel backup jobs
-    
+
     # Scheduled backup configuration
     scheduledBackups:
       - name: daily-backup
         schedule: "0 0 2 * * *"  # Daily at 2:00 AM (cron format)
         backupOwnerReference: self
         method: barmanObjectStore
-    
+
     # Backup retention policy
     retentionPolicy: "30d"  # Keep backups for 30 days
 ```
@@ -815,7 +815,7 @@ kubectl logs -n pharia-ai -l cnpg.io/cluster=qs-postgresql-cluster-pharia | grep
 **Successful Backup Example:**
 ```
 NAME                                              AGE    CLUSTER                        PHASE       ERROR
-qs-postgresql-cluster-pharia-daily-backup-...    5m     qs-postgresql-cluster-pharia   completed   
+qs-postgresql-cluster-pharia-daily-backup-...    5m     qs-postgresql-cluster-pharia   completed
 ```
 
 #### Disaster Recovery Guide
@@ -830,29 +830,29 @@ Update `qs-postgresql-cluster/values.yaml` to configure recovery mode:
 clusterPharia:
   mode: recovery  # Change from 'standalone' to 'recovery'
   fullnameOverride: qs-postgresql-cluster-pharia  # Keep the SAME cluster name
-  
+
   backups:
     enabled: true
     # NEW timestamp for post-recovery backups
     destinationPath: "s3://my-backups/postgresql-pharia-2025-11-18/"
     # ... (keep same S3 credentials configuration)
-  
+
   recovery:
     method: object_store  # Recover from S3 backup
-    
+
     # The original cluster name in backups (must match the backed-up cluster)
     clusterName: "qs-postgresql-cluster-pharia"
-    
+
     # OLD timestamp to read backups from
     destinationPath: "s3://my-backups/postgresql-pharia-2025-11-17/"
-    
+
     # Recovery target (promote immediately after recovery)
     recoveryTarget: "promote"
-    
+
     # Point-in-Time Recovery (optional)
     pitrTarget:
       time: ""  # Leave empty to recover to latest, or specify RFC3339 timestamp
-    
+
     # S3 configuration (must match backup configuration)
     endpointURL: "https://s3.eu-central-1.amazonaws.com"
     provider: s3
@@ -1510,28 +1510,6 @@ kubectl create secret generic qs-minio-access-pharia-data-external -n pharia-ai 
 
 </details>
 
-<details>
-<summary><strong>Pharia Finetuning MinIO Secrets (2 secrets)</strong></summary>
-
-```bash
-# Generate password once for this instance
-PHARIA_FINETUNING_PASSWORD=$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)
-
-# Instance-level secret
-kubectl create secret generic qs-minio-access-pharia-finetuning -n pharia-ai \
-  --from-literal=user="pharia-finetuning" \
-  --from-literal=password="$PHARIA_FINETUNING_PASSWORD" \
-  --from-literal=endpointUrl="http://qs-minio-pharia-finetuning:9000"
-
-# Bucket-specific secret for "pharia-finetuning" bucket
-kubectl create secret generic qs-minio-access-pharia-finetuning-pharia-finetuning -n pharia-ai \
-  --from-literal=user="pharia-finetuning" \
-  --from-literal=password="$PHARIA_FINETUNING_PASSWORD" \
-  --from-literal=endpointUrl="http://qs-minio-pharia-finetuning:9000" \
-  --from-literal=bucket="pharia-finetuning"
-```
-
-</details>
 
 **Important Notes:**
 - All secrets for a single MinIO instance **must use the same username and password**
@@ -1554,7 +1532,7 @@ The MinIO setup provides the following instances for Pharia applications:
 | Instance | Secret Name | Buckets | Application | Description |
 |----------|-------------|---------|-------------|-------------|
 | `qs-minio-pharia-data` | `qs-minio-access-pharia-data` | `internal`, `external` | Pharia Data | General data storage |
-| `qs-minio-pharia-finetuning` | `qs-minio-access-pharia-finetuning` | `pharia-finetuning` | Pharia Finetuning | ML model finetuning artifacts |
+
 
 **Connection Configuration:**
 - **Protocol:** HTTP (configurable via `minio.protocol`)
@@ -1612,10 +1590,9 @@ data:
 **Examples:**
 - `qs-minio-access-pharia-data-internal` → for the `internal` bucket
 - `qs-minio-access-pharia-data-external` → for the `external` bucket
-- `qs-minio-access-pharia-finetuning-pharia-finetuning` → for the `pharia-finetuning` bucket
 
 #### Secret Key Details:
-- **user:** MinIO access key / username (e.g., `pharia-data`, `pharia-finetuning`)
+- **user:** MinIO access key / username (e.g., `pharia-data`)
 - **password:** MinIO secret key - 25-character cryptographically secure random password (preserved across upgrades)
 - **endpointUrl:** Complete MinIO endpoint URL in format `protocol://host:port` (e.g., `http://qs-minio-pharia-data:9000`)
 - **bucket:** Specific bucket name - only present in bucket-specific secrets, allows applications to know exactly which bucket to use
@@ -1649,13 +1626,6 @@ Testing MinIO instance: qs-minio-pharia-data
 ✅ Buckets exist: internal, external
 ✅ Upload/download test successful
 
-Testing MinIO instance: qs-minio-pharia-finetuning
-✅ MinIO is ready
-✅ Authentication successful
-✅ Buckets exist: pharia-finetuning
-✅ Upload/download test successful
-
-All MinIO instances are healthy!
 ```
 
 ### Uninstall Process

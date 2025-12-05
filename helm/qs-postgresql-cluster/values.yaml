@@ -340,7 +340,7 @@ clusterPharia:
     pitrTarget:
       # -- Time in RFC3339 format
       time: ""
-    
+
     ## -- Recovery target settings for controlling recovery behavior
     # Options: pause, promote, shutdown
     # 'promote' is recommended - promotes to read-write immediately after recovery
@@ -589,7 +589,7 @@ clusterTemporal:
     pitrTarget:
       # -- Time in RFC3339 format
       time: ""
-    
+
     ## -- Recovery target settings for controlling recovery behavior
     # Options: pause, promote, shutdown
     # 'promote' is recommended - promotes to read-write immediately after recovery

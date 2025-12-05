@@ -83,21 +83,3 @@ minio-pharia-data:
     existingSecretUserKey: "user"
     ## @param auth.existingSecretPasswordKey Key in existing secret containing password
     existingSecretPasswordKey: "password"
-
-minio-pharia-finetuning:
-  enabled: true
-  fullnameOverride: qs-minio-pharia-finetuning
-  ## @section Bucket provisioning
-  ## @param defaultBuckets Comma, semi-colon or space separated list of buckets to create at initialization
-  ## Format: "bucket-name" or "bucket-name:policy" where policy can be: none, download, upload, or public
-  ## e.g: "my-bucket, my-second-bucket:download, my-public-bucket:public"
-  defaultBuckets: "pharia-finetuning"
-  auth:
-    ## @param auth.existingSecret Name of existing secret containing MinIO credentials
-    existingSecret: "qs-minio-access-pharia-finetuning"
-    ## @param auth.username Username put in existing secret
-    user: "pharia-finetuning"
-    ## @param auth.existingSecretUserKey Key in existing secret containing username
-    existingSecretUserKey: "user"
-    ## @param auth.existingSecretPasswordKey Key in existing secret containing password
-    existingSecretPasswordKey: "password"
