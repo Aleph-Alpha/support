@@ -76,7 +76,7 @@ Create the name of the role to use or create
 Generate secret creation job for MinIO instances
 Params:
   .root - root context
-  .instanceName - name of the MinIO instance (pharia-data, pharia-finetuning)
+  .instanceName - name of the MinIO instance (pharia-data)
   .instanceConfig - MinIO instance configuration from values
 */}}
 {{- define "qs-minio.secretCreationJob" -}}

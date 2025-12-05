@@ -18,3 +18,5 @@ scanner/test-k8s-scanner.sh
 ignore.txt
 
 CHART.md
+
+charts
