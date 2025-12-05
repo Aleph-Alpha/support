@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.11](https://github.com/Aleph-Alpha/support/compare/v1.2.10...v1.2.11) (2025-12-05)
+
+
+### Bug Fixes
+
+* cleanup finetuning ([#71](https://github.com/Aleph-Alpha/support/issues/71)) ([d5ea051](https://github.com/Aleph-Alpha/support/commit/d5ea051b67a17d9b6a976bb11dbaeccfca2d1051))
+
 ## [1.2.2](https://github.com/Aleph-Alpha/support/compare/v1.2.1...v1.2.2) (2025-10-01)
 
 
