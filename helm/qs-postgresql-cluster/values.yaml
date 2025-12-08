@@ -70,6 +70,10 @@ clusterPharia:
     # -- PostgreSQL major version to use
     postgresql: "17"
   cluster:
+    # -- The UID of the postgres user inside the image, defaults to 26
+    postgresUID: -1
+    # -- The GID of the postgres user inside the image, defaults to 26
+    postgresGID: -1
     # -- Number of instances
     instances: 3
     # -- Name of the container image, supporting both tags (<image>:<tag>) and digests for deterministic and repeatable deployments:
@@ -447,6 +451,8 @@ clusterPharia:
         log_disconnections: "0"
         log_pooler_errors: "1"
         log_stats: "1"
+      # -- Template for deployment spec overrides (cf. https://cloudnative-pg.io/documentation/1.15/connection_pooling/#podtemplates)
+      # template: {}
 
 # PG Cluster for Temporal
 clusterTemporal:
@@ -457,6 +463,10 @@ clusterTemporal:
     # -- PostgreSQL major version to use
     postgresql: "17"
   cluster:
+    # -- The UID of the postgres user inside the image, defaults to 26
+    postgresUID: -1
+    # -- The GID of the postgres user inside the image, defaults to 26
+    postgresGID: -1
     # -- Number of instances
     instances: 3
     # -- Name of the container image, supporting both tags (<image>:<tag>) and digests for deterministic and repeatable deployments:
@@ -683,3 +693,5 @@ clusterTemporal:
         log_disconnections: "0"
         log_pooler_errors: "1"
         log_stats: "1"
+      # -- Template for deployment spec overrides (cf. https://cloudnative-pg.io/documentation/1.15/connection_pooling/#podtemplates)
+      # template: {}
