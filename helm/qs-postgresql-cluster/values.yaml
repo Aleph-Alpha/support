@@ -24,7 +24,7 @@ jobImage:
   # -- Container image for kubectl in secret creation jobs
   repository: ghcr.io/aleph-alpha/shared-images/pharia-helper
   # -- Image tag for kubectl (set to specific version for stability)
-  tag: "latest"
+  tag: "v1.0.4"
   # -- Image pull policy
   pullPolicy: IfNotPresent
 
@@ -52,7 +52,7 @@ secretCleanup:
 # Configuration for Helm tests
 tests:
   # -- PostgreSQL image to use for connection tests (alpine variant is ~40% smaller)
-  image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
+  image: ghcr.io/aleph-alpha/shared-images/pharia-helper:v1.0.4
   # -- SSL mode for PostgreSQL connections (disable, allow, prefer, require, verify-ca, verify-full)
   sslMode: prefer
 
@@ -405,7 +405,7 @@ clusterPharia:
     # Default pooler for roles without specific mapping
     # If empty or not set, unmapped roles use direct cluster connection
     # If set, unmapped roles will use this pooler
-    defaultPooler: "transaction"  # All Pharia roles use transaction pooler by default
+    defaultPooler: ""  # All Pharia roles use transaction pooler by default
 
     # Role-specific pooler mappings (overrides defaultPooler)
     # Maps each role to a specific pooler (optional)
@@ -429,30 +429,30 @@ clusterPharia:
       # Note: Most applications should use the default pooler
       # Only override when you have specific requirements
   # -- List of PgBouncer poolers
-  poolers:
+  poolers: []
     # Transaction mode pooler - for databases that work well with transaction pooling
     # Recommended for: document-index, and other databases without prepared statements
-    - name: transaction
-      # -- PgBouncer type of service to forward traffic to.
-      type: rw
-      # -- PgBouncer pooling mode
-      poolMode: transaction
-      # -- Number of PgBouncer instances
-      instances: 3
-      # -- PgBouncer configuration parameters
-      parameters:
-        max_client_conn: "1000"
-        default_pool_size: "30"
-        max_prepared_statements: "100"
-        server_tls_sslmode: require
-        ignore_startup_parameters: extra_float_digits, jit
-        auth_type: scram-sha-256
-        log_connections: "0"
-        log_disconnections: "0"
-        log_pooler_errors: "1"
-        log_stats: "1"
-      # -- Template for deployment spec overrides (cf. https://cloudnative-pg.io/documentation/1.15/connection_pooling/#podtemplates)
-      # template: {}
+#    - name: transaction
+#      # -- PgBouncer type of service to forward traffic to.
+#      type: rw
+#      # -- PgBouncer pooling mode
+#      poolMode: transaction
+#      # -- Number of PgBouncer instances
+#      instances: 3
+#      # -- PgBouncer configuration parameters
+#      parameters:
+#        max_client_conn: "1000"
+#        default_pool_size: "30"
+#        max_prepared_statements: "100"
+#        server_tls_sslmode: require
+#        ignore_startup_parameters: extra_float_digits, jit
+#        auth_type: scram-sha-256
+#        log_connections: "0"
+#        log_disconnections: "0"
+#        log_pooler_errors: "1"
+#        log_stats: "1"
+#      # -- Template for deployment spec overrides (cf. https://cloudnative-pg.io/documentation/1.15/connection_pooling/#podtemplates)
+#      # template: {}
 
 # PG Cluster for Temporal
 clusterTemporal:
@@ -660,7 +660,7 @@ clusterTemporal:
     # Default pooler for roles without specific mapping
     # If empty or not set, unmapped roles use direct cluster connection
     # If set, unmapped roles will use this pooler
-    defaultPooler: "session"  # All temporal roles use session pooler by default
+    defaultPooler: ""  # All temporal roles use session pooler by default
 
     # Role-specific pooler mappings (overrides defaultPooler)
     # Maps each role to a specific pooler (optional)
@@ -669,29 +669,29 @@ clusterTemporal:
       # temporal_visibility: session  # Not needed - uses defaultPooler
       # Add role-specific overrides here if needed
   # -- List of PgBouncer poolers
-  poolers:
+  poolers: []
     # Session mode pooler - for databases that require session state
     # Recommended for: Temporal workflow databases requiring session state
-    - name: session
-      # -- PgBouncer type of service to forward traffic to.
-      type: rw
-      # -- PgBouncer pooling mode
-      poolMode: session
-      # -- Number of PgBouncer instances
-      instances: 3
-      # -- PgBouncer configuration parameters
-      parameters:
-        max_client_conn: "600"
-        default_pool_size: "80"
-        reserve_pool_size: "10"
-        server_lifetime: "3600"
-        server_idle_timeout: "600"
-        server_tls_sslmode: require
-        ignore_startup_parameters: extra_float_digits
-        auth_type: scram-sha-256
-        log_connections: "0"
-        log_disconnections: "0"
-        log_pooler_errors: "1"
-        log_stats: "1"
-      # -- Template for deployment spec overrides (cf. https://cloudnative-pg.io/documentation/1.15/connection_pooling/#podtemplates)
-      # template: {}
+#    - name: session
+#      # -- PgBouncer type of service to forward traffic to.
+#      type: rw
+#      # -- PgBouncer pooling mode
+#      poolMode: session
+#      # -- Number of PgBouncer instances
+#      instances: 3
+#      # -- PgBouncer configuration parameters
+#      parameters:
+#        max_client_conn: "600"
+#        default_pool_size: "80"
+#        reserve_pool_size: "10"
+#        server_lifetime: "3600"
+#        server_idle_timeout: "600"
+#        server_tls_sslmode: require
+#        ignore_startup_parameters: extra_float_digits
+#        auth_type: scram-sha-256
+#        log_connections: "0"
+#        log_disconnections: "0"
+#        log_pooler_errors: "1"
+#        log_stats: "1"
+#      # -- Template for deployment spec overrides (cf. https://cloudnative-pg.io/documentation/1.15/connection_pooling/#podtemplates)
+#      # template: {}
