@@ -1,0 +1,40 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "qs-mariadb-cluster.roleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "qs-mariadb-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade,pre-delete
+    "helm.sh/hook-weight": "-30"
+    "helm.sh/hook-delete-policy": before-hook-creation
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+{{- end }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "qs-mariadb-cluster.fullname" . }}-secret-creator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "qs-mariadb-cluster.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rbac
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade,pre-delete
+    "helm.sh/hook-weight": "-30"
+    "helm.sh/hook-delete-policy": before-hook-creation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "qs-mariadb-cluster.roleName" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "qs-mariadb-cluster.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+

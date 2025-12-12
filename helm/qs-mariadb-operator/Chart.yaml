@@ -1,0 +1,11 @@
+apiVersion: v2
+name: qs-mariadb-operator
+home: https://aleph-alpha.com/phariaai/
+icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
+description: Pharia AI Quick Start Helm chart for Minio
+version: 0.1.0
+
+dependencies:
+  - name: mariadb-operator
+    version: 25.10.2
+    repository: https://helm.mariadb.com/mariadb-operator

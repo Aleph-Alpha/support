@@ -1,0 +1,560 @@
+# ============================================================================
+# MariaDB Cluster Configuration
+# ============================================================================
+# Migrated from qs-postgresql-cluster and qs-postgresql-db
+#
+# This configuration includes:
+# - All users/roles from qs-postgresql-cluster (clusterPharia and clusterTemporal)
+# - All databases from qs-postgresql-db
+# - Grants to assign database ownership and privileges
+# ============================================================================
+
+fullnameOverride: "qs-mariadb-cluster"
+
+# ServiceAccount configuration for the secret creation job
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# RBAC configuration for the secret creation job
+rbac:
+  # Specifies whether a role should be created
+  # If false, an existing role with the name specified in roleName will be used
+  create: true
+  # The name of the role to use or create
+  # If not set and create is true, a name is generated using the fullname template
+  # If not set and create is false, defaults to "<fullname>-secret-creator"
+  roleName: ""
+
+# Image configuration for secret creation jobs
+jobImage:
+  # -- Container image for kubectl in secret creation jobs
+  repository: ghcr.io/aleph-alpha/shared-images/pharia-helper
+  # -- Image tag for kubectl (set to specific version for stability)
+  tag: "v1.0.4"
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# Configuration for secret creation jobs
+jobConfig:
+  # -- Log level for secret creation jobs (debug, info, warning, error)
+  logLevel: info
+  # -- Enable colored output in logs
+  coloredOutput: true
+  # -- Dry-run mode - if true, shows what would be done without making changes
+  dryRun: false
+  # -- Fail on error - if false, job continues even if some secrets fail
+  failOnError: true
+
+# Configuration for secret generation job
+secretGenerationJob:
+  # -- Enable secret generation job (true = run job, false = skip job)
+  enabled: true
+
+# Configuration for secret cleanup on uninstall
+secretCleanup:
+  # -- Retain secrets on helm uninstall (true = keep secrets, false = delete secrets)
+  retainOnDelete: true
+
+# ============================================================================
+# Helm Test Configuration
+# ============================================================================
+# Configuration for Helm tests that verify database connectivity and functionality
+# Note: Tests are only executed when you run 'helm test <release-name>'
+tests:
+  # -- Container image to use for connection tests (MariaDB client)
+  # Uses MariaDB image which includes mariadb and mariadb-admin clients
+  image: mariadb:11.8
+
+# ============================================================================
+# Root Password Secret Configuration (for secret creation job)
+# ============================================================================
+# Configuration for automatic creation of the root password secret
+# This is separate from the mariadb-cluster dependency configuration
+rootPasswordSecret:
+  # -- Enable automatic creation of root password secret (true = create automatically, false = use existing)
+  create: true
+  # -- Name of the secret containing the root password
+  name: mariadb
+  # -- Key in the secret containing the root password
+  key: root-password
+
+# ============================================================================
+# MariaDB Cluster Dependency Configuration
+# ============================================================================
+# Configuration for the mariadb-cluster dependency chart
+# See: https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/api_reference.md#mariadbspec
+mariadb-cluster:
+  # MariaDB CR configuration
+  mariadb:
+    rootPasswordSecretKeyRef:
+      name: mariadb
+      key: root-password
+      # -- Generate root password automatically if secret doesn't exist
+      # Set to true to let the operator generate the password, false to use existing secret
+      generate: false
+    storage:
+      size: 250Gi
+    replicas: 3
+    galera:
+      enabled: true
+
+  # ============================================================================
+  # Databases
+  # ============================================================================
+  # Migrated from qs-postgresql-db/values.yaml
+  # Each database corresponds to a PostgreSQL database with the same name
+  # See: https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/api_reference.md#databasespec
+  databases:
+  # Pharia cluster databases
+  - name: document-index
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-os
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: inference-api
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-studio
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-oauth-gateway
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-assistant
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-chat
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-catch
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: zitadel
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: openfga
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: dex
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-conductor
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-numinous
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-transcribe-app
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: pharia-data
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: mlflow
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  # Temporal cluster databases
+  - name: temporal
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: temporal-visibility
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+
+  - name: temporalvisibility
+    characterSet: utf8mb4
+    collate: utf8mb4_unicode_ci
+    cleanupPolicy: Delete
+  # ============================================================================
+  # Users
+  # ============================================================================
+  # Migrated from qs-postgresql-cluster/values.yaml
+  # All users from clusterPharia and clusterTemporal
+  # See: https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/api_reference.md#userspec
+  users:
+  # Pharia cluster users
+  - name: document-index
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-document-index
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-os
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-os
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: inference-api
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-inference-api
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-studio
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-studio
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-oauth-gateway
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-oauth-gateway
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-assistant
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-assistant
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-chat
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-chat
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-catch
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-catch
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: zitadel
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-zitadel
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: openfga
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-openfga
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: dex
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-dex
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-conductor
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-conductor
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-numinous
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-numinous
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-transcribe-app
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-transcribe-app
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-data
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-pharia-data
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: mlflow
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-mlflow
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  # Temporal cluster users
+  - name: temporal
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-temporal
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: temporal-visibility
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-temporal-visibility
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: temporalvisibility
+    passwordSecretKeyRef:
+      name: qs-postgresql-cluster-access-temporalvisibility
+      key: password
+    host: "%"
+    cleanupPolicy: Delete
+
+  # ============================================================================
+  # Grants
+  # ============================================================================
+  # Grants to assign database ownership and privileges to users
+  # Each user gets ALL PRIVILEGES on their respective database
+  # See: https://github.com/mariadb-operator/mariadb-operator/blob/main/docs/api_reference.md#grantspec
+  grants:
+  # Pharia cluster grants
+  - name: document-index-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: document-index
+    table: "*"
+    username: document-index
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-os-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-os
+    table: "*"
+    username: pharia-os
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: inference-api-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: inference-api
+    table: "*"
+    username: inference-api
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-studio-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-studio
+    table: "*"
+    username: pharia-studio
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-oauth-gateway-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-oauth-gateway
+    table: "*"
+    username: pharia-oauth-gateway
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-assistant-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-assistant
+    table: "*"
+    username: pharia-assistant
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-chat-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-chat
+    table: "*"
+    username: pharia-chat
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-catch-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-catch
+    table: "*"
+    username: pharia-catch
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: zitadel-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: zitadel
+    table: "*"
+    username: zitadel
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: openfga-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: openfga
+    table: "*"
+    username: openfga
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: dex-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: dex
+    table: "*"
+    username: dex
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-conductor-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-conductor
+    table: "*"
+    username: pharia-conductor
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-numinous-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-numinous
+    table: "*"
+    username: pharia-numinous
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-transcribe-app-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-transcribe-app
+    table: "*"
+    username: pharia-transcribe-app
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: pharia-data-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: pharia-data
+    table: "*"
+    username: pharia-data
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: mlflow-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: mlflow
+    table: "*"
+    username: mlflow
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  # Temporal cluster grants
+  - name: temporal-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: temporal
+    table: "*"
+    username: temporal
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: temporal-visibility-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: temporal-visibility
+    table: "*"
+    username: temporal-visibility
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  - name: temporalvisibility-grant
+    privileges:
+      - "ALL PRIVILEGES"
+    database: temporalvisibility
+    table: "*"
+    username: temporalvisibility
+    grantOption: true
+    host: "%"
+    cleanupPolicy: Delete
+
+  # ============================================================================
+  # Backups (optional - configure as needed)
+  # ============================================================================
+  backups: []
+
+  # ============================================================================
+  # Physical Backups (optional - configure as needed)
+  # ============================================================================
+  physicalBackups: []
+
