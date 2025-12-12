@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/Aleph-Alpha/support/compare/v1.2.11...v1.3.0) (2025-12-12)
+
+
+### Features
+
+* add support charts for mariadb ([49e4bc9](https://github.com/Aleph-Alpha/support/commit/49e4bc9cf523bd1213e1b7aa56fdce6b467ee6a7))
+
 ## [1.2.2](https://github.com/Aleph-Alpha/support/compare/v1.2.1...v1.2.2) (2025-10-01)
 
 
