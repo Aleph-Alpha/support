@@ -333,6 +333,7 @@ mariadb-cluster:
       name: qs-postgresql-cluster-access-temporal
       key: password
     host: "%"
+    maxUserConnections: 50
     cleanupPolicy: Delete
 
   - name: temporal-visibility
@@ -340,6 +341,7 @@ mariadb-cluster:
       name: qs-postgresql-cluster-access-temporal-visibility
       key: password
     host: "%"
+    maxUserConnections: 50
     cleanupPolicy: Delete
 
   - name: temporalvisibility
@@ -347,6 +349,7 @@ mariadb-cluster:
       name: qs-postgresql-cluster-access-temporalvisibility
       key: password
     host: "%"
+    maxUserConnections: 50
     cleanupPolicy: Delete
 
   # ============================================================================
