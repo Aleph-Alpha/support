@@ -1,0 +1,76 @@
+name: Build and Push Helm Charts to Harbor
+
+on:
+  workflow_dispatch:
+    inputs:
+      charts:
+        description: 'Select chart(s) to build and push (comma-separated or "all")'
+        required: true
+        type: choice
+        options:
+          - 'all'
+          - 'qs-minio'
+          - 'qs-postgresql-cluster'
+          - 'qs-postgresql-db'
+          - 'qs-postgresql-operator'
+          - 'qs-redis'
+          - 'qs-redis-operator'
+        default: 'all'
+      custom_charts:
+        description: 'Or specify custom charts (comma-separated, e.g., "qs-minio,qs-redis")'
+        required: false
+        type: string
+      chart_version:
+        description: 'Chart version to use (optional, defaults to Chart.yaml version)'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  prepare-chart-list:
+    runs-on: cpu-runner-8c-32gb-01
+    outputs:
+      charts: ${{ steps.determine-charts.outputs.charts }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Determine charts to build
+        id: determine-charts
+        run: |
+          if [ -n "${{ inputs.custom_charts }}" ]; then
+            # Use custom charts input if provided
+            CHARTS="${{ inputs.custom_charts }}"
+          elif [ "${{ inputs.charts }}" = "all" ]; then
+            # Build all charts
+            CHARTS="qs-minio,qs-postgresql-cluster,qs-postgresql-db,qs-postgresql-operator,qs-redis,qs-redis-operator"
+          else
+            # Use selected chart
+            CHARTS="${{ inputs.charts }}"
+          fi
+          
+          # Convert comma-separated string to JSON array
+          CHARTS_JSON=$(echo "$CHARTS" | jq -R -s -c 'split(",") | map(select(length > 0) | gsub("^[[:space:]]+|[[:space:]]+$";""))')
+          echo "charts=$CHARTS_JSON" >> $GITHUB_OUTPUT
+          echo "Charts to build: $CHARTS_JSON"
+
+  build-and-push:
+    needs: prepare-chart-list
+    if: needs.prepare-chart-list.outputs.charts != '[]'
+    uses: ./.github/workflows/helm-push-to-harbor-workflow.yaml
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.prepare-chart-list.outputs.charts) }}
+      fail-fast: false
+    with:
+      chart_name: ${{ matrix.chart }}
+      chart_version: ${{ inputs.chart_version }}
+    secrets:
+      HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+
+
