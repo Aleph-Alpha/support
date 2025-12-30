@@ -1,0 +1,30 @@
+# Sensitive configuration file
+config.yaml
+
+# Backup directories (contains sensitive database data and secrets)
+database-backups/
+secrets-backups/
+
+# Backup files
+*.sql
+*.sql.gz
+*.dump
+
+# Log files
+logs/
+*.log
+
+# Temporary files
+.backup_success_*
+*.tmp
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

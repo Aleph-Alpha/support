@@ -1,0 +1,58 @@
+# PostgreSQL Backup & Restore Configuration
+# Copy this file to config.yaml and update with your database credentials
+#
+# Project Structure:
+#   bin/                    - All executable scripts
+#     ├── backup-db.sh      - Backup databases
+#     ├── restore-db.sh     - Restore databases
+#     ├── backup-secrets.sh - Backup Kubernetes secrets
+#     ├── restore-secrets.sh- Restore Kubernetes secrets
+#     └── pharia-backup.sh  - Main CLI wrapper (unified interface)
+#   lib/
+#     └── common.sh         - Shared functions and utilities
+#   config.yaml             - Database configuration (this file)
+#   database-backups/       - Database backup files
+#   secrets-backups/        - Kubernetes secrets backup files
+#
+# Usage Examples:
+#   # Using the unified CLI (recommended)
+#   ./bin/pharia-backup.sh db backup
+#   ./bin/pharia-backup.sh db restore mydb
+#   ./bin/pharia-backup.sh secrets backup
+#   ./bin/pharia-backup.sh secrets restore --latest
+#
+#   # Or use individual scripts directly
+#   ./bin/backup-db.sh
+#   ./bin/restore-db.sh mydb
+#   ./bin/backup-secrets.sh
+#   ./bin/restore-secrets.sh --latest
+
+# Backup settings
+backup_dir: "./database-backups"
+
+# Database configurations
+databases:
+  - name: myapp_db
+    host: localhost
+    port: 5432
+    user: postgres
+    password: your_password_here
+
+  - name: analytics_db
+    host: localhost
+    port: 5432
+    user: postgres
+    password: your_password_here
+
+  - name: reporting_db
+    host: 192.168.1.100
+    port: 5433
+    user: dbadmin
+    password: secure_password_here
+
+# Optional: Add more databases as needed
+#  - name: another_db
+#    host: db.example.com
+#    port: 5432
+#    user: dbuser
+#    password: dbpass

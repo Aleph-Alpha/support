@@ -12,6 +12,8 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
   - [Cosign Scripts](#cosign-scripts)
     - [cosign-extract.sh](#cosign-extractsh)
     - [cosign-verify-image.sh](#cosign-verify-imagesh)
+  - [Backup & Restore Tools](#backup--restore-tools)
+    - [pharia-ai-backup-restore](#pharia-ai-backup-restore)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
 - [Contributing](#contributing)
@@ -19,7 +21,7 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
 
 ## 🔍 Overview
 
-This repository contains utility scripts designed to help Aleph Alpha customers manage and interact with container images, security attestations, and related infrastructure components. These tools are particularly useful for organizations working with signed container images and security compliance requirements.
+This repository contains utility scripts designed to help Aleph Alpha customers manage and interact with container images, security attestations, database backup and restore operations, and related infrastructure components. These tools are particularly useful for organizations working with signed container images, security compliance requirements, and operational maintenance of Pharia AI deployments.
 
 ## 🛠️ Scripts
 
@@ -789,6 +791,102 @@ Options:
 - **Transparency Log Integration**: Uses Rekor transparency log for keyless verification
 - **Identity Validation**: Strict OIDC identity matching to prevent impersonation
 - **Comprehensive Error Reporting**: Clear feedback on verification failures with troubleshooting hints
+
+### Backup & Restore Tools
+
+#### pharia-ai-backup-restore
+
+A comprehensive backup and restore solution for Pharia AI deployments, providing safe database backup and restore operations for PostgreSQL databases and Kubernetes secrets during upgrades and rollbacks.
+
+#### Features
+
+- **PostgreSQL Database Backup & Restore**: Complete backup and restore functionality for PostgreSQL databases
+- **Kubernetes Secrets Management**: Export and restore Kubernetes secrets safely
+- **Configuration-driven**: YAML-based configuration for easy management
+- **Multi-database Support**: Handle multiple databases in a single operation
+- **Safe Operations**: Built-in validation and error handling
+- **Upgrade/Rollback Support**: Designed specifically for Pharia AI maintenance operations
+
+#### What's Included
+
+- 🐘 **PostgreSQL Database Backup & Restore** - Full backup and restore of PostgreSQL databases
+- 🔐 **Kubernetes Secrets Backup & Restore** - Export and restore K8s secrets
+- ⚙️ **Configuration Management** - YAML-based configuration with examples
+- 🔧 **Helper Scripts** - Individual scripts for specific operations
+- 📚 **Documentation** - Comprehensive setup and usage documentation
+
+#### What's NOT Included
+
+- ⚠️ **Qdrant Database Backup** - Vector database backups are not supported
+- ⚠️ **Application State** - Only database and secrets are backed up
+
+> **Note:** If your application uses Qdrant or other vector databases, you'll need to backup those separately using Qdrant's native backup tools.
+
+#### Usage Examples
+
+**Setup configuration:**
+```bash
+cd scripts/pharia-ai-backup-restore/
+cp config.yaml.example config.yaml
+# Edit config.yaml with your database details
+```
+
+**Test database connection:**
+```bash
+psql -h localhost -p 5432 -U pharia_user -d dev -c "SELECT version();"
+```
+
+**Run full backup:**
+```bash
+./bin/pharia-backup.sh
+```
+
+**Backup individual components:**
+```bash
+# Database only
+./bin/backup-db.sh
+
+# Secrets only
+./bin/backup-secrets.sh
+```
+
+**Restore from backup:**
+```bash
+# Database restore
+./bin/restore-db.sh
+
+# Secrets restore
+./bin/restore-secrets.sh
+```
+
+#### Directory Structure
+
+The backup and restore tools are organized as follows:
+
+```
+scripts/pharia-ai-backup-restore/
+├── config.yaml.example          # Configuration template
+├── README.md                     # Detailed documentation
+├── bin/                          # Executable scripts
+│   ├── backup-db.sh             # Database backup script
+│   ├── backup-secrets.sh        # Secrets backup script
+│   ├── pharia-backup.sh         # Main backup orchestrator
+│   ├── restore-db.sh            # Database restore script
+│   └── restore-secrets.sh       # Secrets restore script
+└── lib/                          # Shared libraries
+    └── common.sh                # Common functions and utilities
+```
+
+#### Prerequisites for Backup & Restore Tools
+
+- **PostgreSQL client tools** (`psql`, `pg_dump`, `pg_restore`)
+- **kubectl** (configured with access to target cluster)
+- **bash** (version 4.0 or later)
+- **yq** or **jq** (for YAML/JSON processing)
+- **Kubernetes cluster access** (for secrets backup/restore)
+- **Database connectivity** (network access to PostgreSQL instances)
+
+For detailed setup instructions, configuration options, and advanced usage examples, see the [pharia-ai-backup-restore README](scripts/pharia-ai-backup-restore/README.md).
 
 ## 📋 Prerequisites
 
