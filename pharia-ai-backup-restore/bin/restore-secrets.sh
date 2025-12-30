@@ -23,11 +23,11 @@ source "$SCRIPT_DIR/../lib/common.sh"
 find_latest_backup() {
     # Find the most recent secrets backup directory
     local latest=$(ls -td "${BACKUP_DIR}"/secrets_* 2>/dev/null | grep -v '\.tar\.gz$' | head -1)
-    
+
     if [ -z "$latest" ] || [ ! -d "$latest" ]; then
         return 1
     fi
-    
+
     echo "$latest"
     return 0
 }
@@ -36,26 +36,26 @@ list_backups() {
     echo ""
     echo "Available secret backups:"
     echo "----------------------------------------"
-    
+
     local backups=$(ls -td "${BACKUP_DIR}"/secrets_* 2>/dev/null | grep -v '\.tar\.gz$')
-    
+
     if [ -z "$backups" ]; then
         echo "No secret backups found"
         return 1
     fi
-    
+
     local count=1
     while IFS= read -r backup; do
         if [ ! -d "$backup" ]; then
             continue
         fi
-        
+
         local size=$(du -sh "$backup" | cut -f1)
         local date=$(echo "$backup" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6}')
         local secret_count=$(find "$backup" -name "*.yaml" -type f | wc -l | tr -d ' ')
-        
+
         echo "$count) $(basename "$backup") (Size: $size, Date: $date, Secrets: $secret_count)"
-        
+
         # Show first few secrets
         echo "   Secrets:"
         find "$backup" -name "*.yaml" -type f -exec basename {} .yaml \; | head -5 | sed 's/^/     - /'
@@ -65,7 +65,7 @@ list_backups() {
         echo ""
         count=$((count + 1))
     done <<< "$backups"
-    
+
     return 0
 }
 
@@ -73,11 +73,11 @@ restore_secret() {
     local secret_file=$1
     local namespace=$2
     local force=$3
-    
+
     local secret_name=$(basename "$secret_file" .yaml)
-    
+
     echo "Restoring secret: $secret_name"
-    
+
     # Check if secret already exists
     if kubectl get secret "$secret_name" -n "$namespace" &> /dev/null; then
         if [ "$force" == "true" ]; then
@@ -91,7 +91,7 @@ restore_secret() {
             return 2
         fi
     fi
-    
+
     # Apply the secret
     if kubectl apply -f "$secret_file" -n "$namespace" > /dev/null 2>&1; then
         echo -e "${GREEN}SUCCESS: Secret restored: $secret_name${NC}"
@@ -106,44 +106,44 @@ restore_from_directory() {
     local backup_dir=$1
     local namespace=$2
     local force=$3
-    
+
     echo "Restoring from directory: $(basename "$backup_dir")"
-    
+
     # Check if directory exists
     if [ ! -d "$backup_dir" ]; then
         echo -e "${RED}ERROR: Backup directory not found: $backup_dir${NC}"
         return 1
     fi
-    
+
     # Restore all secrets
     local success_count=0
     local failed_count=0
     local skipped_count=0
-    
+
     for secret_file in "$backup_dir"/*.yaml; do
         if [ ! -f "$secret_file" ]; then
             continue
         fi
-        
+
         # Skip hidden files
         local filename=$(basename "$secret_file")
         if [[ "$filename" == .* ]]; then
             continue
         fi
-        
+
         restore_secret "$secret_file" "$namespace" "$force"
         local result=$?
-        
+
         case $result in
             0) success_count=$((success_count + 1)) ;;
             1) failed_count=$((failed_count + 1)) ;;
             2) skipped_count=$((skipped_count + 1)) ;;
         esac
     done
-    
+
     echo ""
     echo "Restore summary: $success_count restored, $skipped_count skipped, $failed_count failed"
-    
+
     [ $failed_count -eq 0 ]
     return $?
 }
@@ -197,7 +197,7 @@ main() {
     local force="false"
     local list_mode=false
     local use_latest=false
-    
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -232,24 +232,24 @@ main() {
                 ;;
         esac
     done
-    
+
     print_header "Kubernetes Secrets Restore Script"
-    
+
     # Check for kubectl
     check_command "kubectl" "Please install kubectl." || exit 1
-    
+
     # Check if we can access the cluster
     if ! kubectl cluster-info &> /dev/null; then
         echo -e "${RED}ERROR: Cannot connect to Kubernetes cluster. Please check your kubeconfig.${NC}"
         exit 1
     fi
-    
+
     # Handle list mode
     if [ "$list_mode" == true ]; then
         list_backups
         exit $?
     fi
-    
+
     # Determine backup directory
     if [ "$use_latest" == true ]; then
         backup_dir=$(find_latest_backup)
@@ -259,7 +259,7 @@ main() {
         fi
         echo "Using latest backup: $(basename "$backup_dir")"
     fi
-    
+
     # Check if backup directory is specified
     if [ -z "$backup_dir" ]; then
         echo "ERROR: Please specify a backup directory or use --latest"
@@ -267,13 +267,13 @@ main() {
         show_usage
         exit 1
     fi
-    
+
     # Check if backup directory exists
     if [ ! -d "$backup_dir" ]; then
         echo -e "${RED}ERROR: Backup directory not found: $backup_dir${NC}"
         exit 1
     fi
-    
+
     echo "=========================================="
     echo "Starting secrets restore process"
     echo "Backup directory: $(basename "$backup_dir")"
@@ -281,7 +281,7 @@ main() {
     echo "Force overwrite: $force"
     echo "Timestamp: $TIMESTAMP"
     echo "=========================================="
-    
+
     # Restore from directory
     if restore_from_directory "$backup_dir" "$namespace" "$force"; then
         echo -e "${GREEN}SUCCESS: Restore completed successfully!${NC}"
@@ -294,4 +294,3 @@ main() {
 
 # Run main function
 main "$@"
-

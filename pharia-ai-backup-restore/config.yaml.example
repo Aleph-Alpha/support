@@ -37,13 +37,13 @@ databases:
     port: 5432
     user: postgres
     password: your_password_here
-    
+
   - name: analytics_db
     host: localhost
     port: 5432
     user: postgres
     password: your_password_here
-    
+
   - name: reporting_db
     host: 192.168.1.100
     port: 5433
@@ -56,4 +56,3 @@ databases:
 #    port: 5432
 #    user: dbuser
 #    password: dbpass
-

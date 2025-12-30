@@ -127,10 +127,10 @@ main() {
         show_help
         exit 0
     fi
-    
+
     local resource=$1
     shift
-    
+
     case $resource in
         db|database)
             # Check for help or no action
@@ -138,10 +138,10 @@ main() {
                 show_db_help
                 exit 0
             fi
-            
+
             local action=$1
             shift
-            
+
             case $action in
                 backup)
                     exec "$SCRIPT_DIR/backup-db.sh" "$@"
@@ -157,17 +157,17 @@ main() {
                     ;;
             esac
             ;;
-            
+
         secrets|secret)
             # Check for help or no action
             if [ $# -eq 0 ] || [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
                 show_secrets_help
                 exit 0
             fi
-            
+
             local action=$1
             shift
-            
+
             case $action in
                 backup)
                     exec "$SCRIPT_DIR/backup-secrets.sh" "$@"
@@ -183,7 +183,7 @@ main() {
                     ;;
             esac
             ;;
-            
+
         *)
             echo -e "${RED}ERROR: Unknown resource: $resource${NC}"
             echo "Valid resources: db, secrets"
@@ -195,4 +195,3 @@ main() {
 
 # Run main function
 main "$@"
-

@@ -37,4 +37,3 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "qs-mariadb-cluster.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
-
