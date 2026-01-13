@@ -19,3 +19,5 @@ ignore.txt
 
 CHART.md
 charts
+__pycache__/
+scanner_py.egg-info/
