@@ -669,11 +669,18 @@ def generate_markdown_report(
     lines.append("|-------|:------:|:-----------:|:---------:|:------:|")
     
     displayed_count = 0
+    hidden_clean_count = 0  # Images with no triage AND no CVEs
     
     for result in successful:
         has_unaddressed = len(result.unaddressed_cves) > 0
+        has_any_cves = len(result.high_critical_cves) > 0
         
-        # Apply filters
+        # Hide images with no triage AND no vulnerabilities (nothing to report)
+        if not result.has_triage and not has_any_cves:
+            hidden_clean_count += 1
+            continue
+        
+        # Apply user filters
         show_entry = True
         if filter_unaddressed or filter_missing_triage:
             show_entry = False
@@ -692,13 +699,8 @@ def generate_markdown_report(
         if len(image_name) > 45:
             image_name = image_name[:42] + "..."
         
-        # Status icon
-        if has_unaddressed:
-            status = "🔴"
-        elif not result.has_triage:
-            status = "⚠️"
-        else:
-            status = "✅"
+        # Status icon: 🔴 = has unaddressed CVEs, ✅ = all clear
+        status = "🔴" if has_unaddressed else "✅"
         
         # CVE counts with formatting
         unaddressed_count = len(result.unaddressed_cves)
@@ -714,7 +716,10 @@ def generate_markdown_report(
         lines.append(f"| `{image_name}` | {status} | {unaddressed_str} | {addressed_count} | {triage_str} |")
     
     lines.append("")
-    lines.append(f"*Showing {displayed_count} of {len(successful)} images*")
+    if hidden_clean_count > 0:
+        lines.append(f"*Showing {displayed_count} of {len(successful)} images ({hidden_clean_count} clean images without triage hidden)*")
+    else:
+        lines.append(f"*Showing {displayed_count} of {len(successful)} images*")
     lines.append("")
     
     # Detailed CVE breakdown (if there are unaddressed CVEs)
@@ -828,10 +833,17 @@ def print_cli_summary(
     print("├─────────────────────────────────────────────────────────────────────────────────────────────────┤")
     
     displayed = 0
+    hidden_clean = 0
     for result in successful:
         has_unaddressed = len(result.unaddressed_cves) > 0
+        has_any_cves = len(result.high_critical_cves) > 0
         
-        # Apply filters
+        # Hide images with no triage AND no vulnerabilities (nothing to report)
+        if not result.has_triage and not has_any_cves:
+            hidden_clean += 1
+            continue
+        
+        # Apply user filters
         show_entry = True
         if filter_unaddressed or filter_missing_triage:
             show_entry = False
@@ -850,13 +862,8 @@ def print_cli_summary(
         if len(image_name) > 43:
             image_name = image_name[:40] + "..."
         
-        # Status icon
-        if has_unaddressed:
-            status = "🔴"
-        elif not result.has_triage:
-            status = "⚠️ "
-        else:
-            status = "✅"
+        # Status icon: 🔴 = has unaddressed CVEs, ✅ = all clear
+        status = "🔴" if has_unaddressed else "✅"
         
         unaddressed_count = len(result.unaddressed_cves)
         addressed_count = len(result.addressed_cves)
@@ -865,7 +872,10 @@ def print_cli_summary(
         print(f"│ {image_name:<45} {status:^8} {unaddressed_count:^8} {addressed_count:^8} {triage_str:^8} │")
     
     print("└─────────────────────────────────────────────────────────────────────────────────────────────────┘")
-    print(f"  Showing {displayed} of {len(successful)} images")
+    if hidden_clean > 0:
+        print(f"  Showing {displayed} of {len(successful)} images ({hidden_clean} clean images without triage hidden)")
+    else:
+        print(f"  Showing {displayed} of {len(successful)} images")
     print()
     
     # Failed scans details
