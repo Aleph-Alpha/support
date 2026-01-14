@@ -1,12 +1,12 @@
 """
-Triage Scan CLI - Python port of oras-scan bash scripts.
+ORAS Scan CLI - Python port of oras-scan bash scripts.
 
 This is a direct port of the oras-scan bash scripts:
 - 1-make-list.sh: Extract images from Kubernetes
 - 2-oras-scan.sh: Scan images with Trivy, fetch triage.toml
 - 3-gen-report.sh: Generate vulnerability report
 
-Key differences from trivy-scan:
+Key differences from cosign-scan:
 - NO signature verification (no cosign)
 - Direct image scanning with Trivy (NOT SBOM-based)
 - Simple ORAS referrer lookup for triage.toml
@@ -66,7 +66,7 @@ class ImageScanResult:
         return self.triaged_cves - self.high_critical_cves
 
 
-def create_triage_scan_parser(subparsers: Any) -> argparse.ArgumentParser:
+def create_oras_scan_parser(subparsers: Any) -> argparse.ArgumentParser:
     """Create the oras-scan subparser."""
     parser = subparsers.add_parser(
         "oras-scan",
@@ -80,7 +80,7 @@ This is a direct Python port of the oras-scan bash scripts. It:
 3. Fetches triage.toml files via ORAS referrers
 4. Generates a vulnerability report
 
-Unlike trivy-scan, this does NOT verify signatures or use SBOM attestations.
+Unlike cosign-scan, this does NOT verify signatures or use SBOM attestations.
 """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -158,8 +158,8 @@ Example content:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=300,
-        help="Timeout for Trivy scan in seconds (default: 300)",
+        default=600,
+        help="Timeout for Trivy scan in seconds (default: 600)",
     )
 
     # Mode options
@@ -279,10 +279,53 @@ def sanitize_filename(image: str) -> str:
     return image.replace("/", "_").replace(":", "_").replace("@", "_")
 
 
+def prepare_trivy_db(verbose: bool = False) -> bool:
+    """
+    Prepare Trivy database by cleaning and downloading fresh DB.
+    
+    This should be run once before parallel scans to avoid race conditions
+    and ensure all scans use the same database version.
+    
+    Steps:
+    1. trivy clean --all (clean existing db)
+    2. trivy image --download-db-only (download fresh db)
+    
+    Returns:
+        True if successful
+    """
+    # Step 1: Clean existing database
+    if verbose:
+        logger.info("Cleaning existing Trivy database...")
+    
+    clean_result = run_command(["trivy", "clean", "--all"], timeout=60)
+    if not clean_result.success:
+        if verbose:
+            logger.warning(f"Failed to clean Trivy cache (may not exist): {clean_result.stderr}")
+        # Continue anyway - might be first run
+    
+    # Step 2: Download fresh database
+    if verbose:
+        logger.info("Downloading Trivy vulnerability database...")
+    
+    download_result = run_command(
+        ["trivy", "image", "--download-db-only"],
+        timeout=300,  # DB download can take a while
+    )
+    
+    if not download_result.success:
+        logger.error(f"Failed to download Trivy database: {download_result.stderr}")
+        return False
+    
+    if verbose:
+        logger.info("Trivy database ready")
+    
+    return True
+
+
 def run_trivy_scan(
     image: str,
     output_file: str,
-    timeout: int = 300,
+    timeout: int = 600,
     verbose: bool = False,
 ) -> tuple[bool, Optional[str]]:
     """
@@ -290,12 +333,14 @@ def run_trivy_scan(
     
     Equivalent to: trivy image --scanners vuln --format json "$image"
     
+    Note: Uses --skip-db-update since DB is pre-downloaded by prepare_trivy_db()
+    
     Returns:
         Tuple of (success, error_message)
     """
     args = [
         "trivy", "image",
-        "--cache-backend", "memory",
+        "--cache-dir", f"/tmp/trivy-cache-{image.replace('/', '_').replace(':', '_')}",
         "--scanners", "vuln",
         "--format", "json",
         "--output", output_file,
@@ -512,12 +557,12 @@ def scan_image(
     (image_dir / "image.txt").write_text(result.image_ref)
     
     # Run Trivy scan
-    trivy_output = image_dir / "trivy-scan.json"
+    trivy_output = image_dir / "cosign-scan.json"
     success, error_msg = run_trivy_scan(image, str(trivy_output), timeout, verbose)
     if not success:
         result.error = f"Trivy scan failed: {error_msg}" if error_msg else "Trivy scan failed"
         # Create empty files
-        (image_dir / "trivy-scan.json").write_text("[]")
+        (image_dir / "cosign-scan.json").write_text("[]")
         (image_dir / "high-critical-cves.txt").write_text("")
         # Save error to file for debugging
         (image_dir / "error.txt").write_text(result.error)
@@ -952,7 +997,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
             return 1
     
     # Print header
-    print("🔍 Triage Scan - Vulnerability Scanner")
+    print("🔍 ORAS Scan - Vulnerability Scanner")
     print()
     print("⚙️  Configuration:")
     print(f"   • Namespace: {args.namespace}")
@@ -992,6 +1037,14 @@ def run_oras_scan(args: argparse.Namespace) -> int:
     if output_dir.exists():
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Prepare Trivy database (clean + download fresh)
+    spinner = Spinner("Preparing Trivy vulnerability database...")
+    spinner.spin()
+    if not prepare_trivy_db(verbose=args.verbose):
+        spinner.finish("Failed to prepare Trivy database", success=False)
+        return 1
+    spinner.finish("Trivy database ready")
     
     # Step 2: Scan images
     print()
@@ -1054,7 +1107,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
             print(report)
     
     print()
-    print("✅ Triage scan completed!")
+    print("✅ ORAS scan completed!")
     
     return 0
 

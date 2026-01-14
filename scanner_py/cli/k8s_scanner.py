@@ -23,9 +23,9 @@ logger = get_logger(__name__)
 
 
 def create_k8s_scanner_parser(subparsers: Any) -> argparse.ArgumentParser:
-    """Create the trivy-scan subparser."""
+    """Create the cosign-scan subparser."""
     parser = subparsers.add_parser(
-        "trivy-scan",
+        "cosign-scan",
         help="Scan images from a Kubernetes namespace",
         description="""
 Scan all container images in a Kubernetes namespace.
@@ -38,19 +38,19 @@ Trivy vulnerability scans on the SBOMs with triage filtering applied.
         epilog="""
 Examples:
   # Scan default namespace with default settings
-  scanner-py trivy-scan
+  scanner-py cosign-scan
 
   # Scan specific namespace with ignore file
-  scanner-py trivy-scan --namespace production --ignore-file ./ignore-images.txt
+  scanner-py cosign-scan --namespace production --ignore-file ./ignore-images.txt
 
   # Scan with custom output directory and parallel scans
-  scanner-py trivy-scan --namespace staging --output-dir ./reports --parallel-scans 5
+  scanner-py cosign-scan --namespace staging --output-dir ./reports --parallel-scans 5
 
   # Dry run to see what would be scanned
-  scanner-py trivy-scan --namespace production --dry-run
+  scanner-py cosign-scan --namespace production --dry-run
 
   # Test flow - only scan first valid image
-  scanner-py trivy-scan --namespace production --test-flow
+  scanner-py cosign-scan --namespace production --test-flow
 """,
     )
 
@@ -185,7 +185,7 @@ Examples:
     return parser
 
 
-def run_trivy_scanner(args: argparse.Namespace) -> int:
+def run_cosign_scanner(args: argparse.Namespace) -> int:
     """
     Run Kubernetes namespace scanner.
 

@@ -43,19 +43,19 @@ Scan all container images in a Kubernetes namespace:
 
 ```bash
 # Scan default namespace (pharia-ai)
-scanner-py trivy-scan
+scanner-py cosign-scan
 
 # Scan specific namespace
-scanner-py trivy-scan --namespace production
+scanner-py cosign-scan --namespace production
 
 # With ignore file and custom output
-scanner-py trivy-scan --namespace staging --ignore-file ./ignore.txt --output-dir ./reports
+scanner-py cosign-scan --namespace staging --ignore-file ./ignore.txt --output-dir ./reports
 
 # Dry run to see what would be scanned
-scanner-py trivy-scan --namespace production --dry-run
+scanner-py cosign-scan --namespace production --dry-run
 
 # Test mode - scan only first valid image
-scanner-py trivy-scan --test-flow
+scanner-py cosign-scan --test-flow
 ```
 
 ### Single Image Scanning
@@ -156,16 +156,16 @@ The scanner supports caching to speed up repeated scans:
 
 ```bash
 # Show cache statistics
-scanner-py trivy-scan --cache-stats
+scanner-py cosign-scan --cache-stats
 
 # Clear cache
-scanner-py trivy-scan --clear-cache
+scanner-py cosign-scan --clear-cache
 
 # Disable caching
-scanner-py trivy-scan --no-cache
+scanner-py cosign-scan --no-cache
 
 # Custom cache directory and TTL
-scanner-py trivy-scan --cache-dir ~/.my-cache --cache-ttl 12
+scanner-py cosign-scan --cache-dir ~/.my-cache --cache-ttl 12
 ```
 
 ## Output Formats
@@ -187,10 +187,10 @@ By default, error messages are suppressed to keep output clean. Use `--verbose` 
 
 ```bash
 # Normal mode - clean output with progress bar
-scanner-py trivy-scan --namespace production
+scanner-py cosign-scan --namespace production
 
 # Verbose mode - shows all errors and debug info
-scanner-py trivy-scan --namespace production --verbose
+scanner-py cosign-scan --namespace production --verbose
 
 # Single image with verbose mode
 scanner-py scan-image --image myapp:latest --verbose
@@ -266,7 +266,7 @@ This Python package is a port of the original bash scripts:
 
 | Bash Script | Python Equivalent |
 |-------------|-------------------|
-| `k8s-image-scanner.sh` | `scanner-py trivy-scan` |
+| `k8s-image-scanner.sh` | `scanner-py cosign-scan` |
 | `cosign-scan-image.sh` | `scanner-py scan-image` |
 | `cosign-verify-image.sh` | `scanner-py verify` |
 | `cosign-extract.sh` | `scanner-py extract` |

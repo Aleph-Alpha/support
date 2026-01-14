@@ -91,8 +91,8 @@ Examples:
     parser.add_argument(
         "--timeout",
         type=int,
-        default=300,
-        help="Timeout for operations in seconds (default: 300)",
+        default=600,
+        help="Timeout for operations in seconds (default: 600)",
     )
     parser.add_argument(
         "--certificate-oidc-issuer",

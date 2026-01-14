@@ -4,13 +4,13 @@ import sys
 import argparse
 from typing import List, Optional
 
-from .k8s_scanner import create_k8s_scanner_parser, run_trivy_scanner
+from .k8s_scanner import create_k8s_scanner_parser, run_cosign_scanner
 from .scan_image import create_scan_image_parser, run_scan_image
 from .verify_image import create_verify_parser, run_verify
 from .extract import create_extract_parser, run_extract
 from .verify_chainguard import create_chainguard_parser, run_chainguard
 from .generate_report import create_generate_report_parser, run_generate_report
-from .triage_scan import create_triage_scan_parser, run_oras_scan
+from .oras_scan import create_oras_scan_parser, run_oras_scan
 
 
 def create_main_parser() -> argparse.ArgumentParser:
@@ -21,7 +21,7 @@ def create_main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
-  trivy-scan          Scan images with signature verification and SBOM attestations
+  cosign-scan          Scan images with signature verification and SBOM attestations
   oras-scan       Simple scan with triage.toml support (no signature verification)
   scan-image        Scan a single container image
   verify            Verify image signature with cosign
@@ -37,7 +37,7 @@ Examples:
   scanner-py oras-scan -n prod --filter-unaddressed --filter-missing-triage
 
   # Full scan with signature verification (SBOM-based)
-  scanner-py trivy-scan --namespace production
+  scanner-py cosign-scan --namespace production
 
   # Generate report from existing scan results
   scanner-py generate-report --input-dir ./scan-results -o report.md
@@ -57,7 +57,7 @@ Examples:
 
     # Add subparsers for each command
     create_k8s_scanner_parser(subparsers)
-    create_triage_scan_parser(subparsers)
+    create_oras_scan_parser(subparsers)
     create_scan_image_parser(subparsers)
     create_verify_parser(subparsers)
     create_extract_parser(subparsers)
@@ -86,7 +86,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Route to appropriate command handler
     command_handlers = {
-        "trivy-scan": run_trivy_scanner,
+        "cosign-scan": run_cosign_scanner,
         "oras-scan": run_oras_scan,
         "scan-image": run_scan_image,
         "verify": run_verify,
