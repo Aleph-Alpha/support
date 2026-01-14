@@ -2,7 +2,7 @@
 Main entry point for the scanner package.
 
 Usage:
-    python -m scanner_py k8s-scan [OPTIONS]
+    python -m scanner_py trivy-scan [OPTIONS]
     python -m scanner_py scan-image [OPTIONS]
     python -m scanner_py verify [OPTIONS]
     python -m scanner_py extract [OPTIONS]

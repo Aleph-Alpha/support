@@ -4,11 +4,13 @@ import sys
 import argparse
 from typing import List, Optional
 
-from .k8s_scanner import create_k8s_scanner_parser, run_k8s_scanner
+from .k8s_scanner import create_k8s_scanner_parser, run_trivy_scanner
 from .scan_image import create_scan_image_parser, run_scan_image
 from .verify_image import create_verify_parser, run_verify
 from .extract import create_extract_parser, run_extract
 from .verify_chainguard import create_chainguard_parser, run_chainguard
+from .generate_report import create_generate_report_parser, run_generate_report
+from .triage_scan import create_triage_scan_parser, run_oras_scan
 
 
 def create_main_parser() -> argparse.ArgumentParser:
@@ -19,15 +21,26 @@ def create_main_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Commands:
-  k8s-scan          Scan images from a Kubernetes namespace
+  trivy-scan          Scan images with signature verification and SBOM attestations
+  oras-scan       Simple scan with triage.toml support (no signature verification)
   scan-image        Scan a single container image
   verify            Verify image signature with cosign
   extract           Extract attestations from an image
   verify-chainguard Check if image uses Chainguard base image
+  generate-report   Generate reports from existing scan results
 
 Examples:
-  # Scan all images in a Kubernetes namespace
-  scanner-py k8s-scan --namespace production
+  # Simple triage scan (direct Trivy scan, triage.toml support)
+  scanner-py oras-scan --namespace production -o report.md
+
+  # Triage scan with filters
+  scanner-py oras-scan -n prod --filter-unaddressed --filter-missing-triage
+
+  # Full scan with signature verification (SBOM-based)
+  scanner-py trivy-scan --namespace production
+
+  # Generate report from existing scan results
+  scanner-py generate-report --input-dir ./scan-results -o report.md
 
   # Scan a single image
   scanner-py scan-image --image registry.io/app:v1.0
@@ -37,9 +50,6 @@ Examples:
 
   # Extract SBOM attestation
   scanner-py extract --image registry.io/app:v1.0 --type cyclonedx
-
-  # Check Chainguard base image
-  scanner-py verify-chainguard --image registry.io/app:v1.0
 """,
     )
 
@@ -47,10 +57,12 @@ Examples:
 
     # Add subparsers for each command
     create_k8s_scanner_parser(subparsers)
+    create_triage_scan_parser(subparsers)
     create_scan_image_parser(subparsers)
     create_verify_parser(subparsers)
     create_extract_parser(subparsers)
     create_chainguard_parser(subparsers)
+    create_generate_report_parser(subparsers)
 
     return parser
 
@@ -74,11 +86,13 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     # Route to appropriate command handler
     command_handlers = {
-        "k8s-scan": run_k8s_scanner,
+        "trivy-scan": run_trivy_scanner,
+        "oras-scan": run_oras_scan,
         "scan-image": run_scan_image,
         "verify": run_verify,
         "extract": run_extract,
         "verify-chainguard": run_chainguard,
+        "generate-report": run_generate_report,
     }
 
     handler = command_handlers.get(args.command)

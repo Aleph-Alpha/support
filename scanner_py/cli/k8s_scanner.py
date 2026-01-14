@@ -23,9 +23,9 @@ logger = get_logger(__name__)
 
 
 def create_k8s_scanner_parser(subparsers: Any) -> argparse.ArgumentParser:
-    """Create the k8s-scan subparser."""
+    """Create the trivy-scan subparser."""
     parser = subparsers.add_parser(
-        "k8s-scan",
+        "trivy-scan",
         help="Scan images from a Kubernetes namespace",
         description="""
 Scan all container images in a Kubernetes namespace.
@@ -38,19 +38,19 @@ Trivy vulnerability scans on the SBOMs with triage filtering applied.
         epilog="""
 Examples:
   # Scan default namespace with default settings
-  scanner-py k8s-scan
+  scanner-py trivy-scan
 
   # Scan specific namespace with ignore file
-  scanner-py k8s-scan --namespace production --ignore-file ./ignore-images.txt
+  scanner-py trivy-scan --namespace production --ignore-file ./ignore-images.txt
 
   # Scan with custom output directory and parallel scans
-  scanner-py k8s-scan --namespace staging --output-dir ./reports --parallel-scans 5
+  scanner-py trivy-scan --namespace staging --output-dir ./reports --parallel-scans 5
 
   # Dry run to see what would be scanned
-  scanner-py k8s-scan --namespace production --dry-run
+  scanner-py trivy-scan --namespace production --dry-run
 
   # Test flow - only scan first valid image
-  scanner-py k8s-scan --namespace production --test-flow
+  scanner-py trivy-scan --namespace production --test-flow
 """,
     )
 
@@ -120,6 +120,19 @@ Examples:
         default="HIGH",
         help="Minimum CVE level to consider relevant (default: HIGH)",
     )
+    parser.add_argument(
+        "--markdown-output", "-o",
+        help="Path for Markdown summary file (default: <output-dir>/cve-summary.md)",
+    )
+    parser.add_argument(
+        "--summary-json",
+        help="Path for JSON summary file (default: <output-dir>/scan-summary.json)",
+    )
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="Append to existing Markdown file (for combining CI step outputs)",
+    )
 
     # Cache options
     parser.add_argument(
@@ -172,7 +185,7 @@ Examples:
     return parser
 
 
-def run_k8s_scanner(args: argparse.Namespace) -> int:
+def run_trivy_scanner(args: argparse.Namespace) -> int:
     """
     Run Kubernetes namespace scanner.
 
@@ -402,14 +415,30 @@ def run_k8s_scanner(args: argparse.Namespace) -> int:
 
     # Generate summary AFTER Chainguard check
     summary = generate_summary(args, results, extraction_result)
-    summary.save(str(output_dir / "scan-summary.json"))
+    
+    # Determine output paths
+    json_path = Path(args.summary_json) if args.summary_json else output_dir / "scan-summary.json"
+    markdown_path = Path(args.markdown_output) if args.markdown_output else output_dir / "cve-summary.md"
+    
+    # Ensure parent directories exist
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    summary.save(str(json_path))
 
     # Generate markdown summary for GitHub Actions
     markdown_content = generate_markdown_summary(summary, args.min_cve_level)
-    markdown_path = output_dir / "cve-summary.md"
-    with open(markdown_path, "w") as f:
-        f.write(markdown_content)
-    print(f"📄 Markdown summary saved to: {markdown_path}")
+    
+    # Handle append mode for combining CI outputs
+    if args.append and markdown_path.exists():
+        with open(markdown_path, "a") as f:
+            f.write("\n\n---\n\n")  # Separator between reports
+            f.write(markdown_content)
+        print(f"📄 Markdown summary appended to: {markdown_path}")
+    else:
+        with open(markdown_path, "w") as f:
+            f.write(markdown_content)
+        print(f"📄 Markdown summary saved to: {markdown_path}")
 
     # Print summary
     print()
