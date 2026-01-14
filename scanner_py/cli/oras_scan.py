@@ -619,7 +619,7 @@ def generate_markdown_report(
     images_with_triage = sum(1 for r in successful if r.has_triage)
     
     # Header with status badge
-    lines.append("# 🔍 ORAS SCAN Vulnerability Triage Report")
+    lines.append("# 🔍 ORAS SCAN CVE Analysis Summary")
     lines.append("")
     
     if total_unaddressed_cves == 0:
