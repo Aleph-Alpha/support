@@ -122,7 +122,7 @@ Examples:
     )
     parser.add_argument(
         "--markdown-output", "-o",
-        help="Path for Markdown summary file (default: <output-dir>/cve-summary.md)",
+        help="Path for Markdown summary file (default: <output-dir>/cosign-cve-summary.md)",
     )
     parser.add_argument(
         "--summary-json",
@@ -226,7 +226,7 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
         return 1
 
     # Print header
-    print("🚀 Aleph Alpha - Kubernetes Image Scanner")
+    print("🚀 Aleph Alpha - Cosign Image Scanner")
     print()
     print("⚙️  Configuration:")
     print(f"   • Namespace: {args.namespace}")
@@ -418,7 +418,7 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
     
     # Determine output paths
     json_path = Path(args.summary_json) if args.summary_json else output_dir / "scan-summary.json"
-    markdown_path = Path(args.markdown_output) if args.markdown_output else output_dir / "cve-summary.md"
+    markdown_path = Path(args.markdown_output) if args.markdown_output else output_dir / "cosign-cve-summary.md"
     
     # Ensure parent directories exist
     json_path.parent.mkdir(parents=True, exist_ok=True)
@@ -495,7 +495,7 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     lines = []
     
     # Header
-    lines.append("# 🔍 CVE Analysis Summary")
+    lines.append("# 🔍 COSIGN SCAN CVE Analysis Summary")
     lines.append("")
     
     # Scan info

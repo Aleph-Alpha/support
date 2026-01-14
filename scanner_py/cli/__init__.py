@@ -5,7 +5,7 @@ import argparse
 from typing import List, Optional
 
 from .k8s_scanner import create_k8s_scanner_parser, run_cosign_scanner
-from .scan_image import create_scan_image_parser, run_scan_image
+from .cosign_scan import create_scan_image_parser, run_scan_image
 from .verify_image import create_verify_parser, run_verify
 from .extract import create_extract_parser, run_extract
 from .verify_chainguard import create_chainguard_parser, run_chainguard
