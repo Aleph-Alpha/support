@@ -395,7 +395,7 @@ def extract_high_critical_cves(trivy_json_file: str) -> Set[str]:
 
 def find_triage_reference(
     image: str,
-    timeout: int = 60,
+    timeout: int = 180,
     verbose: bool = False,
 ) -> Optional[str]:
     """
@@ -444,7 +444,7 @@ def fetch_triage_toml(
     triage_reference: str,
     output_file: str,
     manifest_file: str,
-    timeout: int = 60,
+    timeout: int = 180,
 ) -> bool:
     """
     Fetch triage.toml blob from ORAS.
