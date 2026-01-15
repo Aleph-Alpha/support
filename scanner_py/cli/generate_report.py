@@ -243,7 +243,7 @@ def generate_markdown_report(
         lines.append("")
         
         # Table header
-        lines.append("| Image | Unaddressed CVEs | Addressed CVEs | Irrelevant CVEs | Triage File | Chainguard |")
+        lines.append("| Image | Unaddressed CVEs | Addressed CVEs | Irrelevant CVEs | Triage | Chainguard |")
         lines.append("|-------|:----------------:|:--------------:|:---------------:|:-----------:|:----------:|")
         
         total_unaddressed = 0
@@ -410,7 +410,7 @@ def print_cli_summary(
             f"{'Unaddressed CVEs':>17} "
             f"{'Addressed CVEs':>15} "
             f"{'Irrelevant CVEs':>16} "
-            f"{'Triage File':>12} "
+            f"{'Triage':>12} "
             f"{'Chainguard Base':>16}"
         )
         print(header)

@@ -127,8 +127,8 @@ def setup_logging(
     if use_colors is None:
         use_colors = sys.stderr.isatty()
 
-    # Get root logger
-    root_logger = logging.getLogger("scanner")
+    # Get root logger - use "scanner_py" so all module loggers inherit config
+    root_logger = logging.getLogger("scanner_py")
     root_logger.setLevel(log_level)
 
     # Remove existing handlers
@@ -151,12 +151,12 @@ def setup_logging(
     root_logger.addHandler(handler)
 
 
-def get_logger(name: str = "scanner") -> logging.Logger:
+def get_logger(name: str = "scanner_py") -> logging.Logger:
     """
     Get a logger instance.
 
     Args:
-        name: Logger name
+        name: Logger name (should be under scanner_py hierarchy)
 
     Returns:
         Logger instance

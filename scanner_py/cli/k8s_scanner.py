@@ -662,7 +662,7 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
             f"{'Unaddressed CVEs':>17} "
             f"{'Addressed CVEs':>15} "
             f"{'Irrelevant CVEs':>16} "
-            f"{'Triage File':>12} "
+            f"{'Triage':>12} "
             f"{'Chainguard Base':>16}"
         )
         print(header)
