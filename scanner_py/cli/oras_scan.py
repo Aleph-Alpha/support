@@ -95,7 +95,7 @@ Examples:
   scanner-py oras-scan --filter-unaddressed --output report.md
 
   # Scan with parallel workers
-  scanner-py oras-scan --parallel 5
+  scanner-py oras-scan --parallel 10
 """,
     )
 
@@ -152,8 +152,8 @@ Example content:
     parser.add_argument(
         "--parallel", "-p",
         type=int,
-        default=3,
-        help="Number of parallel scans (default: 3)",
+        default=10,
+        help="Number of parallel scans (default: 10)",
     )
     parser.add_argument(
         "--timeout",
@@ -297,7 +297,11 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
     if verbose:
         logger.info("Cleaning existing Trivy database...")
     
-    clean_result = run_command(["trivy", "clean", "--all"], timeout=60)
+    clean_args = ["trivy", "clean", "--all"]
+    if not verbose:
+        clean_args.append("--quiet")
+    
+    clean_result = run_command(clean_args, timeout=60)
     if not clean_result.success:
         if verbose:
             logger.warning(f"Failed to clean Trivy cache (may not exist): {clean_result.stderr}")
@@ -307,8 +311,12 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
     if verbose:
         logger.info("Downloading Trivy vulnerability database...")
     
+    download_args = ["trivy", "image", "--download-db-only"]
+    if not verbose:
+        download_args.append("--quiet")
+    
     download_result = run_command(
-        ["trivy", "image", "--download-db-only"],
+        download_args,
         timeout=300,  # DB download can take a while
     )
     
@@ -347,6 +355,10 @@ def run_trivy_scan(
         "--timeout", f"{timeout}s",
         image,
     ]
+    
+    # Only suppress output when not in verbose mode
+    if not verbose:
+        args.insert(2, "--quiet")
     
     result = run_command(args, timeout=timeout + 30)
     

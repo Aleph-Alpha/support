@@ -20,6 +20,7 @@ from ..utils.subprocess import run_command
 from ..utils.logging import get_logger, is_verbose
 from .attestation import AttestationExtractor, AttestationTypeEnum
 from .verification import CosignVerifier
+from .cache import get_digest_cache
 
 logger = get_logger(__name__)
 
@@ -90,6 +91,10 @@ class TrivyScanner:
             "--severity", severity,
             "--output", output_file,
         ]
+
+        # Only suppress output when not in verbose mode
+        if not self.verbose:
+            args.insert(2, "--quiet")
 
         if ignore_file and Path(ignore_file).exists():
             args.extend(["--ignorefile", ignore_file])
@@ -264,19 +269,27 @@ class ImageScanner:
         """
         Detect what attestations are available for an image.
 
+        Optimized to cache attestation info and avoid redundant network calls.
+
         Args:
             image: Image reference
 
         Returns:
             AttestationType enum value
         """
+        # Pre-warm digest cache to avoid multiple lookups
+        digest = get_digest_cache().get_or_fetch(image)
+        if not digest:
+            logger.debug(f"Failed to resolve digest for {image}")
+            return AttestationType.UNSIGNED
+
         # First verify the image is signed
         verification = self.verifier.verify(image)
         if not verification.success:
             logger.debug(f"Image is not signed: {image}")
             return AttestationType.UNSIGNED
 
-        # List available attestations
+        # List available attestations (already uses cached digest)
         attestations = self.extractor.list_attestations(image)
 
         has_sbom = attestations.has_sbom()

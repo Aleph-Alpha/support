@@ -4,7 +4,7 @@ import subprocess
 import shutil
 from dataclasses import dataclass
 from typing import Optional, List, Union
-from .logging import get_logger
+from .logging import get_logger, is_verbose
 
 logger = get_logger(__name__)
 
@@ -69,7 +69,8 @@ def run_command(
             stderr=result.stderr if capture_output else "",
         )
     except subprocess.TimeoutExpired:
-        logger.warning(f"Command timed out after {timeout}s: {cmd}")
+        if is_verbose():
+            logger.warning(f"Command timed out after {timeout}s: {cmd}")
         return CommandResult(
             returncode=-1,
             stdout="",
@@ -83,7 +84,8 @@ def run_command(
             stderr=e.stderr or "",
         )
     except FileNotFoundError as e:
-        logger.error(f"Command not found: {cmd[0] if isinstance(cmd, list) else cmd}")
+        if is_verbose():
+            logger.error(f"Command not found: {cmd[0] if isinstance(cmd, list) else cmd}")
         return CommandResult(
             returncode=127,
             stdout="",
