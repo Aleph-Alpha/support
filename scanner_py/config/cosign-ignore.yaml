@@ -1,0 +1,10 @@
+stakater/reloader
+dexidp/dex
+proxy-docker/qdrant/qdrant
+proxy-docker/openfga/openfga
+proxy-ghcr/cloudnative-pg/cloudnative-pg
+proxy-ghcr/cloudnative-pg/postgresql
+brancz/kube-rbac-proxy
+proxy-ghcr/zitadel/zitadel
+prometheuscommunity/postgres-exporter
+proxy-ghcr/zitadel/zitadel
