@@ -15,11 +15,62 @@ from ..core.cache import ScanCache, reset_digest_cache
 from ..core.chainguard import ChainguardVerifier
 from ..models.scan_result import ScanResult, ScanSummary
 from ..utils.logging import setup_logging, LogLevel, get_logger, is_verbose, suppress_logging, restore_logging
-from ..utils.subprocess import check_prerequisites
+from ..utils.subprocess import check_prerequisites, run_command
 from ..utils.registry import RegistryChecker
 from ..utils.progress import ProgressBar, ProgressStyle, Spinner
 
 logger = get_logger(__name__)
+
+
+def prepare_trivy_db(verbose: bool = False) -> bool:
+    """
+    Prepare Trivy database by cleaning and downloading fresh DB.
+    
+    This should be run once before parallel scans to avoid race conditions
+    and ensure all scans use the same database version.
+    
+    Steps:
+    1. trivy clean --all (clean existing db)
+    2. trivy image --download-db-only (download fresh db)
+    
+    Returns:
+        True if successful
+    """
+    # Step 1: Clean existing database
+    if verbose:
+        logger.info("Cleaning existing Trivy database...")
+    
+    clean_args = ["trivy", "clean", "--all"]
+    if not verbose:
+        clean_args.append("--quiet")
+    
+    clean_result = run_command(clean_args, timeout=60)
+    if not clean_result.success:
+        if verbose:
+            logger.warning(f"Failed to clean Trivy cache (may not exist): {clean_result.stderr}")
+        # Continue anyway - might be first run
+    
+    # Step 2: Download fresh database
+    if verbose:
+        logger.info("Downloading Trivy vulnerability database...")
+    
+    download_args = ["trivy", "image", "--download-db-only"]
+    if not verbose:
+        download_args.append("--quiet")
+    
+    download_result = run_command(
+        download_args,
+        timeout=300,  # DB download can take a while
+    )
+    
+    if not download_result.success:
+        logger.error(f"Failed to download Trivy database: {download_result.stderr}")
+        return False
+    
+    if verbose:
+        logger.info("Trivy database ready")
+    
+    return True
 
 
 def create_k8s_scanner_parser(subparsers: Any) -> argparse.ArgumentParser:
@@ -291,9 +342,9 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
 
     # Show summary of ignored/inaccessible
     if extraction_result.ignored_count > 0:
-        print(f"   ⊘ {extraction_result.ignored_count} ignored")
+        print(f"   🚫 {extraction_result.ignored_count} ignored")
     if extraction_result.inaccessible_count > 0:
-        print(f"   ⊘ {extraction_result.inaccessible_count} from inaccessible registries")
+        print(f"   🚫 {extraction_result.inaccessible_count} from inaccessible registries")
 
     # Create output directory
     output_dir = Path(args.output_dir)
@@ -311,7 +362,17 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
             print(f"     • {img}")
         return 0
 
-    # Create scanner
+    # Pre-download Trivy DB to avoid race conditions in parallel scans
+    # This ensures all parallel scans use the same DB version
+    spinner = Spinner("Preparing Trivy vulnerability database...")
+    spinner.spin()
+    if not prepare_trivy_db(verbose=args.verbose):
+        spinner.finish("Failed to prepare Trivy database", success=False)
+        print("❌ Error: Could not download Trivy vulnerability database")
+        return 1
+    spinner.finish("Trivy database ready", success=True)
+
+    # Create scanner with skip_db_update=True since we pre-downloaded the DB
     scanner = ImageScanner(
         output_dir=str(output_dir),
         format=args.format,
@@ -322,6 +383,7 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
         certificate_identity_regexp=args.certificate_identity_regexp,
         trivy_config=args.trivy_config,
         verbose=args.verbose,
+        skip_db_update=True,
     )
 
     # Process images
@@ -558,7 +620,7 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     lines.append(f"| **Images Processed** | {summary.images_processed} |")
     lines.append(f"| **Successful Scans** | ✅ {summary.successful_scans} |")
     lines.append(f"| **Failed Scans** | ❌ {summary.failed_scans} |")
-    lines.append(f"| **Skipped (unsigned)** | ⊘ {summary.skipped_scans} |")
+    lines.append(f"| **Skipped (unsigned)** | 🚫 {summary.skipped_scans} |")
     lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append("")
     
@@ -653,7 +715,7 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     
     # Skipped scans section
     if summary.skipped_scans > 0:
-        lines.append("## ⊘ Skipped Scans (Unsigned Images)")
+        lines.append("## 🚫 Skipped Scans (Unsigned Images)")
         lines.append("")
         lines.append("<details>")
         lines.append("<summary>Click to expand skipped images</summary>")
@@ -683,7 +745,7 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
     print()
     print(f"  ✅ Successful:    {summary.successful_scans}")
     print(f"  ❌ Failed:        {summary.failed_scans}")
-    print(f"  ⊘  Skipped:       {summary.skipped_scans} (unsigned)")
+    print(f"  🚫  Skipped:       {summary.skipped_scans} (unsigned)")
     print()
 
     # Only show failed scan details in verbose mode

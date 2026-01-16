@@ -218,12 +218,12 @@ The scanner includes visual progress indicators:
 
 Example progress output:
 ```
-Scanning images [████████████████░░░░] 80.0% (8/10) ✓6 ✗1 ⊘1 app:v1.2
+Scanning images [████████████████░░░░] 80.0% (8/10) ✓6 ✗1 🚫1 app:v1.2
 ```
 
 - `✓` = Successful scans
 - `✗` = Failed scans  
-- `⊘` = Skipped scans (unsigned images)
+- `🚫` = Skipped scans (unsigned images)
 
 ## Project Structure
 

@@ -231,7 +231,7 @@ def generate_markdown_report(
     lines.append(f"| **Images Processed** | {ss.get('images_processed', 0)} |")
     lines.append(f"| **Successful Scans** | ✅ {ss.get('successful_scans', 0)} |")
     lines.append(f"| **Failed Scans** | ❌ {ss.get('failed_scans', 0)} |")
-    lines.append(f"| **Skipped (unsigned)** | ⊘ {ss.get('skipped_scans', 0)} |")
+    lines.append(f"| **Skipped (unsigned)** | 🚫 {ss.get('skipped_scans', 0)} |")
     lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append("")
     
@@ -356,7 +356,7 @@ def generate_markdown_report(
     
     # Skipped scans section
     if skipped_scans:
-        lines.append("## ⊘ Skipped Scans (Unsigned Images)")
+        lines.append("## 🚫 Skipped Scans (Unsigned Images)")
         lines.append("")
         lines.append("<details>")
         lines.append("<summary>Click to expand skipped images</summary>")
@@ -394,7 +394,7 @@ def print_cli_summary(
     print()
     print(f"  ✅ Successful:    {ss.get('successful_scans', 0)}")
     print(f"  ❌ Failed:        {ss.get('failed_scans', 0)}")
-    print(f"  ⊘  Skipped:       {ss.get('skipped_scans', 0)} (unsigned)")
+    print(f"  🚫  Skipped:       {ss.get('skipped_scans', 0)} (unsigned)")
     print()
     
     if cve_analysis:

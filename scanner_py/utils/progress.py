@@ -150,9 +150,9 @@ class ProgressBar:
                 counts.append(f"✗{self.failed_count}")
         if self.skipped_count > 0:
             if self._is_tty():
-                counts.append(f"\033[93m⊘{self.skipped_count}\033[0m")
+                counts.append(f"\033[93m🚫{self.skipped_count}\033[0m")
             else:
-                counts.append(f"⊘{self.skipped_count}")
+                counts.append(f"🚫{self.skipped_count}")
         
         status_str = " ".join(counts)
 
@@ -223,7 +223,7 @@ class ProgressBar:
             if self.failed_count > 0:
                 parts.append(f", {self.failed_count} ✗")
             if self.skipped_count > 0:
-                parts.append(f", {self.skipped_count} ⊘")
+                parts.append(f", {self.skipped_count} 🚫")
             parts[-1] += ")"
         
         parts.append(f"in {elapsed_str}")
@@ -384,7 +384,7 @@ class MultiProgress:
         if failed > 0:
             parts.append(f"✗{failed}")
         if skipped > 0:
-            parts.append(f"⊘{skipped}")
+            parts.append(f"🚫{skipped}")
         
         line = " ".join(parts)
         
