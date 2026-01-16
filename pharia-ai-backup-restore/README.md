@@ -63,9 +63,7 @@ psql -h localhost -p 5432 -U pharia_user -d dev -c "SELECT version();"
 
 ### ⬆️ Perform Upgrade
 
-```bash
-helm upgrade pharia-ai ./pharia-ai-chart --namespace pharia-ai
-```
+Follow your standard deployment process to upgrade Pharia AI.
 
 ### ✅ If Upgrade Succeeds
 
@@ -73,23 +71,55 @@ Test your application and you're done!
 
 ### ⚠️ If Upgrade Fails: Rollback
 
+> **Important:** Always stop application pods before restoring databases to prevent data corruption and ensure a clean restore.
+
+**Step 1: Scale down application deployments**
+
+Scale down only the **application** deployments (not database operators or StatefulSets). Before scaling down, note the current replica counts so you can restore them later.
+
 ```bash
-# 1. Restore databases
-./bin/pharia-backup.sh db restore all
+# List all deployments and their replica counts
+kubectl get deployments -n pharia-ai
 
-# 2. Restore secrets
-./bin/pharia-backup.sh secrets restore --latest -f -n pharia-ai
-
-# 3. Rollback Helm deployment
-helm rollback pharia-ai -n pharia-ai
-
-# 4. Verify pods are running
-kubectl get pods -n pharia-ai
+# Scale down individual application deployments (NOT database-related ones)
+kubectl scale deployment <app-deployment-name> --replicas=0 -n pharia-ai
 ```
+
+**Step 2: Verify application pods are terminated**
+
+```bash
+kubectl get pods -n pharia-ai
+# Wait until no application pods are running (database pods should remain)
+```
+
+**Step 3: Restore databases and secrets**
+
+```bash
+./bin/pharia-backup.sh db restore all
+./bin/pharia-backup.sh secrets restore --latest -f -n pharia-ai
+```
+
+**Step 4: Scale application deployments back up**
+
+Restore each deployment to its original replica count:
+
+```bash
+kubectl scale deployment <app-deployment-name> --replicas=<original-count> -n pharia-ai
+```
+
+**Step 5: Verify pods are running and healthy**
+
+```bash
+kubectl get pods -n pharia-ai -w
+```
+
+> **💡 Tip:** Consider using a rollback via your deployment tool (e.g., Helm, ArgoCD) which handles replica counts automatically.
 
 ## 📝 Common Commands
 
 ### 🗄️ Database Operations
+
+> **💡 Tip:** Before restoring databases, always scale down your application pods to zero replicas. This prevents data corruption from concurrent writes during the restore process.
 
 ```bash
 # Backup all databases
@@ -140,13 +170,21 @@ ls -lt database-backups/ | head -3
 ls -lt secrets-backups/ | head -3
 
 # === UPGRADE ===
-helm upgrade pharia-ai ./pharia-ai-v2.0 -n pharia-ai
+# Follow your standard deployment process
 
 # === IF ROLLBACK NEEDED ===
+# Step 1: Note current replica counts and scale down APPLICATION deployments only
+kubectl get deployments -n pharia-ai  # Note replica counts
+kubectl scale deployment <app-deployment> --replicas=0 -n pharia-ai
+kubectl get pods -n pharia-ai  # Wait for app pods to terminate
+
+# Step 2: Restore data from backups
 ./bin/pharia-backup.sh db restore all
 ./bin/pharia-backup.sh secrets restore --latest -f -n pharia-ai
-helm rollback pharia-ai -n pharia-ai
-kubectl get pods -n pharia-ai
+
+# Step 3: Scale application deployments back to original replica counts
+kubectl scale deployment <app-deployment> --replicas=<original-count> -n pharia-ai
+kubectl get pods -n pharia-ai -w  # Watch pods come back up
 ```
 
 ## 🔧 Troubleshooting
