@@ -50,6 +50,8 @@ class TrivyScanner:
         config_file: Optional[str] = None,
         timeout: int = 300,
         verbose: bool = False,
+        skip_db_update: bool = True,
+        max_retries: int = 3,
     ):
         """
         Initialize scanner.
@@ -58,10 +60,14 @@ class TrivyScanner:
             config_file: Path to Trivy config file
             timeout: Timeout for scan operations
             verbose: Whether to show verbose output
+            skip_db_update: Skip DB update (use when DB is pre-downloaded)
+            max_retries: Maximum number of retry attempts for failed scans
         """
         self.config_file = config_file
         self.timeout = timeout
         self.verbose = verbose
+        self.skip_db_update = skip_db_update
+        self.max_retries = max_retries
 
     def scan_sbom(
         self,
@@ -84,6 +90,8 @@ class TrivyScanner:
         Returns:
             True if scan completed successfully
         """
+        import time
+
         args = [
             "trivy",
             "sbom",
@@ -96,6 +104,10 @@ class TrivyScanner:
         if not self.verbose:
             args.insert(2, "--quiet")
 
+        # Skip DB update when using pre-downloaded DB (prevents race conditions in parallel scans)
+        if self.skip_db_update:
+            args.insert(2, "--skip-db-update")
+
         if ignore_file and Path(ignore_file).exists():
             args.extend(["--ignorefile", ignore_file])
 
@@ -107,18 +119,28 @@ class TrivyScanner:
 
         logger.debug(f"Running Trivy: {' '.join(args)}")
 
-        result = run_command(args, timeout=self.timeout + 30)
+        last_error = None
+        for attempt in range(1, self.max_retries + 1):
+            result = run_command(args, timeout=self.timeout + 30)
 
-        if result.success:
-            logger.debug("Trivy scan completed successfully")
-            return True
-        else:
-            # Only show error in verbose mode
-            if is_verbose():
-                logger.error(f"Trivy scan failed: {result.stderr}")
+            if result.success:
+                if attempt > 1:
+                    logger.debug(f"Trivy scan succeeded on attempt {attempt}")
+                else:
+                    logger.debug("Trivy scan completed successfully")
+                return True
             else:
-                logger.debug(f"Trivy scan failed: {result.stderr}")
-            return False
+                last_error = result.stderr
+                if attempt < self.max_retries:
+                    logger.debug(f"Trivy scan failed (attempt {attempt}/{self.max_retries}), retrying...")
+                    time.sleep(2 * attempt)  # Exponential backoff: 2s, 4s, 6s
+
+        # All retries exhausted
+        if is_verbose():
+            logger.error(f"Trivy scan failed after {self.max_retries} attempts: {last_error}")
+        else:
+            logger.debug(f"Trivy scan failed after {self.max_retries} attempts: {last_error}")
+        return False
 
     def parse_json_report(self, report_file: str) -> Dict[str, Any]:
         """
@@ -213,6 +235,8 @@ class ImageScanner:
         certificate_identity_regexp: Optional[str] = None,
         trivy_config: Optional[str] = None,
         verbose: bool = False,
+        skip_db_update: bool = True,
+        max_retries: int = 3,
     ):
         """
         Initialize scanner.
@@ -229,6 +253,8 @@ class ImageScanner:
             certificate_identity_regexp: Identity regexp for verification
             trivy_config: Path to Trivy config file
             verbose: Whether to show verbose output
+            skip_db_update: Skip Trivy DB update (use when DB is pre-downloaded)
+            max_retries: Maximum retry attempts for failed Trivy scans
         """
         self.output_dir = Path(output_dir)
         self.format = format
@@ -259,7 +285,13 @@ class ImageScanner:
             ),
             timeout=timeout,
         )
-        self.trivy = TrivyScanner(config_file=trivy_config, timeout=timeout, verbose=verbose)
+        self.trivy = TrivyScanner(
+            config_file=trivy_config,
+            timeout=timeout,
+            verbose=verbose,
+            max_retries=max_retries,
+            skip_db_update=skip_db_update,
+        )
 
     def _sanitize_image_name(self, image: str) -> str:
         """Convert image name to safe directory name."""
