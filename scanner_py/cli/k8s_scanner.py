@@ -7,14 +7,14 @@ import argparse
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Tuple
 
 from ..core.scanner import ImageScanner
 from ..core.kubernetes import KubernetesImageExtractor, KubernetesConfig
-from ..core.cache import ScanCache
+from ..core.cache import ScanCache, reset_digest_cache
 from ..core.chainguard import ChainguardVerifier
 from ..models.scan_result import ScanResult, ScanSummary
-from ..utils.logging import setup_logging, LogLevel, get_logger, is_verbose
+from ..utils.logging import setup_logging, LogLevel, get_logger, is_verbose, suppress_logging, restore_logging
 from ..utils.subprocess import check_prerequisites
 from ..utils.registry import RegistryChecker
 from ..utils.progress import ProgressBar, ProgressStyle, Spinner
@@ -44,7 +44,7 @@ Examples:
   scanner-py cosign-scan --namespace production --ignore-file ./ignore-images.txt
 
   # Scan with custom output directory and parallel scans
-  scanner-py cosign-scan --namespace staging --output-dir ./reports --parallel-scans 5
+  scanner-py cosign-scan --namespace staging --output-dir ./reports --parallel-scans 10
 
   # Dry run to see what would be scanned
   scanner-py cosign-scan --namespace production --dry-run
@@ -82,8 +82,8 @@ Examples:
     parser.add_argument(
         "--parallel-scans",
         type=int,
-        default=3,
-        help="Number of parallel scans (default: 3)",
+        default=10,
+        help="Number of parallel scans (default: 10)",
     )
     parser.add_argument(
         "--timeout",
@@ -195,6 +195,9 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
     Returns:
         Exit code
     """
+    import time
+    start_time = time.time()
+    
     # Setup logging - errors only shown in verbose mode
     log_level = LogLevel.VERBOSE if args.verbose else LogLevel.INFO
     setup_logging(log_level, show_errors=args.verbose)
@@ -327,91 +330,127 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
 
     print()
 
-    # Test flow - only first valid image
-    if args.test_flow:
-        print("📋 TEST FLOW: Processing only the first valid image")
-        progress = ProgressBar(
-            len(images_to_scan),
-            "Test scan",
-            ProgressStyle(width=25),
-        )
-        for image in images_to_scan:
-            result = scanner.scan(image)
-            results.append(result)
+    # Suppress logging during progress bar to prevent interference (only in non-verbose mode)
+    prev_log_level = None
+    if not args.verbose:
+        prev_log_level = suppress_logging()
+
+    try:
+        # Test flow - only first valid image
+        if args.test_flow:
+            if prev_log_level is not None:
+                restore_logging(prev_log_level)  # Restore for test flow message
+            print("📋 TEST FLOW: Processing only the first valid image")
+            if not args.verbose:
+                prev_log_level = suppress_logging()
             
-            status = "success" if result.success else ("skipped" if result.skipped else "failed")
-            progress.update(status=status, current_item=image.split("/")[-1])
+            progress = ProgressBar(
+                len(images_to_scan),
+                "Test scan",
+                ProgressStyle(width=25),
+            )
+            for image in images_to_scan:
+                result = scanner.scan(image)
+                results.append(result)
+                
+                status = "success" if result.success else ("skipped" if result.skipped else "failed")
+                progress.update(status=status, current_item=image.split("/")[-1])
+                
+                if result.success and not result.skipped:
+                    break
             
-            if result.success and not result.skipped:
-                break
+            progress.finish()
+        else:
+            # Parallel scanning with progress bar
+            progress = ProgressBar(
+                len(images_to_scan),
+                "Scanning images",
+                ProgressStyle(width=30),
+            )
+
+            with ThreadPoolExecutor(max_workers=args.parallel_scans) as executor:
+                futures = {
+                    executor.submit(scanner.scan, image): image
+                    for image in images_to_scan
+                }
+
+                for future in as_completed(futures):
+                    image = futures[future]
+                    try:
+                        result = future.result()
+                        results.append(result)
+                        
+                        if result.success:
+                            status = "success"
+                        elif result.skipped:
+                            status = "skipped"
+                        else:
+                            status = "failed"
+                        
+                        progress.update(status=status, current_item=image.split("/")[-1])
+                        
+                    except Exception as e:
+                        results.append(ScanResult(
+                            image=image,
+                            success=False,
+                            error=str(e),
+                        ))
+                        progress.update(status="failed", current_item=image.split("/")[-1])
+
+            progress.finish()
+    finally:
+        # Always restore logging if it was suppressed
+        if prev_log_level is not None:
+            restore_logging(prev_log_level)
+
+    # Check Chainguard base images BEFORE generating summary (PARALLEL with spinner)
+    successful_results = [r for r in results if r.success and not r.skipped]
+    if successful_results:
+        # Suppress logging during spinner (only in non-verbose mode)
+        prev_log_level = None
+        if not args.verbose:
+            prev_log_level = suppress_logging()
         
-        progress.finish()
-    else:
-        # Parallel scanning with progress bar
-        progress = ProgressBar(
-            len(images_to_scan),
-            "Scanning images",
-            ProgressStyle(width=30),
-        )
-
-        with ThreadPoolExecutor(max_workers=args.parallel_scans) as executor:
-            futures = {
-                executor.submit(scanner.scan, image): image
-                for image in images_to_scan
-            }
-
-            for future in as_completed(futures):
-                image = futures[future]
-                try:
-                    result = future.result()
-                    results.append(result)
-                    
-                    if result.success:
-                        status = "success"
-                    elif result.skipped:
-                        status = "skipped"
-                    else:
-                        status = "failed"
-                        # Only log error in verbose mode
-                        if is_verbose():
-                            logger.error(f"Scan failed for {image}: {result.error}")
-                    
-                    progress.update(status=status, current_item=image.split("/")[-1])
-                    
-                except Exception as e:
-                    # Only log error in verbose mode
-                    if is_verbose():
-                        logger.error(f"Error scanning {image}: {e}")
-                    
-                    results.append(ScanResult(
-                        image=image,
-                        success=False,
-                        error=str(e),
-                    ))
-                    progress.update(status="failed", current_item=image.split("/")[-1])
-
-        progress.finish()
-
-    # Check Chainguard base images BEFORE generating summary (with spinner)
-    if any(r.success and not r.skipped for r in results):
-        spinner = Spinner("Checking Chainguard base images...")
-        chainguard_verifier = ChainguardVerifier()
-        for result in results:
-            if result.success and not result.skipped:
-                spinner.update(f"Checking {result.image.split('/')[-1]}...")
+        try:
+            spinner = Spinner("Checking Chainguard base images...")
+            spinner.spin()
+            chainguard_verifier = ChainguardVerifier()
+            
+            def check_chainguard(result: ScanResult) -> Tuple[ScanResult, Any]:
+                """Check Chainguard for a single result."""
                 try:
                     cg_result = chainguard_verifier.verify(result.image, fail_on_mismatch=False)
-                    result.is_chainguard = cg_result.is_chainguard
-                    result.base_image = cg_result.base_image
-                    result.signature_verified = cg_result.signature_verified
+                    return result, cg_result
                 except Exception:
-                    # Silently handle errors in non-verbose mode
-                    if is_verbose():
-                        logger.error_verbose(f"Chainguard check failed for {result.image}")
-                    result.is_chainguard = False
-                    result.base_image = "unknown"
-                    result.signature_verified = False
-        spinner.finish("Chainguard verification complete")
+                    return result, None
+            
+            # Run Chainguard checks in parallel
+            with ThreadPoolExecutor(max_workers=min(len(successful_results), 5)) as executor:
+                futures = {
+                    executor.submit(check_chainguard, result): result
+                    for result in successful_results
+                }
+                
+                completed = 0
+                for future in as_completed(futures):
+                    result, cg_result = future.result()
+                    completed += 1
+                    
+                    if cg_result:
+                        result.is_chainguard = cg_result.is_chainguard
+                        result.base_image = cg_result.base_image
+                        result.signature_verified = cg_result.signature_verified
+                    else:
+                        result.is_chainguard = False
+                        result.base_image = "unknown"
+                        result.signature_verified = False
+                    
+                    spinner.update(f"Checked {completed}/{len(successful_results)} images...")
+            
+            spinner.finish(f"Chainguard verification complete ({len(successful_results)} images)")
+        finally:
+            if prev_log_level is not None:
+                restore_logging(prev_log_level)
 
     # Generate summary AFTER Chainguard check
     summary = generate_summary(args, results, extraction_result)
@@ -444,8 +483,19 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
     print()
     print_summary(summary, args.min_cve_level, args.verbose)
 
+    # Calculate and display total execution time
+    elapsed_time = time.time() - start_time
+    if elapsed_time >= 3600:
+        time_str = f"{elapsed_time / 3600:.1f} hours"
+    elif elapsed_time >= 60:
+        minutes = int(elapsed_time // 60)
+        seconds = int(elapsed_time % 60)
+        time_str = f"{minutes}m {seconds}s"
+    else:
+        time_str = f"{elapsed_time:.1f}s"
+
     print()
-    print("✅ Kubernetes image scanning completed!")
+    print(f"✅ Kubernetes image scanning completed in {time_str}")
 
     return 0
 

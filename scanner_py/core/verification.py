@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 from ..utils.subprocess import run_command, run_with_timeout
 from ..utils.logging import get_logger, is_verbose
+from .cache import get_digest_cache
 
 logger = get_logger(__name__)
 
@@ -66,7 +67,7 @@ class CosignVerifier:
 
     def resolve_image_digest(self, image: str) -> Optional[str]:
         """
-        Resolve image tag to digest using crane.
+        Resolve image tag to digest using crane (cached).
 
         Args:
             image: Image reference
@@ -74,12 +75,10 @@ class CosignVerifier:
         Returns:
             Image digest or None if resolution fails
         """
-        result = run_command(["crane", "digest", image], timeout=30)
-        if result.success:
-            return result.stdout.strip()
-        if is_verbose():
-            logger.warning(f"Failed to resolve digest for {image}: {result.stderr}")
-        return None
+        digest = get_digest_cache().get_or_fetch(image, timeout=30)
+        if not digest and is_verbose():
+            logger.warning(f"Failed to resolve digest for {image}")
+        return digest
 
     def verify(
         self,

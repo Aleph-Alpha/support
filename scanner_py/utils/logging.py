@@ -164,6 +164,32 @@ def get_logger(name: str = "scanner_py") -> logging.Logger:
     return logging.getLogger(name)
 
 
+def suppress_logging() -> int:
+    """
+    Temporarily suppress all logging output.
+    
+    Returns the previous log level so it can be restored.
+    
+    Returns:
+        Previous log level
+    """
+    root_logger = logging.getLogger("scanner_py")
+    previous_level = root_logger.level
+    root_logger.setLevel(logging.CRITICAL + 1)
+    return previous_level
+
+
+def restore_logging(previous_level: int) -> None:
+    """
+    Restore logging to a previous level.
+    
+    Args:
+        previous_level: Log level to restore
+    """
+    root_logger = logging.getLogger("scanner_py")
+    root_logger.setLevel(previous_level)
+
+
 # Add custom log methods
 def log_step(self: logging.Logger, message: str, *args, **kwargs) -> None:
     """Log a step message."""

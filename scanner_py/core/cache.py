@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import time
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -12,6 +13,93 @@ from ..utils.subprocess import run_command
 from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+class DigestCache:
+    """
+    Thread-safe in-memory cache for image digests.
+    
+    Eliminates redundant `crane digest` calls during a single scan run.
+    Each call takes ~1-2 seconds, and we often call it 4-6 times per image.
+    """
+    
+    def __init__(self):
+        self._cache: Dict[str, Optional[str]] = {}
+        self._lock = threading.Lock()
+    
+    def get(self, image: str) -> Optional[str]:
+        """Get cached digest for an image."""
+        with self._lock:
+            return self._cache.get(image)
+    
+    def has(self, image: str) -> bool:
+        """Check if digest is cached (including None values)."""
+        with self._lock:
+            return image in self._cache
+    
+    def set(self, image: str, digest: Optional[str]) -> None:
+        """Cache a digest for an image."""
+        with self._lock:
+            self._cache[image] = digest
+    
+    def get_or_fetch(self, image: str, timeout: int = 30) -> Optional[str]:
+        """
+        Get cached digest or fetch and cache it.
+        
+        Args:
+            image: Image reference
+            timeout: Timeout for crane digest call
+            
+        Returns:
+            Digest string or None
+        """
+        if self.has(image):
+            cached = self.get(image)
+            if cached:
+                logger.debug(f"Digest cache hit for {image}")
+            return cached
+        
+        # Fetch digest
+        result = run_command(["crane", "digest", image], timeout=timeout)
+        digest = result.stdout.strip() if result.success else None
+        
+        self.set(image, digest)
+        return digest
+    
+    def clear(self) -> None:
+        """Clear the cache."""
+        with self._lock:
+            self._cache.clear()
+    
+    def stats(self) -> Dict[str, int]:
+        """Get cache statistics."""
+        with self._lock:
+            total = len(self._cache)
+            valid = sum(1 for v in self._cache.values() if v is not None)
+            return {"total": total, "valid": valid, "failed": total - valid}
+
+
+# Global digest cache instance for use across modules
+_digest_cache: Optional[DigestCache] = None
+_digest_cache_lock = threading.Lock()
+
+
+def get_digest_cache() -> DigestCache:
+    """Get the global digest cache instance."""
+    global _digest_cache
+    with _digest_cache_lock:
+        if _digest_cache is None:
+            _digest_cache = DigestCache()
+        return _digest_cache
+
+
+def reset_digest_cache() -> None:
+    """Reset the global digest cache (useful for testing)."""
+    global _digest_cache
+    with _digest_cache_lock:
+        if _digest_cache:
+            _digest_cache.clear()
+        _digest_cache = None
 
 
 @dataclass
@@ -73,10 +161,10 @@ class ScanCache:
             logger.success("Cache cleared")
 
     def _get_image_digest(self, image: str) -> Optional[str]:
-        """Get image digest for cache key."""
-        result = run_command(["crane", "digest", image], timeout=30)
-        if result.success:
-            return result.stdout.strip().replace("sha256:", "")
+        """Get image digest for cache key (uses shared digest cache)."""
+        digest = get_digest_cache().get_or_fetch(image, timeout=30)
+        if digest:
+            return digest.replace("sha256:", "")
         return None
 
     def _get_cache_key(self, image: str) -> str:

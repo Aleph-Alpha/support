@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import List, Set, Optional, Callable
 
 from ..utils.subprocess import run_command, run_with_timeout
-from ..utils.logging import get_logger
+from ..utils.logging import get_logger, is_verbose
 
 logger = get_logger(__name__)
 
@@ -71,7 +71,7 @@ class KubernetesImageExtractor:
         Returns:
             True if cluster is accessible
         """
-        logger.info(f"Testing Kubernetes connectivity (timeout: {self.timeout}s)")
+        logger.debug(f"Testing Kubernetes connectivity (timeout: {self.timeout}s)")
 
         args = ["kubectl"] + self._kubectl_args + [
             "get", "namespace", self.config.namespace
@@ -80,14 +80,16 @@ class KubernetesImageExtractor:
         result = run_with_timeout(args, self.timeout)
 
         if result.success:
-            logger.result(f"Connected to cluster, namespace: {self.config.namespace}")
+            logger.debug(f"Connected to cluster, namespace: {self.config.namespace}")
             return True
         elif result.timed_out:
-            logger.error("Kubernetes connectivity test timed out")
-            logger.error("This usually indicates network issues or unreachable cluster")
+            if is_verbose():
+                logger.error("Kubernetes connectivity test timed out")
+                logger.error("This usually indicates network issues or unreachable cluster")
         else:
-            logger.error(f"Cannot access namespace '{self.config.namespace}'")
-            logger.error(f"kubectl output: {result.stderr}")
+            if is_verbose():
+                logger.error(f"Cannot access namespace '{self.config.namespace}'")
+                logger.error(f"kubectl output: {result.stderr}")
 
         return False
 
@@ -135,7 +137,7 @@ class KubernetesImageExtractor:
         Returns:
             ImageExtractionResult with discovered images
         """
-        logger.step(f"Discovering images in namespace: {self.config.namespace}")
+        logger.debug(f"Discovering images in namespace: {self.config.namespace}")
 
         ignore_patterns = ignore_patterns or []
         all_images: Set[str] = set()
@@ -203,13 +205,13 @@ class KubernetesImageExtractor:
         result.images = filtered_images
         result.inaccessible_registries = inaccessible_registries
 
-        # Log summary
-        logger.result(f"Found {len(filtered_images)} unique images to scan")
+        # Log summary (only in verbose mode to avoid interfering with progress bars)
+        logger.debug(f"Found {len(filtered_images)} unique images to scan")
 
         if result.ignored_count > 0:
-            logger.result(f"🚫 Skipped {result.ignored_count} ignored images")
+            logger.debug(f"Skipped {result.ignored_count} ignored images")
 
-        if result.inaccessible_count > 0:
+        if result.inaccessible_count > 0 and is_verbose():
             logger.warning(
                 f"🚫 Inaccessible registries: {', '.join(inaccessible_registries)}"
             )
@@ -260,6 +262,7 @@ class KubernetesImageExtractor:
                         patterns.append(line)
             logger.debug(f"Loaded {len(patterns)} ignore patterns from {filepath}")
         except FileNotFoundError:
-            logger.warning(f"Ignore file not found: {filepath}")
+            if is_verbose():
+                logger.warning(f"Ignore file not found: {filepath}")
         return patterns
 

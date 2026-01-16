@@ -87,10 +87,12 @@ class ProgressBar:
         return self._format_time(remaining)
 
     def _clear_line(self) -> None:
-        """Clear the current line."""
+        """Clear the current line using ANSI escape codes."""
         if self._is_tty():
-            # Move cursor to beginning and clear line
-            self.file.write("\r" + " " * self._last_line_length + "\r")
+            # Use ANSI escape codes for reliable line clearing
+            # \r - Move cursor to beginning of line
+            # \033[K - Clear from cursor to end of line
+            self.file.write("\r\033[K")
             self.file.flush()
 
     def update(
@@ -179,10 +181,11 @@ class ProgressBar:
 
         line = " ".join(parts)
         
-        # Clear and print
+        # Clear and print using ANSI escape codes
         self._clear_line()
         
         if self._is_tty():
+            # \r moves to beginning, line already cleared by _clear_line
             self.file.write(f"\r{line}")
         else:
             self.file.write(f"{line}\n")
@@ -266,7 +269,8 @@ class Spinner:
             return
             
         char = self.style.spinner_chars[self._frame % len(self.style.spinner_chars)]
-        self.file.write(f"\r{char} {self.message}")
+        # Use ANSI escape codes to clear line and write
+        self.file.write(f"\r\033[K{char} {self.message}")
         self.file.flush()
         self._frame += 1
 
@@ -278,7 +282,8 @@ class Spinner:
     def finish(self, message: str = "", success: bool = True) -> None:
         """Finish the spinner."""
         if self._is_tty():
-            self.file.write("\r" + " " * (len(self.message) + 10) + "\r")
+            # Use ANSI escape codes to clear the line
+            self.file.write("\r\033[K")
         
         icon = "✅" if success else "❌"
         final_msg = message or self.message

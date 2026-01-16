@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from ..utils.subprocess import run_command, run_with_timeout
-from ..utils.logging import get_logger
+from ..utils.logging import get_logger, is_verbose
 
 logger = get_logger(__name__)
 
@@ -52,7 +52,7 @@ class ChainguardVerifier:
     # Production Chainguard verification settings
     PRODUCTION_OIDC_ISSUER = "https://issuer.enforce.dev"
 
-    def __init__(self, timeout: int = 60):
+    def __init__(self, timeout: int = 180):
         """
         Initialize verifier.
 
@@ -278,13 +278,14 @@ class ChainguardVerifier:
         Returns:
             ChainguardVerificationResult with verification details
         """
-        logger.info(f"Checking Chainguard base image: {image}")
+        logger.debug(f"Checking Chainguard base image: {image}")
 
         # Get base image
         base_image = self.get_base_image(image)
 
         if not base_image:
-            logger.warning("Could not determine base image from metadata")
+            if is_verbose():
+                logger.warning("Could not determine base image from metadata")
             return ChainguardVerificationResult(
                 is_chainguard=False,
                 base_image="unknown",
@@ -292,20 +293,21 @@ class ChainguardVerifier:
                 error="Could not determine base image",
             )
 
-        logger.info(f"Detected base image: {base_image}")
+        logger.debug(f"Detected base image: {base_image}")
 
         # Verify Chainguard signature
         success, message = self.verify_chainguard_signature(base_image)
 
         if success:
-            logger.success("Base image is signed by Chainguard")
+            logger.debug("Base image is signed by Chainguard")
             return ChainguardVerificationResult(
                 is_chainguard=True,
                 base_image=base_image,
                 signature_verified=True,
             )
         else:
-            logger.warning(f"Chainguard verification failed: {message}")
+            if is_verbose():
+                logger.warning(f"Chainguard verification failed: {message}")
             return ChainguardVerificationResult(
                 is_chainguard=False,
                 base_image=base_image,

@@ -11,6 +11,7 @@ import json
 import base64
 import re
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any, Set
 from pathlib import Path
@@ -18,6 +19,7 @@ from enum import Enum
 
 from ..utils.subprocess import run_command, run_with_timeout
 from ..utils.logging import get_logger, is_verbose
+from .cache import get_digest_cache
 
 logger = get_logger(__name__)
 
@@ -104,7 +106,7 @@ class AttestationExtractor:
 
     def resolve_digest(self, image: str) -> Optional[str]:
         """
-        Resolve image tag to digest.
+        Resolve image tag to digest (cached).
 
         Args:
             image: Image reference
@@ -112,16 +114,15 @@ class AttestationExtractor:
         Returns:
             Digest or None
         """
-        result = run_command(["crane", "digest", image], timeout=30)
-        if result.success:
-            return result.stdout.strip()
-        return None
+        return get_digest_cache().get_or_fetch(image, timeout=30)
 
     def list_attestations(
         self, image: str, show_null: bool = False
     ) -> AttestationList:
         """
         List available attestations for an image.
+
+        Uses parallel predicate type extraction for better performance.
 
         Args:
             image: Image reference
@@ -165,19 +166,35 @@ class AttestationExtractor:
             if r.get("artifactType") == bundle_type
         ]
 
-        # Extract predicate types from bundles
-        predicate_types: Dict[str, int] = {}
+        if not bundle_refs:
+            return AttestationList()
 
-        for ref in bundle_refs:
+        # Extract predicate types from bundles IN PARALLEL
+        # This is a major performance improvement - each bundle fetch takes ~1-2 sec
+        predicate_types: Dict[str, int] = {}
+        
+        def fetch_predicate_type(ref: dict) -> Optional[str]:
             ref_digest = ref.get("digest")
             if not ref_digest:
-                continue
-
-            pred_type = self._get_predicate_type_from_bundle(
-                image, ref_digest
-            )
-            if pred_type:
-                predicate_types[pred_type] = predicate_types.get(pred_type, 0) + 1
+                return None
+            return self._get_predicate_type_from_bundle(image, ref_digest)
+        
+        # Use ThreadPoolExecutor for parallel fetching
+        max_workers = min(len(bundle_refs), 5)  # Cap at 5 parallel requests
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(fetch_predicate_type, ref): ref
+                for ref in bundle_refs
+            }
+            
+            for future in as_completed(futures):
+                try:
+                    pred_type = future.result()
+                    if pred_type:
+                        predicate_types[pred_type] = predicate_types.get(pred_type, 0) + 1
+                except Exception:
+                    # Silently skip failed fetches
+                    pass
 
         return AttestationList(attestations=predicate_types)
 
