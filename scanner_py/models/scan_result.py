@@ -157,6 +157,7 @@ class ScanResult:
             "is_chainguard": self.is_chainguard,
             "base_image": self.base_image,
             "signature_verified": self.signature_verified,
+            "triage_file": self.triage_file,
         }
 
     def to_json(self) -> str:

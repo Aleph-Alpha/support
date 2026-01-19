@@ -243,8 +243,8 @@ def generate_markdown_report(
         lines.append("")
         
         # Table header
-        lines.append("| Image | Unaddressed CVEs | Addressed CVEs | Irrelevant CVEs | Triage | Chainguard |")
-        lines.append("|-------|:----------------:|:--------------:|:---------------:|:-----------:|:----------:|")
+        lines.append("| Image | Unaddressed CVEs | Addressed CVEs | Irrelevant CVEs | Triage | Triage File | Chainguard |")
+        lines.append("|-------|:----------------:|:--------------:|:---------------:|:-----------:|:-----------:|:----------:|")
         
         total_unaddressed = 0
         total_addressed = 0
@@ -267,14 +267,15 @@ def generate_markdown_report(
             irrelevant = medium + low
             
             # Get status
-            has_triage = triaged > 0 or analysis.get("triage_file") is not None
+            has_triage = triaged > 0  # CVEs were actually triaged/addressed
+            has_triage_file = analysis.get("triage_file") is not None  # Triage file exists
             is_chainguard = analysis.get("is_chainguard", False)
             
             # Accumulate totals
             total_unaddressed += unaddressed
             total_addressed += addressed
             total_irrelevant += irrelevant
-            if has_triage:
+            if has_triage_file:
                 images_with_triage += 1
             if is_chainguard:
                 images_with_chainguard += 1
@@ -283,7 +284,7 @@ def generate_markdown_report(
             show_entry = True
             if filter_unaddressed and unaddressed == 0:
                 show_entry = False
-            if filter_missing_triage and has_triage:
+            if filter_missing_triage and has_triage_file:
                 show_entry = False
             
             if not show_entry and (filter_unaddressed or filter_missing_triage):
@@ -299,9 +300,10 @@ def generate_markdown_report(
             # Format cells
             unaddr_str = f"✅ {unaddressed}" if unaddressed == 0 else f"🔴 **{unaddressed}**"
             triage_str = "✅ Present" if has_triage else "❌ Missing"
+            triage_file_str = "✅" if has_triage_file else "❌"
             chainguard_str = "✅" if is_chainguard else "❌"
             
-            lines.append(f"| `{image_short}` | {unaddr_str} | {addressed} | {irrelevant} | {triage_str} | {chainguard_str} |")
+            lines.append(f"| `{image_short}` | {unaddr_str} | {addressed} | {irrelevant} | {triage_str} | {triage_file_str} | {chainguard_str} |")
         
         lines.append("")
         
@@ -411,6 +413,7 @@ def print_cli_summary(
             f"{'Addressed CVEs':>15} "
             f"{'Irrelevant CVEs':>16} "
             f"{'Triage':>12} "
+            f"{'Triage File':>12} "
             f"{'Chainguard Base':>16}"
         )
         print(header)
@@ -432,19 +435,20 @@ def print_cli_summary(
             addressed = triaged
             irrelevant = medium + low
             
-            has_triage = triaged > 0 or analysis.get("triage_file") is not None
+            has_triage = triaged > 0  # CVEs were actually triaged/addressed
+            has_triage_file = analysis.get("triage_file") is not None  # Triage file exists
             is_chainguard = analysis.get("is_chainguard", False)
             
             # Apply filters
             if filter_unaddressed and unaddressed == 0:
                 continue
-            if filter_missing_triage and has_triage:
+            if filter_missing_triage and has_triage_file:
                 continue
             
             total_unaddressed += unaddressed
             total_addressed += addressed
             total_irrelevant += irrelevant
-            if has_triage:
+            if has_triage_file:
                 images_with_triage += 1
             if is_chainguard:
                 images_with_chainguard += 1
@@ -452,6 +456,7 @@ def print_cli_summary(
             image_short = analysis["image"].split("/")[-1][:33]
             unaddr_icon = "✅" if unaddressed == 0 else "🔴"
             triage_str = "✅ Yes" if has_triage else "❌ No"
+            triage_file_str = "✅ Yes" if has_triage_file else "❌ No"
             chainguard_str = "✅ Yes" if is_chainguard else "❌ No"
             
             row = (
@@ -460,6 +465,7 @@ def print_cli_summary(
                 f"{addressed:>15} "
                 f"{irrelevant:>16} "
                 f"{triage_str:>12} "
+                f"{triage_file_str:>12} "
                 f"{chainguard_str:>16}"
             )
             print(row)
