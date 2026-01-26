@@ -186,9 +186,9 @@ def run_scan_image(args: argparse.Namespace) -> int:
     if not args.dry_run:
         spinner = Spinner("Verifying image signature...")
         spinner.spin()
-        
+
         result = scanner.scan(args.image, dry_run=args.dry_run)
-        
+
         if result.success:
             spinner.finish("Scan completed", success=True)
         elif result.skipped:

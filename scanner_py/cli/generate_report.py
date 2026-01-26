@@ -87,7 +87,7 @@ Examples:
         default="HIGH",
         help="Minimum CVE level to consider relevant (default: HIGH)",
     )
-    
+
     # Filter options
     parser.add_argument(
         "--filter-unaddressed", "-u",
@@ -115,7 +115,7 @@ def load_summary_from_dir(input_dir: str) -> Optional[Dict[str, Any]]:
     if not summary_path.exists():
         print(f"❌ Summary file not found: {summary_path}", file=sys.stderr)
         return None
-    
+
     try:
         with open(summary_path) as f:
             return json.load(f)
@@ -130,7 +130,7 @@ def load_summary_from_file(filepath: str) -> Optional[Dict[str, Any]]:
     if not path.exists():
         print(f"❌ File not found: {filepath}", file=sys.stderr)
         return None
-    
+
     try:
         with open(path) as f:
             return json.load(f)
@@ -143,7 +143,7 @@ def merge_summaries(summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Merge multiple scan summaries into one combined summary."""
     if len(summaries) == 1:
         return summaries[0]
-    
+
     # Combine the summaries
     combined = {
         "scan_summary": {
@@ -163,7 +163,7 @@ def merge_summaries(summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
         "skipped_scans": [],
         "cve_analysis": [],
     }
-    
+
     namespaces = []
     for summary in summaries:
         ss = summary.get("scan_summary", {})
@@ -174,14 +174,14 @@ def merge_summaries(summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
         combined["scan_summary"]["failed_scans"] += ss.get("failed_scans", 0)
         combined["scan_summary"]["skipped_scans"] += ss.get("skipped_scans", 0)
         namespaces.append(ss.get("namespace", "unknown"))
-        
+
         combined["successful_scans"].extend(summary.get("successful_scans", []))
         combined["failed_scans"].extend(summary.get("failed_scans", []))
         combined["skipped_scans"].extend(summary.get("skipped_scans", []))
         combined["cve_analysis"].extend(summary.get("cve_analysis", []))
-    
+
     combined["scan_summary"]["namespace"] = ", ".join(set(namespaces))
-    
+
     return combined
 
 
@@ -194,17 +194,17 @@ def generate_markdown_report(
 ) -> str:
     """
     Generate CVE analysis summary in Markdown format.
-    
+
     This produces output compatible with oras-scan's format for easy
     combination in CI pipelines.
-    
+
     Args:
         summary_data: Scan summary dictionary
         min_cve_level: Minimum CVE level considered relevant
         title: Custom report title
         filter_unaddressed: Only show images with unaddressed CVEs
         filter_missing_triage: Only show images with missing triage files
-        
+
     Returns:
         Markdown formatted string
     """
@@ -213,14 +213,14 @@ def generate_markdown_report(
     cve_analysis = summary_data.get("cve_analysis", [])
     failed_scans = summary_data.get("failed_scans", [])
     skipped_scans = summary_data.get("skipped_scans", [])
-    
+
     # Header
     report_title = title or "🔍 CVE Analysis Summary"
     lines.append(f"# {report_title}")
     lines.append("")
     lines.append(f"Generated on: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC")
     lines.append("")
-    
+
     # Scan info
     lines.append("## 📊 Scan Information")
     lines.append("")
@@ -234,25 +234,25 @@ def generate_markdown_report(
     lines.append(f"| **Skipped (unsigned)** | 🚫 {ss.get('skipped_scans', 0)} |")
     lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append("")
-    
+
     # CVE Analysis table
     if cve_analysis:
         lines.append("## 🛡️ CVE Analysis by Image")
         lines.append("")
         lines.append(f"> Minimum CVE Level: **{min_cve_level}** (levels below this are considered irrelevant)")
         lines.append("")
-        
+
         # Table header
         lines.append("| Image | Unaddressed CVEs | Addressed CVEs | Irrelevant CVEs | Triage | Triage File | Chainguard |")
         lines.append("|-------|:----------------:|:--------------:|:---------------:|:-----------:|:-----------:|:----------:|")
-        
+
         total_unaddressed = 0
         total_addressed = 0
         total_irrelevant = 0
         images_with_triage = 0
         images_with_chainguard = 0
         displayed_count = 0
-        
+
         for analysis in cve_analysis:
             # Get CVE counts
             critical = analysis.get("critical", 0)
@@ -260,17 +260,17 @@ def generate_markdown_report(
             medium = analysis.get("medium", 0)
             low = analysis.get("low", 0)
             triaged = analysis.get("triaged", 0)
-            
+
             # Calculate categories based on min_cve_level=HIGH
             unaddressed = critical + high
             addressed = triaged
             irrelevant = medium + low
-            
+
             # Get status
             has_triage = triaged > 0  # CVEs were actually triaged/addressed
             has_triage_file = analysis.get("triage_file") is not None  # Triage file exists
             is_chainguard = analysis.get("is_chainguard", False)
-            
+
             # Accumulate totals
             total_unaddressed += unaddressed
             total_addressed += addressed
@@ -279,34 +279,34 @@ def generate_markdown_report(
                 images_with_triage += 1
             if is_chainguard:
                 images_with_chainguard += 1
-            
+
             # Apply filters
             show_entry = True
             if filter_unaddressed and unaddressed == 0:
                 show_entry = False
             if filter_missing_triage and has_triage_file:
                 show_entry = False
-            
+
             if not show_entry and (filter_unaddressed or filter_missing_triage):
                 continue
-            
+
             displayed_count += 1
-            
+
             # Format image name
             image_short = analysis["image"].split("/")[-1]
             if len(image_short) > 40:
                 image_short = image_short[:37] + "..."
-            
+
             # Format cells
             unaddr_str = f"✅ {unaddressed}" if unaddressed == 0 else f"🔴 **{unaddressed}**"
             triage_str = "✅ Present" if has_triage else "❌ Missing"
             triage_file_str = "✅" if has_triage_file else "❌"
             chainguard_str = "✅" if is_chainguard else "❌"
-            
+
             lines.append(f"| `{image_short}` | {unaddr_str} | {addressed} | {irrelevant} | {triage_str} | {triage_file_str} | {chainguard_str} |")
-        
+
         lines.append("")
-        
+
         # Statistics
         lines.append("## 📈 Statistics")
         lines.append("")
@@ -320,7 +320,7 @@ def generate_markdown_report(
         lines.append(f"| **Images with Triage** | {images_with_triage}/{len(cve_analysis)} |")
         lines.append(f"| **Images with Chainguard Base** | {images_with_chainguard}/{len(cve_analysis)} |")
         lines.append("")
-        
+
         # Filter information
         if filter_unaddressed and filter_missing_triage:
             lines.append("**Filter applied:** Showing images with unaddressed CVEs OR missing triage files")
@@ -331,14 +331,14 @@ def generate_markdown_report(
         else:
             lines.append("**Filter applied:** Showing all images")
         lines.append("")
-        
+
         # Result badge
         if total_unaddressed == 0:
             lines.append("> 🎉 **All relevant CVEs have been addressed!**")
         else:
             lines.append(f"> ⚠️ **{total_unaddressed} unaddressed CVEs need attention**")
         lines.append("")
-    
+
     # Failed scans section
     if failed_scans:
         lines.append("## ❌ Failed Scans")
@@ -355,7 +355,7 @@ def generate_markdown_report(
         lines.append("")
         lines.append("</details>")
         lines.append("")
-    
+
     # Skipped scans section
     if skipped_scans:
         lines.append("## 🚫 Skipped Scans (Unsigned Images)")
@@ -368,11 +368,11 @@ def generate_markdown_report(
         lines.append("")
         lines.append("</details>")
         lines.append("")
-    
+
     # Footer
     lines.append("---")
     lines.append(f"*Generated by scanner-py*")
-    
+
     return "\n".join(lines)
 
 
@@ -385,7 +385,7 @@ def print_cli_summary(
     """Print scan summary to CLI."""
     ss = summary_data.get("scan_summary", {})
     cve_analysis = summary_data.get("cve_analysis", [])
-    
+
     print("━" * 120)
     print("📊 SCAN SUMMARY")
     print("━" * 120)
@@ -398,14 +398,14 @@ def print_cli_summary(
     print(f"  ❌ Failed:        {ss.get('failed_scans', 0)}")
     print(f"  🚫  Skipped:       {ss.get('skipped_scans', 0)} (unsigned)")
     print()
-    
+
     if cve_analysis:
         print("━" * 120)
         print("🔍 CVE ANALYSIS SUMMARY")
         print("=" * 120)
         print(f"Minimum CVE Level: {min_cve_level} (levels below this are considered irrelevant)")
         print()
-        
+
         # Print table header
         header = (
             f"{'Image':<35} "
@@ -417,34 +417,34 @@ def print_cli_summary(
             f"{'Chainguard Base':>16}"
         )
         print(header)
-        
+
         total_unaddressed = 0
         total_addressed = 0
         total_irrelevant = 0
         images_with_triage = 0
         images_with_chainguard = 0
-        
+
         for analysis in cve_analysis:
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
             medium = analysis.get("medium", 0)
             low = analysis.get("low", 0)
             triaged = analysis.get("triaged", 0)
-            
+
             unaddressed = critical + high
             addressed = triaged
             irrelevant = medium + low
-            
+
             has_triage = triaged > 0  # CVEs were actually triaged/addressed
             has_triage_file = analysis.get("triage_file") is not None  # Triage file exists
             is_chainguard = analysis.get("is_chainguard", False)
-            
+
             # Apply filters
             if filter_unaddressed and unaddressed == 0:
                 continue
             if filter_missing_triage and has_triage_file:
                 continue
-            
+
             total_unaddressed += unaddressed
             total_addressed += addressed
             total_irrelevant += irrelevant
@@ -452,13 +452,13 @@ def print_cli_summary(
                 images_with_triage += 1
             if is_chainguard:
                 images_with_chainguard += 1
-            
+
             image_short = analysis["image"].split("/")[-1][:33]
             unaddr_icon = "✅" if unaddressed == 0 else "🔴"
             triage_str = "✅ Yes" if has_triage else "❌ No"
             triage_file_str = "✅ Yes" if has_triage_file else "❌ No"
             chainguard_str = "✅ Yes" if is_chainguard else "❌ No"
-            
+
             row = (
                 f"{image_short:<35} "
                 f"{unaddr_icon} {unaddressed:<14} "
@@ -469,7 +469,7 @@ def print_cli_summary(
                 f"{chainguard_str:>16}"
             )
             print(row)
-        
+
         print()
         print("━" * 120)
         print("📈 STATISTICS")
@@ -480,7 +480,7 @@ def print_cli_summary(
         print(f"Images with triage: {images_with_triage}/{len(cve_analysis)}")
         print(f"Images with Chainguard base: {images_with_chainguard}/{len(cve_analysis)}")
         print()
-        
+
         if total_unaddressed == 0:
             print("🎉 All relevant CVEs have been addressed!")
         else:
@@ -490,20 +490,20 @@ def print_cli_summary(
 def run_generate_report(args: argparse.Namespace) -> int:
     """
     Run report generation from existing scan results.
-    
+
     Args:
         args: Parsed command line arguments
-        
+
     Returns:
         Exit code
     """
     # Setup logging
     log_level = LogLevel.VERBOSE if args.verbose else LogLevel.INFO
     setup_logging(log_level)
-    
+
     # Load summaries
     summaries = []
-    
+
     if args.input_dir:
         summary = load_summary_from_dir(args.input_dir)
         if summary is None:
@@ -515,14 +515,14 @@ def run_generate_report(args: argparse.Namespace) -> int:
             if summary is None:
                 return 1
             summaries.append(summary)
-    
+
     if not summaries:
         print("❌ No scan summaries loaded", file=sys.stderr)
         return 1
-    
+
     # Merge if multiple
     combined = merge_summaries(summaries)
-    
+
     # Generate output
     if args.output_format == "json":
         output_content = json.dumps(combined, indent=2)
@@ -534,7 +534,7 @@ def run_generate_report(args: argparse.Namespace) -> int:
             filter_unaddressed=args.filter_unaddressed,
             filter_missing_triage=args.filter_missing_triage,
         )
-    
+
     # Print CLI summary
     print()
     print_cli_summary(
@@ -544,12 +544,12 @@ def run_generate_report(args: argparse.Namespace) -> int:
         filter_missing_triage=args.filter_missing_triage,
     )
     print()
-    
+
     # Write output
     if args.output:
         output_path = Path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         if args.append and output_path.exists():
             with open(output_path, "a") as f:
                 f.write("\n\n---\n\n")
@@ -566,5 +566,5 @@ def run_generate_report(args: argparse.Namespace) -> int:
         print("MARKDOWN OUTPUT")
         print("=" * 80)
         print(output_content)
-    
+
     return 0

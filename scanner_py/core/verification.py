@@ -26,7 +26,7 @@ class VerificationResult:
 class CosignVerifier:
     """
     Verify container image signatures using cosign.
-    
+
     Supports both keyless and key-based verification modes.
     """
 
@@ -172,4 +172,3 @@ class CosignVerifier:
         """
         result = self.verify(image)
         return result.success
-
