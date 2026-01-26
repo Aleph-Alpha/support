@@ -31,8 +31,8 @@ TOTAL_IMAGES=$(echo "$SUCCESSFUL_SCANS" | wc -l | tr -d ' ')
 cat > "$OUTPUT_FILE" <<EOF
 # Detailed SBOM Analysis Report
 
-**Generated:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")  
-**Source:** Successful SBOM scans from $NAMESPACE namespace  
+**Generated:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+**Source:** Successful SBOM scans from $NAMESPACE namespace
 **Total Images Analyzed:** $TOTAL_IMAGES
 
 ---
@@ -56,28 +56,28 @@ TOTAL_NPM=0
 for image in $SUCCESSFUL_SCANS; do
     img_safe=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
     sbom_file="$SCAN_RESULTS_DIR/$img_safe/sbom.json"
-    
+
     if [[ -f "$sbom_file" ]]; then
         components=$(jq '.components | length' "$sbom_file" 2>/dev/null || echo "0")
         TOTAL_COMPONENTS=$((TOTAL_COMPONENTS + components))
-        
+
         # Count OS packages
         os_packages=$(jq '[.components[] | select(.type == "library" or .type == "operating-system")] | length' "$sbom_file" 2>/dev/null || echo "0")
         TOTAL_OS_PACKAGES=$((TOTAL_OS_PACKAGES + os_packages))
-        
+
         # Count Python packages
         python_packages=$(jq '[.components[] | select(.purl // "" | contains("pypi"))] | length' "$sbom_file" 2>/dev/null || echo "0")
         TOTAL_PYTHON_PACKAGES=$((TOTAL_PYTHON_PACKAGES + python_packages))
         TOTAL_PYPI=$((TOTAL_PYPI + python_packages))
-        
+
         # Count APK packages
         apk_packages=$(jq '[.components[] | select(.purl // "" | contains("pkg:apk"))] | length' "$sbom_file" 2>/dev/null || echo "0")
         TOTAL_APK=$((TOTAL_APK + apk_packages))
-        
+
         # Count NPM packages
         npm_packages=$(jq '[.components[] | select(.purl // "" | contains("npm"))] | length' "$sbom_file" 2>/dev/null || echo "0")
         TOTAL_NPM=$((TOTAL_NPM + npm_packages))
-        
+
         # Count licenses
         licenses=$(jq '[.components[].licenses[]?] | length' "$sbom_file" 2>/dev/null || echo "0")
         if [[ $licenses -gt 0 ]]; then
@@ -113,49 +113,49 @@ IMAGE_NUM=1
 for image in $SUCCESSFUL_SCANS; do
     img_safe=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
     sbom_file="$SCAN_RESULTS_DIR/$img_safe/sbom.json"
-    
+
     if [[ ! -f "$sbom_file" ]]; then
         continue
     fi
-    
+
     echo "Processing image $IMAGE_NUM/$TOTAL_IMAGES: $image" >&2
-    
+
     # Extract image name (last part)
     image_name=$(echo "$image" | sed 's|.*/||')
-    
+
     # Get component count
     component_count=$(jq '.components | length' "$sbom_file" 2>/dev/null || echo "0")
-    
+
     # Get component types breakdown
     os_components=$(jq '[.components[] | select(.type == "operating-system")] | length' "$sbom_file" 2>/dev/null || echo "0")
     library_components=$(jq '[.components[] | select(.type == "library")] | length' "$sbom_file" 2>/dev/null || echo "0")
     application_components=$(jq '[.components[] | select(.type == "application")] | length' "$sbom_file" 2>/dev/null || echo "0")
-    
+
     # Get package type breakdown
     apk_packages=$(jq '[.components[] | select(.purl // "" | contains("pkg:apk"))] | length' "$sbom_file" 2>/dev/null || echo "0")
     pypi_packages=$(jq '[.components[] | select(.purl // "" | contains("pypi"))] | length' "$sbom_file" 2>/dev/null || echo "0")
     npm_packages=$(jq '[.components[] | select(.purl // "" | contains("npm"))] | length' "$sbom_file" 2>/dev/null || echo "0")
-    
+
     # Get license information
     unique_licenses=$(jq '[.components[].licenses[]?.license.id // .components[].licenses[]?.license.name] | unique | length' "$sbom_file" 2>/dev/null || echo "0")
     license_list=$(jq -r '[.components[].licenses[]?.license.id // .components[].licenses[]?.license.name] | unique | .[]' "$sbom_file" 2>/dev/null | sort -u | head -10 | tr '\n' ',' | sed 's/,$//' || echo "N/A")
-    
+
     # Get top 10 components by name (count duplicates)
     top_components=$(jq -r '.components[] | "\(.name)@\(.version // "unknown")"' "$sbom_file" 2>/dev/null | sort | uniq -c | sort -rn | head -10 | awk '{print "  - " $2 " (count: " $1 ")"}' || echo "  - N/A")
-    
+
     # Get metadata
     metadata_file="$SCAN_RESULTS_DIR/$img_safe/metadata.json"
     base_image="N/A"
     if [[ -f "$metadata_file" ]]; then
         base_image=$(jq -r '.base_image // "N/A"' "$metadata_file" 2>/dev/null || echo "N/A")
     fi
-    
+
     # Write to report
     cat >> "$OUTPUT_FILE" <<EOF
 
 ### $IMAGE_NUM. $image_name
 
-**Image:** \`$image\`  
+**Image:** \`$image\`
 **SBOM File:** \`$img_safe/sbom.json\`
 
 #### Component Summary
@@ -200,7 +200,7 @@ $(jq -r '.components[] | "| \(.name // "N/A") | \(.version // "N/A") | \(.type /
 ---
 
 EOF
-    
+
     IMAGE_NUM=$((IMAGE_NUM + 1))
 done
 
@@ -212,12 +212,12 @@ TOTAL_APP=0
 for image in $SUCCESSFUL_SCANS; do
     img_safe=$(echo "$image" | sed 's|[^A-Za-z0-9._-]|_|g')
     sbom_file="$SCAN_RESULTS_DIR/$img_safe/sbom.json"
-    
+
     if [[ -f "$sbom_file" ]]; then
         lib_count=$(jq '[.components[] | select(.type == "library")] | length' "$sbom_file" 2>/dev/null || echo "0")
         os_count=$(jq '[.components[] | select(.type == "operating-system")] | length' "$sbom_file" 2>/dev/null || echo "0")
         app_count=$(jq '[.components[] | select(.type == "application")] | length' "$sbom_file" 2>/dev/null || echo "0")
-        
+
         TOTAL_LIBRARY=$((TOTAL_LIBRARY + lib_count))
         TOTAL_OS=$((TOTAL_OS + os_count))
         TOTAL_APP=$((TOTAL_APP + app_count))
@@ -294,4 +294,3 @@ Each SBOM includes:
 EOF
 
 echo "✅ Detailed SBOM report generated: $OUTPUT_FILE" >&2
-
