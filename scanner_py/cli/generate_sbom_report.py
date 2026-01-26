@@ -93,7 +93,7 @@ def load_sbom(sbom_path: Path) -> Optional[Dict[str, Any]]:
 def analyze_sbom(sbom: Dict[str, Any]) -> Dict[str, Any]:
     """Analyze SBOM and extract statistics."""
     components = sbom.get("components", [])
-    
+
     stats = {
         "total_components": len(components),
         "os_components": 0,
@@ -141,12 +141,12 @@ def get_top_components(sbom: Dict[str, Any], limit: int = 10) -> List[str]:
     """Get top components by name (counting duplicates)."""
     components = sbom.get("components", [])
     component_names = []
-    
+
     for component in components:
         name = component.get("name", "N/A")
         version = component.get("version", "unknown")
         component_names.append(f"{name}@{version}")
-    
+
     counter = Counter(component_names)
     top = counter.most_common(limit)
     return [f"  - {name} (count: {count})" for name, count in top]
@@ -160,7 +160,7 @@ def generate_report(
 ) -> bool:
     """Generate detailed SBOM report."""
     total_images = len(successful_scans)
-    
+
     # Calculate overall statistics
     total_components = 0
     total_os_packages = 0
@@ -176,7 +176,7 @@ def generate_report(
         img_safe = sanitize_image_name(image)
         sbom_path = scan_results_dir / img_safe / "sbom.json"
         sbom = load_sbom(sbom_path)
-        
+
         if sbom:
             stats = analyze_sbom(sbom)
             total_components += stats["total_components"]
@@ -236,7 +236,7 @@ def generate_report(
 
             image_name = image.split("/")[-1]
             stats = analyze_sbom(sbom)
-            
+
             total_library += stats["library_components"]
             total_os += stats["os_components"]
             total_app += stats["application_components"]
@@ -295,7 +295,7 @@ def generate_report(
                 version = component.get("version", "N/A")
                 comp_type = component.get("type", "N/A")
                 purl = component.get("purl", "N/A")
-                
+
                 license_id = "N/A"
                 licenses = component.get("licenses", [])
                 if licenses:
@@ -316,7 +316,7 @@ def generate_report(
         f.write("### By Component Type\n\n")
         f.write("| Type | Count | Percentage |\n")
         f.write("|------|-------|------------|\n")
-        
+
         if total_components > 0:
             lib_pct = (total_library / total_components) * 100
             os_pct = (total_os / total_components) * 100
@@ -332,7 +332,7 @@ def generate_report(
         f.write("### By Package Manager\n\n")
         f.write("| Package Manager | Count | Percentage |\n")
         f.write("|-----------------|-------|------------|\n")
-        
+
         if total_components > 0:
             apk_pct = (total_apk / total_components) * 100
             pypi_pct = (total_pypi / total_components) * 100
@@ -411,4 +411,3 @@ def run_generate_sbom_report(args: argparse.Namespace) -> int:
     else:
         logger.error("Failed to generate SBOM report")
         return 1
-
