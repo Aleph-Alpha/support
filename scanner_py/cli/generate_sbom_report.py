@@ -1,6 +1,8 @@
 """CLI for generating detailed SBOM reports from scan results.
 
-Equivalent to generate-sbom-report.sh
+Generates comprehensive Software Bill of Materials (SBOM) analysis reports
+from scan results, including component inventory, license information, and
+package breakdowns.
 """
 
 import argparse
