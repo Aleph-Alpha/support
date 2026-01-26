@@ -50,7 +50,7 @@ Examples:
   $0 --image registry.example.com/myapp:latest --output-level verbose
 
 Prerequisites:
-  - docker (for local image inspection)
+  - podman (for local image inspection)
   - crane (for remote image inspection)
   - cosign (for signature verification)
   - jq (for JSON processing)
@@ -143,7 +143,7 @@ output_verbose() {
 check_prerequisites() {
     local missing_tools=()
 
-    for tool in docker crane cosign jq; do
+    for tool in podman crane cosign jq; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
@@ -156,7 +156,7 @@ check_prerequisites() {
     fi
 }
 
-# Function to extract base image from Docker inspect output
+# Function to extract base image from Podman inspect output
 extract_base_from_docker_inspect() {
     local config_json="$1"
 
@@ -315,10 +315,10 @@ check_base_image() {
     local base_image_found=false
 
     # Check if image exists locally first
-    if docker image inspect "$image" >/dev/null 2>&1; then
-        output_verbose "Image found locally, using docker inspect"
+    if podman image inspect "$image" >/dev/null 2>&1; then
+        output_verbose "Image found locally, using podman inspect"
         local config_json
-        if config_json=$(run_with_timeout 30 docker image inspect "$image" 2>/dev/null); then
+        if config_json=$(run_with_timeout 30 podman image inspect "$image" 2>/dev/null); then
             local extracted
             extracted=$(extract_base_from_docker_inspect "$config_json" || true)
             if [[ -n "$extracted" ]]; then
@@ -326,7 +326,7 @@ check_base_image() {
                 base_image_found=true
             fi
         else
-            output_verbose "Failed to inspect local image with docker"
+            output_verbose "Failed to inspect local image with podman"
         fi
     else
         output_verbose "Image not found locally, using crane to fetch from remote"

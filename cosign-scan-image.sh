@@ -69,7 +69,7 @@ Prerequisites:
   - trivy (for vulnerability scanning)
   - jq (for JSON processing)
   - cosign (for attestation verification)
-  - docker (for registry accessibility checking)
+  - podman (for registry accessibility checking)
   - crane (for image digest resolution)
   - cosign-extract.sh (for extracting triage attestations)
   - cosign-verify-image.sh (for verifying image signatures)
@@ -278,7 +278,7 @@ parse_args() {
 check_prerequisites() {
     local missing_tools=()
 
-    for tool in trivy jq cosign docker crane; do
+    for tool in trivy jq cosign podman crane; do
         if ! command -v "$tool" &>/dev/null; then
             missing_tools+=("$tool")
         fi
@@ -306,20 +306,20 @@ check_prerequisites() {
     fi
 }
 
-# Check if registry is accessible using docker
+# Check if registry is accessible using podman
 check_registry_accessible() {
     local image="$1"
 
     log_verbose "Checking registry accessibility for: $image"
 
-    # Use docker manifest inspect which respects Docker's authentication
-    if docker manifest inspect "$image" >/dev/null 2>&1; then
+    # Use podman manifest inspect which respects Podman's authentication
+    if podman manifest inspect "$image" >/dev/null 2>&1; then
         log_verbose "Registry is accessible for: $image"
         return 0
     else
         log_error_multiline "Registry is not accessible for: $image" \
             "Please ensure you're logged in to the registry:" \
-            "  docker login <registry>"
+            "  podman login <registry>"
         return 1
     fi
 }

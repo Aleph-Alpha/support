@@ -68,7 +68,7 @@ Prerequisites:
   - trivy (for vulnerability scanning of SBOMs)
   - jq (for JSON processing)
   - cosign (for attestation verification)
-  - docker (for registry accessibility checking)
+  - podman (for registry accessibility checking)
   - cosign-extract.sh (for extracting SBOM and triage attestations)
   - cosign-verify-image.sh (for verifying image signatures)
 
@@ -153,9 +153,9 @@ get_image_digest() {
         digest=$(crane digest "$image" 2>/dev/null || echo "")
     fi
 
-    # Fallback to docker if crane not available
-    if [[ -z "$digest" ]] && command -v docker >/dev/null 2>&1; then
-        digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null | cut -d'@' -f2 || echo "")
+    # Fallback to podman if crane not available
+    if [[ -z "$digest" ]] && command -v podman >/dev/null 2>&1; then
+        digest=$(podman inspect --format='{{index .RepoDigests 0}}' "$image" 2>/dev/null | cut -d'@' -f2 || echo "")
     fi
 
     echo "$digest"
@@ -956,7 +956,7 @@ check_prerequisites() {
 
     local missing_tools=()
 
-    for tool in kubectl trivy jq cosign docker; do
+    for tool in kubectl trivy jq cosign podman; do
         if ! command -v "$tool" >/dev/null 2>&1; then
             missing_tools+=("$tool")
         fi
@@ -1105,7 +1105,7 @@ is_registry_accessible() {
     log_verbose "Checking registry accessibility: $registry using image: $test_image"
 
     # Use docker manifest inspect which respects Docker's authentication
-    if docker manifest inspect "$test_image" >/dev/null 2>&1; then
+    if podman manifest inspect "$test_image" >/dev/null 2>&1; then
         log_verbose "Registry is accessible: $registry"
         # Add to accessible registries list
         ACCESSIBLE_REGISTRIES+=("$registry")
@@ -1242,7 +1242,7 @@ extract_k8s_images() {
                 for registry in "${INACCESSIBLE_REGISTRIES[@]}"; do
                     log_info "    - $registry"
                 done
-                log_info "   To access these registries, run: docker login <registry>"
+                log_info "   To access these registries, run: podman login <registry>"
                 log_info "   Then try running the scanner again."
             elif [[ $INACCESSIBLE_IMAGES -gt 0 ]]; then
                 log_info "   All $SKIPPED_IMAGES images were skipped due to inaccessible registries"
@@ -1250,7 +1250,7 @@ extract_k8s_images() {
                 for registry in "${INACCESSIBLE_REGISTRIES[@]}"; do
                     log_info "     - $registry"
                 done
-                log_info "   To access these registries, run: docker login <registry>"
+                log_info "   To access these registries, run: podman login <registry>"
                 log_info "   Then try running the scanner again."
             else
                 log_info "   All $SKIPPED_IMAGES images were ignored by ignore patterns"
@@ -1271,7 +1271,7 @@ extract_k8s_images() {
     if [[ $INACCESSIBLE_IMAGES -gt 0 ]]; then
         log_warn "🚫 Inaccessible registries detected: ${INACCESSIBLE_REGISTRIES[*]}"
         log_warn "   Skipped $INACCESSIBLE_IMAGES images from these registries"
-        log_warn "   To access these registries, run: docker login <registry>"
+        log_warn "   To access these registries, run: podman login <registry>"
         log_warn "   Then try running the scanner again."
     fi
 

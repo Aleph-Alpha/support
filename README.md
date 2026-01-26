@@ -306,7 +306,7 @@ Cache Age Distribution:
 - **trivy** (for vulnerability scanning of SBOMs)
 - **jq** (for JSON processing)
 - **crane** (for container registry operations)
-- **docker** (for registry accessibility checking in k8s-image-scanner.sh)
+- **podman** (for registry accessibility checking in k8s-image-scanner.sh)
 - **cosign** (for signature verification and attestation extraction)
 - **column** (for table formatting, usually pre-installed on Unix systems)
 
@@ -459,7 +459,7 @@ The scanner leverages existing scripts for consistent behavior:
 - **trivy** (for vulnerability scanning of SBOMs)
 - **jq** (for JSON processing)
 - **crane** (for image digest resolution)
-- **docker** (for registry accessibility checking)
+- **podman** (for registry accessibility checking)
 - **cosign** (for signature verification and attestation extraction)
 - **cosign-extract.sh** (for extracting SBOM and triage attestations)
 - **cosign-verify-image.sh** (for verifying image signatures)
@@ -895,7 +895,7 @@ Before using these scripts, ensure you have the following tools installed:
 - **bash** (version 4.0 or later)
 - **jq** - JSON processor for parsing and formatting JSON data
 - **crane** - Tool for interacting with container registries
-- **docker** - Container runtime (for registry accessibility checking in k8s-image-scanner.sh)
+- **podman** - Container runtime (for registry accessibility checking in k8s-image-scanner.sh)
 - **cosign** - Container signing and verification tool
 - **trivy** - Container vulnerability scanner (for k8s-image-scanner.sh)
 - **column** - Table formatting utility (usually pre-installed on Unix systems)

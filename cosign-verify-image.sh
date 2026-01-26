@@ -146,7 +146,7 @@ fi
 
 # Show helpful info about authentication
 output "ℹ️  Note: If you encounter authentication errors, ensure you're logged in to the registry:"
-output "   docker login <registry>"
+output "   podman login <registry>"
 output ""
 
 # Resolve tag -> digest for consistent verification
