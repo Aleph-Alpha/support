@@ -568,4 +568,3 @@ def run_generate_report(args: argparse.Namespace) -> int:
         print(output_content)
     
     return 0
-
