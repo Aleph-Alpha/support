@@ -33,7 +33,7 @@ class ChainguardVerificationResult:
 class ChainguardVerifier:
     """
     Verify if a Docker image is built using a Chainguard base image.
-    
+
     Supports both public Chainguard images (cgr.dev/chainguard/*)
     and Aleph Alpha production images (cgr.dev/aleph-alpha.com/*).
     """
@@ -329,4 +329,3 @@ class ChainguardVerifier:
         print(f"    - Signature Verified: {result.signature_verified}")
         if result.error:
             print(f"    - Error: {result.error}")
-

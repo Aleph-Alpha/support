@@ -108,25 +108,25 @@ class ScanResult:
     skip_reason: Optional[str] = None
     error: Optional[str] = None
     metadata: Optional[ImageMetadata] = None
-    
+
     # CVE counts
     critical_count: int = 0
     high_count: int = 0
     medium_count: int = 0
     low_count: int = 0
     triaged_count: int = 0
-    
+
     # CVE lists
     unaddressed_cves: List[str] = field(default_factory=list)
     addressed_cves: List[str] = field(default_factory=list)
     irrelevant_cves: List[str] = field(default_factory=list)
     cve_details: List[CVEDetails] = field(default_factory=list)
-    
+
     # Chainguard info
     is_chainguard: bool = False
     base_image: str = "unknown"
     signature_verified: bool = False
-    
+
     # File paths
     output_dir: Optional[str] = None
     sbom_file: Optional[str] = None
@@ -178,7 +178,7 @@ class ScanSummary:
     skipped_scans: int = 0
     format: str = "table"
     severity_filter: str = "HIGH,CRITICAL"
-    
+
     # Results
     successful_images: List[str] = field(default_factory=list)
     failed_images: List[Dict[str, str]] = field(default_factory=list)
@@ -214,4 +214,3 @@ class ScanSummary:
         """Save summary to file."""
         with open(filepath, "w") as f:
             f.write(self.to_json())
-

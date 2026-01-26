@@ -26,7 +26,7 @@ class ProgressStyle:
 class ProgressBar:
     """
     A beautiful progress bar for terminal output.
-    
+
     Supports:
     - Percentage display
     - Item counts
@@ -55,7 +55,7 @@ class ProgressBar:
         self.description = description
         self.style = style or ProgressStyle()
         self.file = file or sys.stderr
-        
+
         self.current = 0
         self.start_time = time.time()
         self.success_count = 0
@@ -80,7 +80,7 @@ class ProgressBar:
         """Calculate estimated time remaining."""
         if self.current == 0:
             return "calculating..."
-        
+
         elapsed = time.time() - self.start_time
         rate = self.current / elapsed
         remaining = (self.total - self.current) / rate if rate > 0 else 0
@@ -110,7 +110,7 @@ class ProgressBar:
             current_item: Current item being processed
         """
         self.current += n
-        
+
         if status == "success":
             self.success_count += 1
         elif status == "failed":
@@ -153,22 +153,22 @@ class ProgressBar:
                 counts.append(f"\033[93m🚫{self.skipped_count}\033[0m")
             else:
                 counts.append(f"🚫{self.skipped_count}")
-        
+
         status_str = " ".join(counts)
 
         # Build line
         parts = []
         if self.description:
             parts.append(self.description)
-        
+
         parts.append(f"[{bar}]")
-        
+
         if self.style.show_percentage:
             parts.append(f"{progress * 100:5.1f}%")
-        
+
         if self.style.show_count:
             parts.append(f"({self.current}/{self.total})")
-        
+
         if status_str:
             parts.append(status_str)
 
@@ -180,16 +180,16 @@ class ProgressBar:
             parts.append(current_item)
 
         line = " ".join(parts)
-        
+
         # Clear and print using ANSI escape codes
         self._clear_line()
-        
+
         if self._is_tty():
             # \r moves to beginning, line already cleared by _clear_line
             self.file.write(f"\r{line}")
         else:
             self.file.write(f"{line}\n")
-        
+
         self.file.flush()
         self._last_line_length = len(line) + 10  # Extra padding for ANSI codes
 
@@ -201,23 +201,23 @@ class ProgressBar:
             message: Final message to display
         """
         self._clear_line()
-        
+
         # Final status
         elapsed = time.time() - self.start_time
         elapsed_str = self._format_time(elapsed)
-        
+
         parts = []
         if self.description:
             parts.append(self.description)
-        
+
         # Final icon
         if self.failed_count == 0:
             parts.append("✅")
         else:
             parts.append("⚠️")
-        
+
         parts.append(f"Completed {self.current}/{self.total}")
-        
+
         if self.success_count > 0:
             parts.append(f"({self.success_count} ✓")
             if self.failed_count > 0:
@@ -225,12 +225,12 @@ class ProgressBar:
             if self.skipped_count > 0:
                 parts.append(f", {self.skipped_count} 🚫")
             parts[-1] += ")"
-        
+
         parts.append(f"in {elapsed_str}")
-        
+
         if message:
             parts.append(f"- {message}")
-        
+
         line = " ".join(parts)
         self.file.write(f"{line}\n")
         self.file.flush()
@@ -267,7 +267,7 @@ class Spinner:
         """Advance spinner by one frame."""
         if not self._is_tty():
             return
-            
+
         char = self.style.spinner_chars[self._frame % len(self.style.spinner_chars)]
         # Use ANSI escape codes to clear line and write
         self.file.write(f"\r\033[K{char} {self.message}")
@@ -284,7 +284,7 @@ class Spinner:
         if self._is_tty():
             # Use ANSI escape codes to clear the line
             self.file.write("\r\033[K")
-        
+
         icon = "✅" if success else "❌"
         final_msg = message or self.message
         self.file.write(f"{icon} {final_msg}\n")
@@ -316,7 +316,7 @@ def progress_context(
 class MultiProgress:
     """
     Track progress for multiple parallel tasks.
-    
+
     Each task shows individual progress while maintaining
     an overall view.
     """
@@ -341,7 +341,7 @@ class MultiProgress:
         self.description = description
         self.style = style or ProgressStyle()
         self.file = file or sys.stderr
-        
+
         self.total = len(tasks)
         self.completed = 0
         self.results: dict = {}
@@ -366,47 +366,47 @@ class MultiProgress:
     def _render(self) -> None:
         """Render progress."""
         progress = self.completed / self.total if self.total > 0 else 0
-        
+
         success = sum(1 for s in self.results.values() if s == "success")
         failed = sum(1 for s in self.results.values() if s == "failed")
         skipped = sum(1 for s in self.results.values() if s == "skipped")
-        
+
         # Build status string
         parts = []
         if self.description:
             parts.append(self.description)
-        
+
         parts.append(f"[{self.completed}/{self.total}]")
         parts.append(f"{progress * 100:.0f}%")
-        
+
         if success > 0:
             parts.append(f"✓{success}")
         if failed > 0:
             parts.append(f"✗{failed}")
         if skipped > 0:
             parts.append(f"🚫{skipped}")
-        
+
         line = " ".join(parts)
-        
+
         if hasattr(self.file, 'isatty') and self.file.isatty():
             self.file.write(f"\r{line}" + " " * 20)
         else:
             self.file.write(f"{line}\n")
-        
+
         self.file.flush()
 
     def finish(self) -> None:
         """Finish and show summary."""
         elapsed = time.time() - self.start_time
-        
+
         success = sum(1 for s in self.results.values() if s == "success")
         failed = sum(1 for s in self.results.values() if s == "failed")
         skipped = sum(1 for s in self.results.values() if s == "skipped")
-        
+
         # Clear line
         if hasattr(self.file, 'isatty') and self.file.isatty():
             self.file.write("\r" + " " * 80 + "\r")
-        
+
         icon = "✅" if failed == 0 else "⚠️"
         self.file.write(
             f"{icon} {self.description} completed: "
@@ -414,4 +414,3 @@ class MultiProgress:
             f"({elapsed:.1f}s)\n"
         )
         self.file.flush()
-

@@ -85,11 +85,11 @@ class VerboseOnlyFilter(logging.Filter):
         # Always show CRITICAL
         if record.levelno >= logging.CRITICAL:
             return True
-        
+
         # In non-verbose mode, suppress ERROR and WARNING
         if not _verbose_mode and record.levelno in (logging.ERROR, logging.WARNING):
             return False
-        
+
         return True
 
 
@@ -107,7 +107,7 @@ def setup_logging(
         show_errors: Whether to show errors (when False, errors only in verbose)
     """
     global _verbose_mode
-    
+
     # Register custom levels
     logging.addLevelName(STEP, "STEP")
     logging.addLevelName(RESULT, "RESULT")
@@ -167,9 +167,9 @@ def get_logger(name: str = "scanner_py") -> logging.Logger:
 def suppress_logging() -> int:
     """
     Temporarily suppress all logging output.
-    
+
     Returns the previous log level so it can be restored.
-    
+
     Returns:
         Previous log level
     """
@@ -182,7 +182,7 @@ def suppress_logging() -> int:
 def restore_logging(previous_level: int) -> None:
     """
     Restore logging to a previous level.
-    
+
     Args:
         previous_level: Log level to restore
     """
