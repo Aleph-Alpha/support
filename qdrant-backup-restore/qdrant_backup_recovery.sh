@@ -8,6 +8,7 @@ QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE="snapshot_recovery_history"
 QDRANT_ALIAS_RECOVERY_HISTORY_FILE="alias_recovery_history"
 QDRANT_PYTHON_UTIL_FILE="s3_util.py"
 QDRANT_COLLECTION_ALIASES="collection_aliases"
+CURL_TIMEOUT="${CURL_TIMEOUT:-300}"
 #QDRANT_INCLUDED_COLLECTIONS="*"
 #QDRANT_EXCLUDED_COLLECTIONS=""
 
@@ -16,6 +17,38 @@ _printf() {
   ts=$(date '+%Y-%m-%d %H:%M:%S')
   printf '[%s] ' "$ts"
   printf "$@"
+}
+
+_curl() {
+  local method="${1:-GET}"
+  shift 1
+  local url="$1"
+  shift 1
+
+  # Capture both response body and HTTP status code
+  local response
+  response=$(curl -sS -w "\n%{http_code}" \
+    --max-time "${CURL_TIMEOUT}" \
+    --connect-timeout 30 \
+    -X "${method}" \
+    "$@" \
+    "${url}" 2>&1)
+
+  # Extract HTTP code (last line) and body (everything else)
+  local http_code
+  http_code=$(echo "${response}" | tail -n1)
+  local result
+  result=$(echo "${response}" | sed '$d')
+
+  # Check if HTTP code indicates success (2xx)
+  if [[ "${http_code}" =~ ^2[0-9]{2}$ ]]; then
+      echo "${result}"
+      return 0
+  fi
+
+  # Return the result even on failure (caller may want to inspect it)
+  echo "${result}"
+  return 1
 }
 
 # Extracts the source and restore hosts from the QDRANT_SOURCE_HOSTS and QDRANT_RESTORE_HOSTS variables
@@ -35,7 +68,7 @@ get_collections() {
   _printf "fetching collections!\n"
   local host="${source_hosts[0]}"
 
-  result=$(curl -X GET -sS  "$host/collections" -H "api-key: $QDRANT_API_KEY")
+  result=$(_curl GET "$host/collections" --header "api-key: $QDRANT_API_KEY")
   status=$(jq -r '.status' <<< "$result")
   if [ "$status" != "ok" ]; then
       _printf "[%s] failed to get collections, got this instead %s\n" "$host" "${result//[[:space:]]/}"
@@ -68,7 +101,7 @@ track_created_collection_snapshot() {
 
     _printf '[%s] creating snapshot %s for %s collection\n' "$host" "$snapshot_name" "$collection_name"
 
-    result=$(curl -sS -X POST "$host/collections/$collection_name/snapshots?wait=true" --header "api-key: $QDRANT_API_KEY")
+    result=$(_curl POST "$host/collections/$collection_name/snapshots?wait=true" --header "api-key: $QDRANT_API_KEY")
 
     status=$(jq -r '.status' <<< "$result")
     snapshot_name=$(jq -r '.result.name' <<< "$result")
@@ -107,7 +140,7 @@ fetch_collection_snapshot() {
 
   _printf "[%s] fetching snapshots for %s collection\n" "$host" "$collection_name"
 
-  result=$(curl -sS -X GET \
+  result=$(_curl GET \
           "$host/collections/$collection_name/snapshots" \
           --header "api-key: $QDRANT_API_KEY")
   status=$(jq -r '.status?' <<< "$result")
@@ -190,7 +223,7 @@ recover_collection_snapshot() {
     get_s3_url "$collection_name" "$snapshot_name"
 
 
-    result=$(curl -sS -X PUT \
+    result=$(_curl PUT \
                "$host/collections/$collection_name/snapshots/recover?wait=true" \
                --header "api-key: $QDRANT_API_KEY" \
                --header "Content-Type: application/json" \
@@ -242,7 +275,7 @@ get_collection_aliases() {
 
   _printf "[%s] fetching collection aliases...\n" "$host"
 
-  result=$(curl -sS -X GET \
+  result=$(_curl GET \
              "$host/aliases" \
              --header "api-key: $QDRANT_API_KEY")
 
@@ -273,7 +306,7 @@ recover_collection_alias() {
   local status=""
   local result=""
 
-  result=$(curl -sS -X POST \
+  result=$(_curl POST \
              "$host/collections/aliases" \
              --header "api-key: $QDRANT_API_KEY" \
              --header "Content-Type: application/json" \
@@ -352,7 +385,7 @@ delete_files() {
 # gets qdrant peer host url using cluster info endpoint. Sets the port to 6333 the http port.
 get_peers_from_cluster_info() {
   local host="${source_hosts[0]}"
-  result=$(curl -sS "$host/cluster" -H "api-key: $QDRANT_API_KEY")
+  result=$(_curl "$host/cluster" -H "api-key: $QDRANT_API_KEY")
   source_hosts=()
   items=$(jq -r '.result.peers[].uri' <<< "$result")
   while read -r item; do
