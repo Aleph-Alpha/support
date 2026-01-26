@@ -394,7 +394,7 @@ get_peers_from_cluster_info() {
 }
 
 usage() {
-  local command="$1"
+  local command="${1:-*}"
   if [ "$command" = "*" ]; then
     cat <<EOF
 Usage: $0 <task> [OPTIONS]
@@ -413,20 +413,31 @@ Positional arguments:
 Optional arguments:
   -h, --help            Show this help message and exit
 
-Example:
+Environment variables:
+  QDRANT_API_KEY              - Qdrant API key (required)
+  QDRANT_SOURCE_HOSTS         - Comma-separated source hosts (required)
+  QDRANT_RESTORE_HOSTS        - Comma-separated restore hosts (required)
+  QDRANT_S3_ENDPOINT_URL      - S3 endpoint URL (for S3 operations)
+  QDRANT_S3_ACCESS_KEY_ID     - S3 access key ID (for S3 operations)
+  QDRANT_S3_SECRET_ACCESS_KEY - S3 secret access key (for S3 operations)
+  QDRANT_S3_BUCKET_NAME       - S3 bucket name (for S3 operations)
+  GET_PEERS_FROM_CLUSTER_INFO - Set to "true" to auto-discover peers
+  CURL_TIMEOUT                - Curl timeout in seconds (default: 300)
+
+Examples:
   $0 get_snap
+  $0 recover_snap
+  $0 reset --bkp true
 EOF
   elif [ "$command" = "reset" ]; then
 
     cat <<EOF
-Usage: $0 <task> [OPTIONS]
+Usage: $0 reset [OPTIONS]
 
-Positional arguments:
-  task                  Name of the task (required) i.e;
-                        reset - clear the temporary files created on this workspace
+Clear temporary files created during backup/recovery operations.
 
 Optional arguments:
-  --bkp BACKUP       --bkp true if state files should be saved, false by default and when argument not provided.
+  --bkp BACKUP          Set to "true" to backup files before deletion (default: false)
   -h, --help            Show this help message and exit
 
 Example:
