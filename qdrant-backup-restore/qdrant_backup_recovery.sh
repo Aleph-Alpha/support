@@ -34,7 +34,7 @@ get_collections() {
   fi
   _printf "fetching collections!\n"
   local host="${source_hosts[0]}"
-  
+
   result=$(curl -X GET -sS  "$host/collections" -H "api-key: $QDRANT_API_KEY")
   status=$(jq -r '.status' <<< "$result")
   if [ "$status" != "ok" ]; then

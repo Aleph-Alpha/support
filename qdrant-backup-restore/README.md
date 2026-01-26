@@ -14,7 +14,7 @@ This directory provides essential scripts to back up Qdrant snapshots and restor
 - Qdrant instance [with s3 storage for snapshots](https://qdrant.tech/documentation/concepts/snapshots/#storage)
 - Create and configure .env file from [.env.sample](.env.sample)
 - Initialize the .env file as below;
-  
+
    ````bash
     source .env
     ````
