@@ -1,0 +1,8 @@
+# qdrant-backup-restore
+collections
+failed_snapshot_recovery
+fw_ports
+snapshot_recovery_history
+snapshots
+alias_recovery_history
+collection_aliases
