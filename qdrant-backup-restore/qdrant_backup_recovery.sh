@@ -114,7 +114,7 @@ fetch_collection_snapshot() {
 
   resultLength=$(jq -c '.result | length? // 0' <<< "$result")
 
-  if [ "$resultLength" == 0 ]; then
+  if [ "$resultLength" = 0 ]; then
       _printf "[%s] could not find snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
       return
   fi
@@ -338,13 +338,14 @@ delete_files() {
   done
 }
 
+# gets qdrant peer host url using cluster info endpoint. Sets the port to 6333 the http port.
 get_peers_from_cluster_info() {
   local host="${source_hosts[0]}"
   result=$(curl -sS "$host/cluster" -H "api-key: $QDRANT_API_KEY")
   source_hosts=()
   items=$(jq -r '.result.peers[].uri' <<< "$result")
   while read -r item; do
-      source_hosts+=("${item%?}")
+    source_hosts+=("${item%??}3")
   done <<< "$items"
 }
 
@@ -409,9 +410,9 @@ run() {
       get_peers_from_cluster_info
     fi
 
-    if [ "$command" == "get_coll" ]; then
+    if [ "$command" = "get_coll" ]; then
       get_collections
-    elif [ "$command" == "get_snap" ]; then
+    elif [ "$command" = "get_snap" ]; then
       local DATETIME=""
       while [[ $# -gt 0 ]]; do
           case $1 in
@@ -421,7 +422,7 @@ run() {
           esac
       done
       generate_snapshot_file_from_instance "$DATETIME"
-    elif [ "$command" == "get_snap_s3" ]; then
+    elif [ "$command" = "get_snap_s3" ]; then
       local DATETIME=""
       while [[ $# -gt 0 ]]; do
           case $1 in
@@ -431,15 +432,15 @@ run() {
           esac
       done
       generate_snapshot_file_from_s3 "$DATETIME"
-   elif [ "$command" == "create_snap" ]; then
+   elif [ "$command" = "create_snap" ]; then
       create_collection_snapshot
-    elif [ "$command" == "recover_snap" ]; then
+    elif [ "$command" = "recover_snap" ]; then
       recover_collection_snapshots
-    elif [ "$command" == "get_colla" ]; then
+    elif [ "$command" = "get_colla" ]; then
       get_collection_aliases
-    elif [ "$command" == "recover_colla" ]; then
+    elif [ "$command" = "recover_colla" ]; then
       recover_collection_aliases
-    elif [ "$command" == "reset" ]; then
+    elif [ "$command" = "reset" ]; then
       local BACKUP=false
       while [[ $# -gt 0 ]]; do
           case $1 in

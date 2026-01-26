@@ -3,7 +3,6 @@ import os
 import boto3
 import sys
 
-_session = None
 
 _config = {}
 
