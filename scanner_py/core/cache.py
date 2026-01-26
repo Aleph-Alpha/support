@@ -18,38 +18,38 @@ logger = get_logger(__name__)
 class DigestCache:
     """
     Thread-safe in-memory cache for image digests.
-    
+
     Eliminates redundant `crane digest` calls during a single scan run.
     Each call takes ~1-2 seconds, and we often call it 4-6 times per image.
     """
-    
+
     def __init__(self):
         self._cache: Dict[str, Optional[str]] = {}
         self._lock = threading.Lock()
-    
+
     def get(self, image: str) -> Optional[str]:
         """Get cached digest for an image."""
         with self._lock:
             return self._cache.get(image)
-    
+
     def has(self, image: str) -> bool:
         """Check if digest is cached (including None values)."""
         with self._lock:
             return image in self._cache
-    
+
     def set(self, image: str, digest: Optional[str]) -> None:
         """Cache a digest for an image."""
         with self._lock:
             self._cache[image] = digest
-    
+
     def get_or_fetch(self, image: str, timeout: int = 30) -> Optional[str]:
         """
         Get cached digest or fetch and cache it.
-        
+
         Args:
             image: Image reference
             timeout: Timeout for crane digest call
-            
+
         Returns:
             Digest string or None
         """
@@ -58,19 +58,19 @@ class DigestCache:
             if cached:
                 logger.debug(f"Digest cache hit for {image}")
             return cached
-        
+
         # Fetch digest
         result = run_command(["crane", "digest", image], timeout=timeout)
         digest = result.stdout.strip() if result.success else None
-        
+
         self.set(image, digest)
         return digest
-    
+
     def clear(self) -> None:
         """Clear the cache."""
         with self._lock:
             self._cache.clear()
-    
+
     def stats(self) -> Dict[str, int]:
         """Get cache statistics."""
         with self._lock:
@@ -118,7 +118,7 @@ class CacheStats:
 class ScanCache:
     """
     Cache for scan results, SBOMs, and attestations.
-    
+
     Uses image digests as cache keys for accuracy.
     """
 
@@ -138,7 +138,7 @@ class ScanCache:
         """
         if cache_dir is None:
             cache_dir = os.path.expanduser("~/.cache/k8s-image-scanner")
-        
+
         self.cache_dir = Path(cache_dir)
         self.ttl_hours = ttl_hours
         self.ttl_seconds = ttl_hours * 3600
@@ -185,7 +185,7 @@ class ScanCache:
         """Check if a cached file is still valid (within TTL)."""
         if not filepath.exists():
             return False
-        
+
         file_age = time.time() - filepath.stat().st_mtime
         return file_age < self.ttl_seconds
 
@@ -203,7 +203,7 @@ class ScanCache:
             return None
 
         cache_file = self._get_image_cache_dir(image) / "attestation-type.json"
-        
+
         if self._is_file_valid(cache_file):
             try:
                 with open(cache_file) as f:
@@ -214,7 +214,7 @@ class ScanCache:
                     return atype
             except (json.JSONDecodeError, FileNotFoundError):
                 pass
-        
+
         return None
 
     def set_attestation_type(self, image: str, attestation_type: str) -> None:
@@ -263,11 +263,11 @@ class ScanCache:
             return None
 
         cache_file = self._get_image_cache_dir(image) / f"sbom-{sbom_type}.json"
-        
+
         if self._is_file_valid(cache_file):
             logger.debug(f"Cache hit: SBOM ({sbom_type}) for {image}")
             return cache_file
-        
+
         return None
 
     def set_sbom(self, image: str, sbom_file: str, sbom_type: str = "cyclonedx") -> None:
@@ -303,11 +303,11 @@ class ScanCache:
             return None
 
         cache_file = self._get_image_cache_dir(image) / "triage.json"
-        
+
         if self._is_file_valid(cache_file):
             logger.debug(f"Cache hit: triage for {image}")
             return cache_file
-        
+
         return None
 
     def set_triage(self, image: str, triage_file: str) -> None:
@@ -358,7 +358,7 @@ class ScanCache:
         for entry in self.cache_dir.iterdir():
             if not entry.is_dir():
                 continue
-            
+
             stats.total_images += 1
 
             # Check attestation type
@@ -430,4 +430,3 @@ class ScanCache:
         print()
         print("💡 Tip: Use --clear-cache to clear expired entries, "
               "or --no-cache to disable caching")
-

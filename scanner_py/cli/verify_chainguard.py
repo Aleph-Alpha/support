@@ -145,20 +145,20 @@ def run_chainguard(args: argparse.Namespace) -> int:
         print("📋 RESULTS")
         print("━" * 50)
         print()
-        
+
         base_display = result.base_image or "unknown"
         if len(base_display) > 45:
             base_display = "..." + base_display[-42:]
-        
+
         print(f"  Base Image:         {base_display}")
-        
+
         cg_status = "✅ Yes" if result.is_chainguard else "❌ No"
         print(f"  Is Chainguard:      {cg_status}")
-        
+
         sig_status = "✅ Verified" if result.signature_verified else "❌ Not verified"
         print(f"  Signature:          {sig_status}")
         print()
-        
+
         if result.is_chainguard and result.signature_verified:
             print("🎉 Image is built on a verified Chainguard base!")
         elif result.is_chainguard:
@@ -169,7 +169,7 @@ def run_chainguard(args: argparse.Namespace) -> int:
                 print("   Use --output-level verbose for details")
         else:
             print("ℹ️  Image does not use a Chainguard base")
-    
+
     elif args.output_level == "none":
         # Machine-readable output for automation
         print(f"IS_CHAINGUARD={str(result.is_chainguard).lower()}")

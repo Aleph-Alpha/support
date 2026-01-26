@@ -25,51 +25,51 @@ logger = get_logger(__name__)
 def prepare_trivy_db(verbose: bool = False) -> bool:
     """
     Prepare Trivy database by cleaning and downloading fresh DB.
-    
+
     This should be run once before parallel scans to avoid race conditions
     and ensure all scans use the same database version.
-    
+
     Steps:
     1. trivy clean --all (clean existing db)
     2. trivy image --download-db-only (download fresh db)
-    
+
     Returns:
         True if successful
     """
     # Step 1: Clean existing database
     if verbose:
         logger.info("Cleaning existing Trivy database...")
-    
+
     clean_args = ["trivy", "clean", "--all"]
     if not verbose:
         clean_args.append("--quiet")
-    
+
     clean_result = run_command(clean_args, timeout=60)
     if not clean_result.success:
         if verbose:
             logger.warning(f"Failed to clean Trivy cache (may not exist): {clean_result.stderr}")
         # Continue anyway - might be first run
-    
+
     # Step 2: Download fresh database
     if verbose:
         logger.info("Downloading Trivy vulnerability database...")
-    
+
     download_args = ["trivy", "image", "--download-db-only"]
     if not verbose:
         download_args.append("--quiet")
-    
+
     download_result = run_command(
         download_args,
         timeout=300,  # DB download can take a while
     )
-    
+
     if not download_result.success:
         logger.error(f"Failed to download Trivy database: {download_result.stderr}")
         return False
-    
+
     if verbose:
         logger.info("Trivy database ready")
-    
+
     return True
 
 
@@ -248,7 +248,7 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
     """
     import time
     start_time = time.time()
-    
+
     # Setup logging - errors only shown in verbose mode
     log_level = LogLevel.VERBOSE if args.verbose else LogLevel.INFO
     setup_logging(log_level, show_errors=args.verbose)
@@ -405,7 +405,7 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
             print("📋 TEST FLOW: Processing only the first valid image")
             if not args.verbose:
                 prev_log_level = suppress_logging()
-            
+
             progress = ProgressBar(
                 len(images_to_scan),
                 "Test scan",
@@ -414,13 +414,13 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
             for image in images_to_scan:
                 result = scanner.scan(image)
                 results.append(result)
-                
+
                 status = "success" if result.success else ("skipped" if result.skipped else "failed")
                 progress.update(status=status, current_item=image.split("/")[-1])
-                
+
                 if result.success and not result.skipped:
                     break
-            
+
             progress.finish()
         else:
             # Parallel scanning with progress bar
@@ -441,16 +441,16 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
                     try:
                         result = future.result()
                         results.append(result)
-                        
+
                         if result.success:
                             status = "success"
                         elif result.skipped:
                             status = "skipped"
                         else:
                             status = "failed"
-                        
+
                         progress.update(status=status, current_item=image.split("/")[-1])
-                        
+
                     except Exception as e:
                         results.append(ScanResult(
                             image=image,
@@ -472,12 +472,12 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
         prev_log_level = None
         if not args.verbose:
             prev_log_level = suppress_logging()
-        
+
         try:
             spinner = Spinner("Checking Chainguard base images...")
             spinner.spin()
             chainguard_verifier = ChainguardVerifier()
-            
+
             def check_chainguard(result: ScanResult) -> Tuple[ScanResult, Any]:
                 """Check Chainguard for a single result."""
                 try:
@@ -485,19 +485,19 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
                     return result, cg_result
                 except Exception:
                     return result, None
-            
+
             # Run Chainguard checks in parallel
             with ThreadPoolExecutor(max_workers=min(len(successful_results), 5)) as executor:
                 futures = {
                     executor.submit(check_chainguard, result): result
                     for result in successful_results
                 }
-                
+
                 completed = 0
                 for future in as_completed(futures):
                     result, cg_result = future.result()
                     completed += 1
-                    
+
                     if cg_result:
                         result.is_chainguard = cg_result.is_chainguard
                         result.base_image = cg_result.base_image
@@ -506,9 +506,9 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
                         result.is_chainguard = False
                         result.base_image = "unknown"
                         result.signature_verified = False
-                    
+
                     spinner.update(f"Checked {completed}/{len(successful_results)} images...")
-            
+
             spinner.finish(f"Chainguard verification complete ({len(successful_results)} images)")
         finally:
             if prev_log_level is not None:
@@ -516,20 +516,20 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
 
     # Generate summary AFTER Chainguard check
     summary = generate_summary(args, results, extraction_result)
-    
+
     # Determine output paths
     json_path = Path(args.summary_json) if args.summary_json else output_dir / "scan-summary.json"
     markdown_path = Path(args.markdown_output) if args.markdown_output else output_dir / "cosign-cve-summary.md"
-    
+
     # Ensure parent directories exist
     json_path.parent.mkdir(parents=True, exist_ok=True)
     markdown_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     summary.save(str(json_path))
 
     # Generate markdown summary for GitHub Actions
     markdown_content = generate_markdown_summary(summary, args.min_cve_level)
-    
+
     # Handle append mode for combining CI outputs
     if args.append and markdown_path.exists():
         with open(markdown_path, "a") as f:
@@ -594,22 +594,22 @@ def generate_summary(
 def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     """
     Generate CVE analysis summary in Markdown format for GitHub Actions.
-    
+
     This can be used with GITHUB_STEP_SUMMARY to display results in PR/Action summaries.
-    
+
     Args:
         summary: Scan summary data
         min_cve_level: Minimum CVE level considered relevant
-        
+
     Returns:
         Markdown formatted string
     """
     lines = []
-    
+
     # Header
     lines.append("# 🔍 COSIGN SCAN CVE Analysis Summary")
     lines.append("")
-    
+
     # Scan info
     lines.append("## 📊 Scan Information")
     lines.append("")
@@ -623,47 +623,47 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     lines.append(f"| **Skipped (unsigned)** | 🚫 {summary.skipped_scans} |")
     lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append("")
-    
+
     # CVE Analysis table
     if summary.cve_analysis:
         lines.append("## 🛡️ CVE Analysis by Image")
         lines.append("")
         lines.append(f"> Minimum CVE Level: **{min_cve_level}** (levels below this are considered irrelevant)")
         lines.append("")
-        
+
         # Table header
         lines.append("| Image | Unaddressed | Addressed | Irrelevant | Triage | Triage File | Chainguard |")
         lines.append("|-------|:-----------:|:---------:|:----------:|:------:|:-----------:|:----------:|")
-        
+
         total_unaddressed = 0
         total_addressed = 0
         total_irrelevant = 0
         images_with_triage = 0
         images_with_chainguard = 0
-        
+
         for analysis in summary.cve_analysis:
             image_short = analysis["image"].split("/")[-1]
             # Truncate if too long
             if len(image_short) > 40:
                 image_short = image_short[:37] + "..."
-            
+
             # Get CVE counts
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
             medium = analysis.get("medium", 0)
             low = analysis.get("low", 0)
             triaged = analysis.get("triaged", 0)
-            
+
             # Calculate categories
             unaddressed = critical + high
             addressed = triaged
             irrelevant = medium + low
-            
+
             # Get status
             has_triage = triaged > 0  # CVEs were actually triaged/addressed
             has_triage_file = analysis.get("triage_file") is not None  # Triage file exists
             is_chainguard = analysis.get("is_chainguard", False)
-            
+
             total_unaddressed += unaddressed
             total_addressed += addressed
             total_irrelevant += irrelevant
@@ -671,17 +671,17 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
                 images_with_triage += 1
             if is_chainguard:
                 images_with_chainguard += 1
-            
+
             # Format cells
             unaddr_str = f"✅ {unaddressed}" if unaddressed == 0 else f"🔴 **{unaddressed}**"
             triage_str = "✅" if has_triage else "❌"
             triage_file_str = "✅" if has_triage_file else "❌"
             chainguard_str = "✅" if is_chainguard else "❌"
-            
+
             lines.append(f"| `{image_short}` | {unaddr_str} | {addressed} | {irrelevant} | {triage_str} | {triage_file_str} | {chainguard_str} |")
-        
+
         lines.append("")
-        
+
         # Statistics
         lines.append("## 📈 Statistics")
         lines.append("")
@@ -693,14 +693,14 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         lines.append(f"| **Images with Triage** | {images_with_triage}/{len(summary.cve_analysis)} |")
         lines.append(f"| **Images with Chainguard Base** | {images_with_chainguard}/{len(summary.cve_analysis)} |")
         lines.append("")
-        
+
         # Result badge
         if total_unaddressed == 0:
             lines.append("> 🎉 **All relevant CVEs have been addressed!**")
         else:
             lines.append(f"> ⚠️ **{total_unaddressed} unaddressed CVEs need attention**")
         lines.append("")
-    
+
     # Failed scans section
     if summary.failed_scans > 0:
         lines.append("## ❌ Failed Scans")
@@ -714,7 +714,7 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         lines.append("")
         lines.append("</details>")
         lines.append("")
-    
+
     # Skipped scans section
     if summary.skipped_scans > 0:
         lines.append("## 🚫 Skipped Scans (Unsigned Images)")
@@ -727,11 +727,11 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         lines.append("")
         lines.append("</details>")
         lines.append("")
-    
+
     # Footer
     lines.append("---")
     lines.append(f"*Generated by scanner-py on {summary.timestamp.strftime('%Y-%m-%d %H:%M:%S')} UTC*")
-    
+
     return "\n".join(lines)
 
 
@@ -790,21 +790,21 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
 
         for analysis in summary.cve_analysis:
             image_short = analysis["image"].split("/")[-1][:33]
-            
+
             # Get CVE counts
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
             medium = analysis.get("medium", 0)
             low = analysis.get("low", 0)
             triaged = analysis.get("triaged", 0)
-            
+
             # Unaddressed = Critical + High (above min_cve_level)
             unaddressed = critical + high
             # Addressed = triaged CVEs
             addressed = triaged
             # Irrelevant = Medium + Low (below min_cve_level HIGH)
             irrelevant = medium + low
-            
+
             # Get triage and chainguard status
             has_triage = triaged > 0  # CVEs were actually triaged/addressed
             has_triage_file = analysis.get("triage_file") is not None  # Triage file exists

@@ -222,7 +222,7 @@ Scanning images [████████████████░░░░] 8
 ```
 
 - `✓` = Successful scans
-- `✗` = Failed scans  
+- `✗` = Failed scans
 - `🚫` = Skipped scans (unsigned images)
 
 ## Project Structure
@@ -275,4 +275,3 @@ This Python package is a port of the original bash scripts:
 ## License
 
 MIT License - see LICENSE file for details.
-

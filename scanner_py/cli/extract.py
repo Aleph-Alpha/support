@@ -153,13 +153,13 @@ def run_extract(args: argparse.Namespace) -> int:
     if args.list:
         spinner = Spinner("Discovering attestations...")
         spinner.spin()
-        
+
         attestations = extractor.list_attestations(args.image)
-        
+
         if not attestations.attestations:
             spinner.finish("No attestations found", success=False)
             return 1
-        
+
         spinner.finish(f"Found {len(attestations.attestations)} attestation type(s)")
         print()
         print("━" * 50)
@@ -168,7 +168,7 @@ def run_extract(args: argparse.Namespace) -> int:
         print()
         print(f"  {'Count':>5}  {'Type':<12}  URI")
         print("  " + "─" * 45)
-        
+
         for pred_type, count in sorted(attestations.attestations.items()):
             # Get friendly name
             friendly_name = "unknown"
@@ -212,7 +212,7 @@ def run_extract(args: argparse.Namespace) -> int:
 
     if content is None:
         spinner.finish("Extraction failed", success=False)
-        
+
         if is_verbose():
             print()
             print("ℹ️  Available attestations for this image:")

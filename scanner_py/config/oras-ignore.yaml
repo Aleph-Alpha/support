@@ -19,7 +19,6 @@ temporalio/ui
 cloudnative-pg/postgresql
 cloudnative-pg/cloudnative-pg
 bitnamilegacy/mlflow
-# Using the new build/push action job
 inference-images/model-downloader
 document-index-mcp/document-index-mcp
 container-images/finetuning_api

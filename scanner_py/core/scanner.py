@@ -218,7 +218,7 @@ class TrivyScanner:
 class ImageScanner:
     """
     Complete image scanner combining attestation extraction and Trivy scanning.
-    
+
     Main scanning logic equivalent to cosign-scan-image.sh
     """
 

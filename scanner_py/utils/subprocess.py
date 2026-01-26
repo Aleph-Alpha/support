@@ -140,4 +140,3 @@ def check_prerequisites(tools: List[str]) -> List[str]:
         if not check_tool_available(tool):
             missing.append(tool)
     return missing
-

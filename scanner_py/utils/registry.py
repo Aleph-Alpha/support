@@ -29,12 +29,12 @@ class RegistryChecker:
         parts = image.split("/")
         if len(parts) == 1:
             return "docker.io"
-        
+
         # Check if first part looks like a registry
         first = parts[0]
         if "." in first or ":" in first or first == "localhost":
             return first
-        
+
         # Default to docker.io
         return "docker.io"
 
@@ -54,14 +54,14 @@ class RegistryChecker:
         if registry in self._accessible_registries:
             logger.debug(f"Registry already known to be accessible: {registry}")
             return True
-        
+
         if registry in self._inaccessible_registries:
             logger.debug(f"Registry already known to be inaccessible: {registry}")
             return False
 
         # Test accessibility
         logger.debug(f"Checking registry accessibility: {registry} using image: {image}")
-        
+
         result = run_command(
             ["docker", "manifest", "inspect", image],
             timeout=30,
@@ -100,4 +100,3 @@ class RegistryChecker:
     def accessible_registries(self) -> Set[str]:
         """Get set of accessible registries."""
         return self._accessible_registries.copy()
-

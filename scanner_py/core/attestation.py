@@ -172,13 +172,13 @@ class AttestationExtractor:
         # Extract predicate types from bundles IN PARALLEL
         # This is a major performance improvement - each bundle fetch takes ~1-2 sec
         predicate_types: Dict[str, int] = {}
-        
+
         def fetch_predicate_type(ref: dict) -> Optional[str]:
             ref_digest = ref.get("digest")
             if not ref_digest:
                 return None
             return self._get_predicate_type_from_bundle(image, ref_digest)
-        
+
         # Use ThreadPoolExecutor for parallel fetching
         max_workers = min(len(bundle_refs), 5)  # Cap at 5 parallel requests
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -186,7 +186,7 @@ class AttestationExtractor:
                 executor.submit(fetch_predicate_type, ref): ref
                 for ref in bundle_refs
             }
-            
+
             for future in as_completed(futures):
                 try:
                     pred_type = future.result()
@@ -504,41 +504,41 @@ class AttestationExtractor:
 class LegacyTriageExtractor:
     """
     Extract legacy TOML triage files from container images using ORAS.
-    
+
     This is equivalent to the oras-scan bash scripts that look for
     triage.toml files attached as ORAS referrers with "triage.toml"
     in the annotation content.
-    
+
     The TOML format contains sections like:
         [trivy.CVE-2024-1234]
         reason = "Not applicable"
     """
-    
+
     def __init__(self, timeout: int = 60):
         """
         Initialize the extractor.
-        
+
         Args:
             timeout: Timeout for operations
         """
         self.timeout = timeout
-    
+
     def _get_image_name(self, full_image: str) -> str:
         """Get image name without version/digest."""
         if "@" in full_image:
             return full_image.split("@")[0]
         return full_image.split(":")[0]
-    
+
     def find_triage_reference(self, image: str) -> Optional[str]:
         """
         Find ORAS referrer containing triage.toml.
-        
+
         Equivalent to the bash script logic that searches for
         "triage.toml" in annotation content.
-        
+
         Args:
             image: Image reference
-            
+
         Returns:
             Reference digest or None
         """
@@ -547,7 +547,7 @@ class LegacyTriageExtractor:
             ["oras", "discover", image, "--format", "json"],
             timeout=self.timeout,
         )
-        
+
         if not result.success:
             # Try with --plain-http as fallback
             result = run_command(
@@ -557,36 +557,36 @@ class LegacyTriageExtractor:
             if not result.success:
                 logger.debug(f"Failed to discover referrers for {image}")
                 return None
-        
+
         try:
             data = json.loads(result.stdout)
             referrers = data.get("referrers", [])
         except json.JSONDecodeError:
             logger.debug("Failed to parse oras discover output")
             return None
-        
+
         # Find referrer with triage.toml in annotation content
         for ref in referrers:
             annotations = ref.get("annotations", {})
             content = annotations.get("content", "")
-            
+
             if "triage.toml" in content:
                 return ref.get("reference")
-        
+
         return None
-    
+
     def extract_triage_toml(
         self, image: str, output_file: str
     ) -> Optional[str]:
         """
         Extract triage.toml file from an image.
-        
+
         Equivalent to oras-scan/2-oras-scan.sh triage extraction.
-        
+
         Args:
             image: Image reference
             output_file: Path to save triage.toml
-            
+
         Returns:
             Path to extracted file or None
         """
@@ -594,24 +594,24 @@ class LegacyTriageExtractor:
         if not triage_ref:
             logger.debug(f"No triage.toml found for {image}")
             return None
-        
+
         # Fetch manifest to get layer digest
         result = run_command(
             ["oras", "manifest", "fetch", triage_ref],
             timeout=30,
         )
-        
+
         if not result.success:
             logger.debug(f"Failed to fetch manifest for {triage_ref}")
             return None
-        
+
         try:
             manifest = json.loads(result.stdout)
             layer_digest = manifest["layers"][0]["digest"]
         except (json.JSONDecodeError, KeyError, IndexError):
             logger.debug("Failed to parse manifest")
             return None
-        
+
         # Fetch the blob (triage.toml content)
         image_name = self._get_image_name(image)
         result = run_command(
@@ -619,56 +619,56 @@ class LegacyTriageExtractor:
              "--output", output_file],
             timeout=30,
         )
-        
+
         if not result.success:
             logger.debug(f"Failed to fetch triage blob")
             return None
-        
+
         # Verify file is not empty
         if not Path(output_file).exists() or Path(output_file).stat().st_size == 0:
             Path(output_file).unlink(missing_ok=True)
             return None
-        
+
         logger.debug(f"Successfully extracted triage.toml to {output_file}")
         return output_file
-    
+
     def parse_triage_toml(self, triage_file: str) -> Set[str]:
         """
         Parse CVE IDs from a triage.toml file.
-        
+
         Equivalent to the bash grep patterns:
         grep -o '\\(only: \\)?\\[trivy\\.[A-Z0-9\\-]*\\]' | sed 's/trivy\\.//'
-        
+
         Args:
             triage_file: Path to triage.toml file
-            
+
         Returns:
             Set of CVE IDs (e.g., {"CVE-2024-1234", "CVE-2023-5678"})
         """
         cves: Set[str] = set()
-        
+
         try:
             with open(triage_file, "r") as f:
                 content = f.read()
         except FileNotFoundError:
             return cves
-        
+
         # Pattern to match [trivy.CVE-XXXX-XXXX] sections
         # This matches: [trivy.CVE-2024-1234] or only: [trivy.CVE-2024-1234]
         pattern = r'\[trivy\.(CVE-[A-Z0-9\-]+)\]'
-        
+
         for match in re.finditer(pattern, content):
             cves.add(match.group(1))
-        
+
         return cves
-    
+
     def has_triage(self, image: str) -> bool:
         """
         Check if image has a legacy triage.toml file.
-        
+
         Args:
             image: Image reference
-            
+
         Returns:
             True if triage.toml exists
         """
@@ -680,11 +680,11 @@ class TriageExtractor:
     Unified triage extractor supporting both formats:
     - Cosign attestation (JSON format)
     - Legacy TOML format (triage.toml via ORAS)
-    
+
     This combines functionality from both cosign-based attestation
     extraction and the legacy oras-scan bash scripts.
     """
-    
+
     def __init__(
         self,
         certificate_oidc_issuer: str = AttestationExtractor.DEFAULT_OIDC_ISSUER,
@@ -693,10 +693,10 @@ class TriageExtractor:
     ):
         """
         Initialize the unified triage extractor.
-        
+
         Args:
             certificate_oidc_issuer: OIDC issuer for cosign verification
-            certificate_identity_regexp: Identity regexp for cosign verification  
+            certificate_identity_regexp: Identity regexp for cosign verification
             timeout: Timeout for operations
         """
         self.cosign_extractor = AttestationExtractor(
@@ -706,19 +706,19 @@ class TriageExtractor:
         )
         self.legacy_extractor = LegacyTriageExtractor(timeout=timeout)
         self.timeout = timeout
-    
+
     def extract_triage(
         self, image: str, output_dir: str
     ) -> Optional[Dict[str, Any]]:
         """
         Extract triage data from an image, trying both formats.
-        
+
         Tries cosign attestation first, then falls back to legacy TOML.
-        
+
         Args:
             image: Image reference
             output_dir: Directory to save extracted files
-            
+
         Returns:
             Dictionary with triage info:
             {
@@ -730,19 +730,19 @@ class TriageExtractor:
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Try cosign attestation first (JSON format)
         cosign_file = output_path / "triage.json"
         if self.cosign_extractor.extract_triage(image, str(cosign_file)):
             try:
                 with open(cosign_file) as f:
                     triage_data = json.load(f)
-                
+
                 # Extract CVE IDs from cosign triage format
                 # Format: {"predicate": {"trivy": {"CVE-ID": {...}, ...}}}
                 trivy_data = triage_data.get("predicate", {}).get("trivy", {})
                 cve_ids = set(trivy_data.keys())
-                
+
                 return {
                     "format": "cosign",
                     "file": str(cosign_file),
@@ -750,27 +750,27 @@ class TriageExtractor:
                 }
             except (json.JSONDecodeError, KeyError):
                 logger.debug("Failed to parse cosign triage")
-        
+
         # Fall back to legacy TOML format
         toml_file = output_path / "triage.toml"
         if self.legacy_extractor.extract_triage_toml(image, str(toml_file)):
             cve_ids = self.legacy_extractor.parse_triage_toml(str(toml_file))
-            
+
             return {
                 "format": "toml",
                 "file": str(toml_file),
                 "cve_ids": cve_ids,
             }
-        
+
         return None
-    
+
     def has_triage(self, image: str) -> bool:
         """
         Check if image has any triage (cosign or legacy).
-        
+
         Args:
             image: Image reference
-            
+
         Returns:
             True if triage exists in any format
         """
@@ -778,7 +778,6 @@ class TriageExtractor:
         attestations = self.cosign_extractor.list_attestations(image)
         if attestations.has_triage():
             return True
-        
+
         # Check legacy TOML
         return self.legacy_extractor.has_triage(image)
-

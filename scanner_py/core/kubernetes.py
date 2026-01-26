@@ -43,7 +43,7 @@ class ImageExtractionResult:
 class KubernetesImageExtractor:
     """
     Extract container images from Kubernetes namespace.
-    
+
     Discovers images from pods, deployments, daemonsets, statefulsets,
     jobs, and cronjobs.
     """
@@ -235,11 +235,11 @@ class KubernetesImageExtractor:
         parts = image.split("/")
         if len(parts) == 1:
             return "docker.io"
-        
+
         first = parts[0]
         if "." in first or ":" in first or first == "localhost":
             return first
-        
+
         return "docker.io"
 
     def load_ignore_patterns(self, filepath: str) -> List[str]:
@@ -265,4 +265,3 @@ class KubernetesImageExtractor:
             if is_verbose():
                 logger.warning(f"Ignore file not found: {filepath}")
         return patterns
-
