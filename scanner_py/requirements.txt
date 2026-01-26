@@ -1,0 +1,38 @@
+# Aleph Alpha Scanner - Python Dependencies
+#
+# Core dependencies (minimal - uses subprocess for external tools)
+# Most functionality relies on external CLI tools:
+# - kubectl
+# - trivy
+# - cosign
+# - crane
+# - oras
+# - docker
+# - jq
+
+# No additional Python packages required for core functionality
+# The package uses only standard library modules:
+# - subprocess
+# - json
+# - argparse
+# - dataclasses
+# - pathlib
+# - typing
+# - concurrent.futures
+# - tempfile
+# - shutil
+# - time
+# - base64
+# - logging
+# - enum
+# - os
+# - re
+# - sys
+
+# Optional dependencies for development/testing:
+# pytest>=7.0.0
+# pytest-cov>=4.0.0
+# black>=23.0.0
+# mypy>=1.0.0
+# ruff>=0.1.0
+
