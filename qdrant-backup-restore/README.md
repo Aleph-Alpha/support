@@ -1,6 +1,6 @@
 # qdrant backup and restore scripts
 
-Here lies essentials scripts to backup and restore/recover qdrant snapshots from n instance(s) to x instance(s).
+This directory provides essential scripts to back up Qdrant snapshots and restore or recover them across multiple instances, supporting migrations from n source instances to x target instances.
 
 ## Prerequisites
 

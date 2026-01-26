@@ -56,7 +56,7 @@ def get_config():
         _config = qdrant_s3_configuration
     return None
 
-
+# Filters s3 bucket for snapshots
 def list_s3_snapshots(prefix=None):
     endpoint_url = _config["endpoint_url"]
 

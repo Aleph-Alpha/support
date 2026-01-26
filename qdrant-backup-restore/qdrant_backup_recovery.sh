@@ -18,6 +18,7 @@ _printf() {
   printf "$@"
 }
 
+# Extracts the source and restore hosts from the QDRANT_SOURCE_HOSTS and QDRANT_RESTORE_HOSTS variables
 get_hosts() {
   IFS=',' read -ra source_hosts <<< "$QDRANT_SOURCE_HOSTS"
   IFS=',' read -ra restore_hosts <<< "$QDRANT_RESTORE_HOSTS"
@@ -46,7 +47,7 @@ get_collections() {
   _printf "completed fetching collections!\n"
 }
 
-# Clears and Stores collections from qdrant node in $QDRANT_COLLECTIONS_FILE
+# appends collection from a qdrant node to $QDRANT_COLLECTIONS_FILE
 track_collection(){
   local host="$1"
   local result="$2"
@@ -57,6 +58,7 @@ track_collection(){
   done
 }
 
+# creates and appends created collection snapshot from a qdrant node to $QDRANT_SNAPSHOTS_FILE
 track_created_collection_snapshot() {
     local host="$1"
     local collection_name="$2"
@@ -80,6 +82,7 @@ track_created_collection_snapshot() {
     printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
 }
 
+# creates and appends created collection snapshots from qdrant node peers to $QDRANT_SNAPSHOTS_FILE
 create_collection_snapshot() {
   if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
       get_collections
@@ -96,6 +99,7 @@ create_collection_snapshot() {
   echo "$QDRANT_SNAPSHOTS_FILE file updated!"
 }
 
+# gets the latest collection snapshot from a qdrant node and appends it to $QDRANT_SNAPSHOTS_FILE
 fetch_collection_snapshot() {
   local host="$1"
   local collection_name="$2"
@@ -130,9 +134,8 @@ fetch_collection_snapshot() {
 
 }
 
+# generates a list of collection snapshots from a s3 and appends it to $QDRANT_SNAPSHOTS_FILE
 generate_snapshot_file_from_s3() {
-  local datetime=""
-
   if [[ -s "$QDRANT_SNAPSHOTS_FILE" ]]; then
       _printf "snapshots already fetched! ... need a fresh one? clear %s file\n" "$QDRANT_SNAPSHOTS_FILE"
       return
@@ -143,8 +146,8 @@ generate_snapshot_file_from_s3() {
   echo "$QDRANT_SNAPSHOTS_FILE file updated!"
 }
 
+# generates a list of collection snapshots from a qdrant node and appends it to $QDRANT_SNAPSHOTS_FILE
 generate_snapshot_file_from_instance() {
-  local datetime=""
   if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
       get_collections
   fi
@@ -164,6 +167,7 @@ generate_snapshot_file_from_instance() {
   echo "$QDRANT_SNAPSHOTS_FILE file updated!"
 }
 
+# generates an s3 presigned url for collection snapshot recovery
 get_s3_url() {
   local collection_name="$1"
   local snapshot_name="$2"
@@ -173,6 +177,7 @@ get_s3_url() {
   s3_presigned_url="$url"
 }
 
+# restores an collection snapshot from an s3 url updates the $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE and $QDRANT_FAILED_RECOVERY_FILE
 recover_collection_snapshot() {
     local host="$1"
     local collection_name="$2"
@@ -202,6 +207,7 @@ recover_collection_snapshot() {
     printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE
 }
 
+# restores an collection snapshots from an s3 url, reads $QDRANT_SNAPSHOTS_FILE for the fetched snapshots
 recover_collection_snapshots(){
   if [[ ! -s "$QDRANT_SNAPSHOTS_FILE" ]]; then
       generate_snapshot_file
@@ -228,6 +234,7 @@ recover_collection_snapshots(){
   done < $QDRANT_SNAPSHOTS_FILE
 }
 
+# gets the collection aliases from a qdrant node and appends it to $QDRANT_COLLECTION_ALIASES file
 get_collection_aliases() {
   local host="${source_hosts[0]}"
   local result=""
@@ -258,6 +265,7 @@ get_collection_aliases() {
 
 }
 
+# restores collection alias to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 recover_collection_alias() {
   local host="${source_hosts[0]}"
   local collection_name="$1"
@@ -290,6 +298,7 @@ recover_collection_alias() {
   printf '%s,%s,%s\n' "$collection_name" "$alias_name" "$status" >> $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 }
 
+# restores collection aliases to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 recover_collection_aliases() {
   if [[ ! -s "$QDRANT_COLLECTION_ALIASES" ]]; then
       get_collection_aliases
@@ -322,6 +331,7 @@ recover_collection_aliases() {
   _printf "[%s] completed recovering collection aliases!\n" "$host"
 }
 
+# removes state files with(out) backup
 delete_files() {
   local files="$QDRANT_COLLECTIONS_FILE $QDRANT_SNAPSHOTS_FILE $QDRANT_ALIAS_RECOVERY_HISTORY_FILE $QDRANT_COLLECTION_ALIASES $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE $QDRANT_FAILED_RECOVERY_FILE"
   local bk="$1"
@@ -332,7 +342,8 @@ delete_files() {
         rm "$file"
       else
         _printf "deleting and backing up %s file\n" "$file"
-        mv "$file" "$file.bkp"
+        now="$(date '+%Y-%m-%d_%H-%M-%S')"
+        mv "$file" "$file-$now.bkp"
       fi
     fi
   done
@@ -364,10 +375,9 @@ Positional arguments:
                         create_snap - creates collection snapshots ^.
                         recover_colla - recover/restore collection aliases to the new server(s)
                         recover_snap - recover/restore collection snapshots ^.
-                        reset - clear the temporary files created on this workspace
+                        reset - clear the temporary/state files created on this workspace
 
 Optional arguments:
-  --date DATETIME       Datetime of the preferred snapshots, this will fetch the latest time of the given data n time
   -h, --help            Show this help message and exit
 
 Example:
@@ -413,25 +423,9 @@ run() {
     if [ "$command" = "get_coll" ]; then
       get_collections
     elif [ "$command" = "get_snap" ]; then
-      local DATETIME=""
-      while [[ $# -gt 0 ]]; do
-          case $1 in
-              --time) DATETIME="$2"; shift 2 ;;
-              -h|--help) usage "$command"; exit 0 ;;
-              *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
-          esac
-      done
-      generate_snapshot_file_from_instance "$DATETIME"
+      generate_snapshot_file_from_instance
     elif [ "$command" = "get_snap_s3" ]; then
-      local DATETIME=""
-      while [[ $# -gt 0 ]]; do
-          case $1 in
-              --time) DATETIME="$2"; shift 2 ;;
-              -h|--help) usage "$command"; exit 0 ;;
-              *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
-          esac
-      done
-      generate_snapshot_file_from_s3 "$DATETIME"
+      generate_snapshot_file_from_s3
    elif [ "$command" = "create_snap" ]; then
       create_collection_snapshot
     elif [ "$command" = "recover_snap" ]; then
