@@ -98,7 +98,7 @@ track_created_collection_snapshot() {
     local status=""
     local snapshot_name=""
 
-    _printf '[%s] creating snapshot %s for %s collection\n' "$host" "$snapshot_name" "$collection_name"
+    _printf '[%s] creating snapshot for %s collection\n' "$host" "$collection_name"
 
     result=$(_curl POST "$host/collections/$collection_name/snapshots?wait=$QDRANT_WAIT_ON_TASK" --header "api-key: $QDRANT_API_KEY")
 
@@ -427,7 +427,7 @@ Environment variables:
   QDRANT_S3_BUCKET_NAME       - S3 bucket name (for S3 operations)
   GET_PEERS_FROM_CLUSTER_INFO - Set to "true" to auto-discover peers
   CURL_TIMEOUT                - Curl timeout in seconds (default: 300)
-
+  QDRANT_WAIT_ON_TASK         - Waits for async tasks to finish
 Examples:
   $0 get_snap
   $0 recover_snap
