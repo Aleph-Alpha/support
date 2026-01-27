@@ -1,0 +1,65 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: qdrant-backup-restore
+  labels:
+    app: qdrant-backup-restore
+spec:
+  backoffLimit: 0              # Number of retries before marking failed
+  activeDeadlineSeconds: 7200  # Timeout after 2 hours
+  ttlSecondsAfterFinished: 300 # Auto-cleanup after completion (optional)
+  template:
+    metadata:
+      labels:
+        app: qdrant-backup-restore
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: qdrant-bkp-restore
+          image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/bash
+          args:
+            - -c
+            - "cd scripts && ./qdrant_backup_recovery.sh create_snap"
+          env:
+            - name: QDRANT_S3_ACCESS_KEY_ID
+              value: "<s3-access-key-id>"
+            - name: QDRANT_S3_SECRET_ACCESS_KEY
+              value: "<s3-secret-access>"
+            - name: QDRANT_API_KEY
+              value: "<api-key>"
+            - name: QDRANT_S3_BUCKET_NAME
+              value: "<s3-bucket-name>"
+            - name: QDRANT_SOURCE_HOSTS
+              value: "http://qdrant-headless:6333"
+            - name: QDRANT_S3_ENDPOINT_URL
+              value: "<s3-endpoint-url>"
+            - name: QDRANT_RESTORE_HOSTS
+              value: "http://qdrant-0.qdrant-headless:6333"
+            - name: GET_PEERS_FROM_CLUSTER_INFO
+              value: "true"
+            - name: CURL_TIMEOUT
+              value: "3000"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          volumeMounts:
+          - name: qdrant-backup-restore-script
+            mountPath: /scripts/qdrant_backup_recovery.sh
+            subPath: qdrant_backup_recovery.sh
+          - name: scripts
+            mountPath: /scripts
+      volumes:
+      - name: qdrant-backup-restore-script
+        configMap:
+          name: qdrant-backup-restore-script
+          defaultMode: 0755
+      - name: scripts
+        emptyDir:
+          sizeLimit: 100Mi
