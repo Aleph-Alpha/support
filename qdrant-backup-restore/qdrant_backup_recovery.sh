@@ -8,9 +8,8 @@ QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE="snapshot_recovery_history"
 QDRANT_ALIAS_RECOVERY_HISTORY_FILE="alias_recovery_history"
 QDRANT_PYTHON_UTIL_FILE="s3_util.py"
 QDRANT_COLLECTION_ALIASES="collection_aliases"
-CURL_TIMEOUT="${CURL_TIMEOUT:-300}"
-#QDRANT_INCLUDED_COLLECTIONS="*"
-#QDRANT_EXCLUDED_COLLECTIONS=""
+QDRANT_WAIT_ON_TASK=${QDRANT_WAIT_ON_TASK:-true}
+CURL_TIMEOUT="${CURL_TIMEOUT:-1800}"
 
 _printf() {
   local ts
@@ -32,7 +31,7 @@ _curl() {
     --connect-timeout 30 \
     -X "${method}" \
     "$@" \
-    "${url}" 2>&1)
+    "${url}")
 
   # Extract HTTP code (last line) and body (everything else)
   local http_code
@@ -101,18 +100,21 @@ track_created_collection_snapshot() {
 
     _printf '[%s] creating snapshot %s for %s collection\n' "$host" "$snapshot_name" "$collection_name"
 
-    result=$(_curl POST "$host/collections/$collection_name/snapshots?wait=true" --header "api-key: $QDRANT_API_KEY")
+    result=$(_curl POST "$host/collections/$collection_name/snapshots?wait=$QDRANT_WAIT_ON_TASK" --header "api-key: $QDRANT_API_KEY")
 
     status=$(jq -r '.status' <<< "$result")
-    snapshot_name=$(jq -r '.result.name' <<< "$result")
+    snapshot_name=$(jq -r '.result.name // "unknown"' <<< "$result")
 
     if [ "$status" = "ok" ]; then
       _printf '[%s] Snapshot %s for %s collection created successfully\n' "$host" "$snapshot_name" "$collection_name"
+    elif [ "$status" = "accepted" ]; then
+      _printf '[%s] Snapshot %s for %s collection accepted successfully\n' "$host" "$snapshot_name" "$collection_name"
     else
       _printf '[%s] Snapshot %s for %s collection failed with %s\n' "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
     fi
 
     printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
+
 }
 
 # creates and appends created collection snapshots from qdrant node peers to $QDRANT_SNAPSHOTS_FILE
@@ -224,20 +226,22 @@ recover_collection_snapshot() {
 
 
     result=$(_curl PUT \
-               "$host/collections/$collection_name/snapshots/recover?wait=true" \
+               "$host/collections/$collection_name/snapshots/recover?wait=$QDRANT_WAIT_ON_TASK" \
                --header "api-key: $QDRANT_API_KEY" \
                --header "Content-Type: application/json" \
                --data "{ \"location\": \"$s3_presigned_url\", \"priority\": \"snapshot\" }")
 
     status=$(jq -r '.status' <<< "$result")
 
-    if [ "$status" != "ok" ]; then
-        _printf "[%s] failed to recover %s snapshot of %s collection, got this %s instead\n" "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
-        printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_FAILED_RECOVERY_FILE
+    if [ "$status" = "ok" ]; then
+      _printf "[%s] successfully recovered %s snapshot of %s collection\n" "$host" "$snapshot_name" "$collection_name"
+      printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE
+    elif [ "$status" = "accepted" ]; then
+      _printf "[%s] successfully accepted recovery of snapshot %s for %s collection\n" "$host" "$snapshot_name" "$collection_name"
     else
-        _printf "[%s] successfully recovered %s snapshot of %s collection\n" "$host" "$snapshot_name" "$collection_name"
+      _printf "[%s] failed to recover %s snapshot of %s collection, got this %s instead\n" "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
+      printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_FAILED_RECOVERY_FILE
     fi
-    printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE
 }
 
 # restores an collection snapshots from an s3 url, reads $QDRANT_SNAPSHOTS_FILE for the fetched snapshots
@@ -385,7 +389,7 @@ delete_files() {
 # gets qdrant peer host url using cluster info endpoint. Sets the port to 6333 the http port.
 get_peers_from_cluster_info() {
   local host="${source_hosts[0]}"
-  result=$(_curl "$host/cluster" -H "api-key: $QDRANT_API_KEY")
+  result=$(_curl GET "$host/cluster" --header "api-key: $QDRANT_API_KEY")
   source_hosts=()
   items=$(jq -r '.result.peers[].uri' <<< "$result")
   while read -r item; do

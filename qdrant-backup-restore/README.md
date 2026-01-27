@@ -57,8 +57,9 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | `QDRANT_S3_SECRET_ACCESS_KEY` | S3 secret access key | `your-secret-key` |
 | `QDRANT_S3_BUCKET_NAME` | S3 bucket name where snapshots are stored | `bucket-name` |
 | `GET_PEERS_FROM_CLUSTER_INFO` | Auto-discover peers from cluster info endpoint (useful for Kubernetes) | `false` |
-| `CURL_TIMEOUT` | Timeout for curl operations in seconds | `300` |
+| `CURL_TIMEOUT` | Timeout for curl operations in seconds, set to 30mins  | `1800` |
 | `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned URL expiry duration in seconds | `86400` (24 hours) |
+| `QDRANT_WAIT_ON_TASK` | Waits for changes to happen, used when creating snapshots and restoring snapshots | `true` |
 
 ### Example .env File
 
@@ -81,7 +82,6 @@ The scripts support backup and restoration of Qdrant collection snapshots using 
 1. **Backup Phase:** Create snapshots of collections and optionally fetch collection aliases
 2. **Storage:** Snapshots are stored in S3-compatible storage (configured in Qdrant)
 3. **Restore Phase:** Fetch snapshot metadata and recover collections to target instances
-
 
 ## State Files
 
