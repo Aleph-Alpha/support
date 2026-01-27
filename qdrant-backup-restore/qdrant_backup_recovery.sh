@@ -295,7 +295,7 @@ recover_collection_snapshot() {
 # restores an collection snapshots from an s3 url, reads $QDRANT_SNAPSHOTS_FILE for the fetched snapshots
 recover_collection_snapshots(){
   if [[ ! -s "$QDRANT_SNAPSHOTS_FILE" ]]; then
-      generate_snapshot_file
+      generate_snapshot_file_from_s3
   fi
 
   touch "$QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE"
