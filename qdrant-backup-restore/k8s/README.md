@@ -62,26 +62,6 @@ kubectl apply -f configmap-script.yaml -n <namespace>
 
 **Note:** The ConfigMap in the file is configured for the `pharia-ai` namespace by default. Update the `metadata.namespace` field if needed.
 
-### Using the Script in Pods
+### Using the ConfigMap
 
-Once the ConfigMap is applied, you can mount it in your pods:
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: qdrant-backup-pod
-  namespace: pharia-ai
-spec:
-  containers:
-  - name: backup
-    image: your-backup-image:latest
-    volumeMounts:
-    - name: script-volume
-      mountPath: /scripts
-      readOnly: true
-  volumes:
-  - name: script-volume
-    configMap:
-      name: qdrant-backup-restore-script
-```
+[job](job.yaml) and [cronjob](cronjob.yaml) are example of how to use the `configmap-script.yaml`.
