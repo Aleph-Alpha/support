@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: qdrant-backup-restore-script
+  namespace: pharia-ai
+  labels:
+    app: qdrant-backup-restore
+    component: script
+data:
+  # DO NOT UPDATE THE DATA SECTION BELOW DIRECTLY USE ./config_map_updater.sh

@@ -6,11 +6,13 @@ QDRANT_SNAPSHOTS_FILE="snapshots"
 QDRANT_FAILED_RECOVERY_FILE="failed_snapshot_recovery"
 QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE="snapshot_recovery_history"
 QDRANT_ALIAS_RECOVERY_HISTORY_FILE="alias_recovery_history"
-QDRANT_PYTHON_UTIL_FILE="s3_util.py"
 QDRANT_COLLECTION_ALIASES="collection_aliases"
 QDRANT_WAIT_ON_TASK=${QDRANT_WAIT_ON_TASK:-true}
 CURL_TIMEOUT="${CURL_TIMEOUT:-1800}"
+QDRANT_S3_ALIAS="qdrant_s3_snaphost"
+QDRANT_S3_LINK_EXPIRY_DURATION="${QDRANT_S3_LINK_EXPIRY_DURATION:-3600s}"
 
+# printf wrapper helper
 _printf() {
   local ts
   ts=$(date '+%Y-%m-%d %H:%M:%S')
@@ -18,6 +20,7 @@ _printf() {
   printf "$@"
 }
 
+# curl wrapper helper
 _curl() {
   local method="${1:-GET}"
   shift 1
@@ -169,14 +172,54 @@ fetch_collection_snapshot() {
 
 }
 
+# gets the latest collection snapshot from a qdrant node and appends it to $QDRANT_SNAPSHOTS_FILE
+fetch_collection_snapshot_from_s3() {
+  local host="$1"
+  local collection_name="$2"
+  local result=""
+
+  _printf "[%s] fetching snapshots for %s collection.\n" "$host" "$collection_name"
+
+  local result=""
+  result=$(mc ls -r --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/snapshots/$collection_name/")
+
+  if [ "$result" = "" ]; then
+     _printf "[%s] snapshots for %s collection not found! ...skipping\n" "$host" "$collection_name"
+     return
+  fi
+
+  jq -c '.' <<< "$result" | while read -r item; do
+    local status=""
+    status=$(jq -r '.status?' <<< "$item")
+    if [ "$status" != "success" ]; then
+        _printf "[%s] failed to fetch snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
+        continue
+    fi
+    local snapshot_name=""
+    snapshot_name=$(jq -r '.key' <<< "$item")
+    printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
+  done
+
+  _printf "[%s] completed fetching snapshots for %s collection!\n" "$host" "$collection_name"
+}
+
 # generates a list of collection snapshots from a s3 and appends it to $QDRANT_SNAPSHOTS_FILE
 generate_snapshot_file_from_s3() {
+  if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
+      get_collections
+  fi
+
   if [[ -s "$QDRANT_SNAPSHOTS_FILE" ]]; then
       _printf "snapshots already fetched! ... need a fresh one? clear %s file\n" "$QDRANT_SNAPSHOTS_FILE"
       return
   fi
 
-  result=$(python3 "$QDRANT_PYTHON_UTIL_FILE" list_snapshots)
+  while IFS= read -r line; do
+    IFS=',' read -ra cols <<< "$line"
+    local host="${cols[0]}"
+    local collection_name="${cols[1]}"
+    fetch_collection_snapshot_from_s3 "$host" "$collection_name"
+  done < $QDRANT_COLLECTIONS_FILE
 
   echo "$QDRANT_SNAPSHOTS_FILE file updated!"
 }
@@ -206,10 +249,15 @@ generate_snapshot_file_from_instance() {
 get_s3_url() {
   local collection_name="$1"
   local snapshot_name="$2"
-  local url=""
   local key="snapshots/$collection_name/$snapshot_name"
-  url=$(python3 "$QDRANT_PYTHON_UTIL_FILE" gen_url "$key")
-  s3_presigned_url="$url"
+  local result=""
+  local status=""
+  result=$(mc share download --expire "$QDRANT_S3_LINK_EXPIRY_DURATION" --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key" )
+  status=$(jq -r '.status?' <<< "$result")
+  if [ "$status" != "success" ]; then
+      _printf "[%s] failed to fetch snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
+  fi
+  s3_presigned_url=$(jq -r '.share' <<< "$result")
 }
 
 # restores an collection snapshot from an s3 url updates the $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE and $QDRANT_FAILED_RECOVERY_FILE
@@ -397,6 +445,35 @@ get_peers_from_cluster_info() {
   done <<< "$items"
 }
 
+# initialize minio client
+setup_s3_storage() {
+  local result=""
+  result=$(mc alias --json set "$QDRANT_S3_ALIAS" "$QDRANT_S3_ENDPOINT_URL" "$QDRANT_S3_ACCESS_KEY_ID" "$QDRANT_S3_SECRET_ACCESS_KEY")
+  status=$(jq -r '.status' <<< "$result")
+
+  if [ "$status" != "success" ]; then
+      _printf "[%s] failed to setup s3 storage. Kindly check set or reconfirm the s3 credentials and url, got this instead %s." "$alias_name" "${result//[[:space:]]/}"
+      return
+  fi
+}
+
+# Dependency checks
+check_dependencies() {
+    local missing_deps=()
+
+    for cmd in curl jq mc; do
+        if ! command -v "${cmd}" >/dev/null 2>&1; then
+            missing_deps+=("${cmd}")
+        fi
+    done
+
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        _printf "Missing required dependencies: %s. Please install them and try again.\n" "${missing_deps[*]}"
+        exit 1
+    fi
+
+}
+
 usage() {
   local command="${1:-*}"
   if [ "$command" = "*" ]; then
@@ -451,52 +528,53 @@ EOF
 }
 
 run() {
+  check_dependencies
 
-    if [ "$#" -lt 1 ]; then
-        usage
-        exit 1
-    fi
-
-    local command="$1"
-    shift
-
-
-    get_hosts
-
-
-    if [ "$GET_PEERS_FROM_CLUSTER_INFO" = "true" ]; then
-      get_peers_from_cluster_info
-    fi
-
-    if [ "$command" = "get_coll" ]; then
-      get_collections
-    elif [ "$command" = "get_snap" ]; then
-      generate_snapshot_file_from_instance
-    elif [ "$command" = "get_snap_s3" ]; then
-      generate_snapshot_file_from_s3
-   elif [ "$command" = "create_snap" ]; then
-      create_collection_snapshot
-    elif [ "$command" = "recover_snap" ]; then
-      recover_collection_snapshots
-    elif [ "$command" = "get_colla" ]; then
-      get_collection_aliases
-    elif [ "$command" = "recover_colla" ]; then
-      recover_collection_aliases
-    elif [ "$command" = "reset" ]; then
-      local BACKUP=false
-      while [[ $# -gt 0 ]]; do
-          case $1 in
-              --bkp) BACKUP="$2"; shift 2 ;;
-              -h|--help) usage "$command"; exit 0 ;;
-              *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
-          esac
-      done
-      delete_files "$BACKUP"
-    else
-      printf "command unknown: %s" "$command"
+  if [ "$#" -lt 1 ]; then
       usage
       exit 1
-    fi
+  fi
+
+  local command="$1"
+  shift
+
+  get_hosts
+
+  if [ "$GET_PEERS_FROM_CLUSTER_INFO" = "true" ]; then
+    get_peers_from_cluster_info
+  fi
+
+  if [ "$command" = "get_coll" ]; then
+    get_collections
+  elif [ "$command" = "get_snap" ]; then
+    generate_snapshot_file_from_instance
+  elif [ "$command" = "get_snap_s3" ]; then
+    setup_s3_storage
+    generate_snapshot_file_from_s3
+  elif [ "$command" = "create_snap" ]; then
+    create_collection_snapshot
+  elif [ "$command" = "recover_snap" ]; then
+    setup_s3_storage
+    recover_collection_snapshots
+  elif [ "$command" = "get_colla" ]; then
+    get_collection_aliases
+  elif [ "$command" = "recover_colla" ]; then
+    recover_collection_aliases
+  elif [ "$command" = "reset" ]; then
+    local BACKUP=false
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --bkp) BACKUP="$2"; shift 2 ;;
+            -h|--help) usage "$command"; exit 0 ;;
+            *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
+        esac
+    done
+    delete_files "$BACKUP"
+  else
+    printf "command unknown: %s" "$command"
+    usage
+    exit 1
+  fi
 }
 
 run "$@"

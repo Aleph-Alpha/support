@@ -7,8 +7,7 @@ This directory provides production-grade scripts to back up Qdrant snapshots and
 - **Bash**
 - **curl**
 - **jq**
-- **Python 3**
-- **boto3** (Python library for S3 operations)
+- **mc**
 
 ## Installation
 
@@ -18,20 +17,14 @@ This directory provides production-grade scripts to back up Qdrant snapshots and
    cd qdrant-backup-restore
    ```
 
-2. **Install Python dependencies:**
-
-   ```bash
-   pip3 install -r requirements.txt
-   ```
-
-3. **Create and configure environment file:**
+2. **Create and configure environment file:**
 
    ```bash
    cp .env.sample .env
    # Edit .env with your configuration
    ```
 
-4. **Source the environment file:**
+3. **Source the environment file:**
 
    ```bash
    source .env
@@ -57,8 +50,8 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | `QDRANT_S3_SECRET_ACCESS_KEY` | S3 secret access key | `your-secret-key` |
 | `QDRANT_S3_BUCKET_NAME` | S3 bucket name where snapshots are stored | `bucket-name` |
 | `GET_PEERS_FROM_CLUSTER_INFO` | Auto-discover peers from cluster info endpoint (useful for Kubernetes) | `false` |
-| `CURL_TIMEOUT` | Timeout for curl operations in seconds, set to 30mins  | `1800` |
-| `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned URL expiry duration in seconds | `86400` (24 hours) |
+| `CURL_TIMEOUT` | Timeout for curl operations in seconds, set to 30mins  | `1800` (30mins) |
+| `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned URL expiry duration in seconds | `3600` (1 hour) |
 | `QDRANT_WAIT_ON_TASK` | Waits for changes to happen, used when creating snapshots and restoring snapshots | `true` |
 
 ### Example .env File
