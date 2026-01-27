@@ -1,4 +1,0 @@
-# Core Python packages required
-
-# s3
-boto3>=1.42
