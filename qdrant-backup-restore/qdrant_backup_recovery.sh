@@ -374,7 +374,7 @@ recover_collection_alias() {
                  {
                    \"create_alias\": {
                      \"collection_name\": \"$collection_name\",
-                     \"alias_name\": \"$alias_name}\"
+                     \"alias_name\": \"$alias_name\"
                    }
                  }
                ]
