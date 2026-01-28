@@ -180,11 +180,13 @@ fetch_collection_snapshot_from_s3() {
 
   _printf "[%s] fetching snapshots for %s collection.\n" "$host" "$collection_name"
 
+  local key="$QDRANT_S3_BUCKET_NAME/snapshots/$collection_name"
+
   local result=""
-  result=$(mc ls -r --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/snapshots/$collection_name/")
+  result=$(mc ls -r --json "$QDRANT_S3_ALIAS/$key")
 
   if [ "$result" = "" ]; then
-     _printf "[%s] snapshots for %s collection not found! ...skipping\n" "$host" "$collection_name"
+     _printf "[%s] snapshots for %s collection not found in s3 path: %s ...skipping!\n" "$host" "$collection_name" "$key"
      return
   fi
 
