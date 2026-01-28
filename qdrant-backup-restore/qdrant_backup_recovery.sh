@@ -448,12 +448,15 @@ get_peers_from_cluster_info() {
 # initialize minio client
 setup_s3_storage() {
   local result=""
-  result=$(mc alias --json set "$QDRANT_S3_ALIAS" "$QDRANT_S3_ENDPOINT_URL" "$QDRANT_S3_ACCESS_KEY_ID" "$QDRANT_S3_SECRET_ACCESS_KEY")
+  if result=$(mc alias --json set "$QDRANT_S3_ALIAS" "$QDRANT_S3_ENDPOINT_URL" "$QDRANT_S3_ACCESS_KEY_ID" "$QDRANT_S3_SECRET_ACCESS_KEY"); then
+    _printf "s3 storage client configured successfully for %s!\n" "$QDRANT_S3_ENDPOINT_URL"
+  fi
+
   status=$(jq -r '.status' <<< "$result")
 
   if [ "$status" != "success" ]; then
-      _printf "[%s] failed to setup s3 storage. Kindly check set or reconfirm the s3 credentials and url, got this instead %s." "$alias_name" "${result//[[:space:]]/}"
-      return
+    _printf "failed to setup s3 client storage. Kindly check the s3 credentials and url, got this instead %s.\n" "${result//[[:space:]]/}"
+    exit 1
   fi
 }
 
