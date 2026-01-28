@@ -77,7 +77,10 @@ data:
           return
       fi
       _printf "fetching collections!\n"
+
       local host="${source_hosts[0]}"
+
+      collection_count=0
 
       result=$(_curl GET "$host/collections" --header "api-key: $QDRANT_API_KEY")
       status=$(jq -r '.status' <<< "$result")
@@ -88,18 +91,21 @@ data:
 
       track_collection "$host" "$result"
 
-      _printf "completed fetching collections!\n"
+      _printf "%s file updated, found %d collections!\n" "$QDRANT_COLLECTIONS_FILE" "$collection_count"
     }
 
     # appends collection from a qdrant node to $QDRANT_COLLECTIONS_FILE
     track_collection(){
       local host="$1"
       local result="$2"
-      jq -c '.result.collections[]' <<< "$result" | while read -r item; do
+      _result=$(jq -c '.result.collections[]' <<< "$result")
+
+      while read -r item; do
         local collection_name=""
         collection_name=$(jq -r '.name' <<< "$item")
+        ((collection_count++))
         printf '%s,%s\n' "$host" "$collection_name" >> $QDRANT_COLLECTIONS_FILE
-      done
+      done <<< "$_result"
     }
 
     # creates and appends created collection snapshot from a qdrant node to $QDRANT_SNAPSHOTS_FILE
@@ -118,10 +124,13 @@ data:
         snapshot_name=$(jq -r '.result.name // "unknown"' <<< "$result")
 
         if [ "$status" = "ok" ]; then
+          ((success_snapshot_count++))
           _printf '[%s] Snapshot %s for %s collection created successfully\n' "$host" "$snapshot_name" "$collection_name"
         elif [ "$status" = "accepted" ]; then
+          ((success_snapshot_count++))
           _printf '[%s] Snapshot %s for %s collection accepted successfully\n' "$host" "$snapshot_name" "$collection_name"
         else
+          ((failed_snapshot_count++))
           _printf '[%s] Snapshot %s for %s collection failed with %s\n' "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
         fi
 
@@ -135,6 +144,22 @@ data:
           get_collections
       fi
 
+      if [ ! -f $QDRANT_COLLECTIONS_FILE ]; then
+        _printf "non error exit since file does not %s exist.\n" "$QDRANT_COLLECTIONS_FILE"
+        exit 0
+      fi
+
+      collection_count=$(wc -l < $QDRANT_COLLECTIONS_FILE)
+      source_hosts_len=${#source_hosts[@]}
+      if [[ ${collection_count//[[:space:]]/} =~ ^-?[0-9]+$ ]]; then
+        _collection_count=$((collection_count))
+      fi
+
+      snapshot_count=$((_collection_count * source_hosts_len))
+      success_snapshot_count=0
+      failed_snapshot_count=0
+
+
       for host in "${source_hosts[@]}"; do
         while IFS= read -r line; do
           IFS=',' read -ra cols <<< "$line"
@@ -143,7 +168,11 @@ data:
         done < $QDRANT_COLLECTIONS_FILE
       done
 
-      echo "$QDRANT_SNAPSHOTS_FILE file updated!"
+      _printf "snapshot creation summary: %d/%d created, %d failed!\n" "$success_snapshot_count" "$snapshot_count" "$failed_snapshot_count"
+
+      snapshot_count=0
+      failed_snapshot_count=0
+      success_snapshot_count=0
     }
 
     # gets the latest collection snapshot from a qdrant node and appends it to $QDRANT_SNAPSHOTS_FILE
@@ -151,8 +180,13 @@ data:
       local host="$1"
       local collection_name="$2"
       local result=""
+      local datetime="$3"
 
-      _printf "[%s] fetching snapshots for %s collection\n" "$host" "$collection_name"
+      if [ "$datetime" = "" ]; then
+        _printf "[%s] fetching snapshots for %s collection.\n" "$host" "$collection_name"
+      else
+        _printf "[%s] fetching snapshots for %s collection for date: %s .\n" "$host" "$collection_name" "$datetime"
+      fi
 
       result=$(_curl GET \
               "$host/collections/$collection_name/snapshots" \
@@ -172,12 +206,25 @@ data:
 
       item=$(jq -c '.result[0]' <<< "$result")
 
-      local snapshot_name=""
-      snapshot_name=$(jq -r '.name' <<< "$item")
-      printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
+      _result=$(jq -c '.result[]' <<< "$result")
+      while read -r item; do
+        local snapshot_name=""
+        snapshot_name=$(jq -r '.name' <<< "$item")
 
+        if [[ "$snapshot_name" != *"$datetime"* ]]; then
+          continue
+        fi
 
-      _printf "[%s] completed fetching snapshots for %s collection!\n" "$host" "$collection_name"
+        ((snapshot_count++))
+
+        printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
+      done <<< "$_result"
+
+      if [ "$snapshot_count" -gt 0 ]; then
+        _printf "[%s] completed fetching snapshots for %s collection!\n" "$host" "$collection_name"
+      else
+        _printf "[%s] no snapshots matching date: %s for %s collection!\n" "$host" "$datetime" "$collection_name"
+      fi
 
     }
 
@@ -186,8 +233,13 @@ data:
       local host="$1"
       local collection_name="$2"
       local result=""
+      local datetime="$3"
 
-      _printf "[%s] fetching snapshots for %s collection.\n" "$host" "$collection_name"
+      if [ "$datetime" = "" ]; then
+        _printf "[%s] fetching snapshots for %s collection.\n" "$host" "$collection_name"
+      else
+        _printf "[%s] fetching snapshots for %s collection for date: %s.\n" "$host" "$collection_name" "$datetime"
+      fi
 
       local key="$QDRANT_S3_BUCKET_NAME/snapshots/$collection_name"
 
@@ -199,44 +251,65 @@ data:
          return
       fi
 
-      jq -c '.' <<< "$result" | while read -r item; do
+      _result=$(jq -c '.' <<< "$result")
+
+      while read -r item; do
         local status=""
         status=$(jq -r '.status?' <<< "$item")
         if [ "$status" != "success" ]; then
             _printf "[%s] failed to fetch snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
             continue
         fi
+
         local snapshot_name=""
         snapshot_name=$(jq -r '.key' <<< "$item")
-        printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
-      done
 
-      _printf "[%s] completed fetching snapshots for %s collection!\n" "$host" "$collection_name"
+        if [[ "$snapshot_name" != *"$datetime"* ]]; then
+            continue
+        fi
+
+        ((snapshot_count++))
+
+        printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
+      done <<< "$_result"
+
+      if [ "$snapshot_count" -gt 0 ]; then
+        _printf "[%s] completed fetching snapshots for %s collection!\n" "$host" "$collection_name"
+      else
+        _printf "[%s] no snapshots matching date: %s for %s collection!\n" "$host" "$datetime" "$collection_name"
+      fi
     }
 
     # generates a list of collection snapshots from a s3 and appends it to $QDRANT_SNAPSHOTS_FILE
     generate_snapshot_file_from_s3() {
+      local datetime="${1:-}"
       if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
           get_collections
       fi
 
-      if [[ -s "$QDRANT_SNAPSHOTS_FILE" ]]; then
-          _printf "snapshots already fetched! ... need a fresh one? clear %s file\n" "$QDRANT_SNAPSHOTS_FILE"
-          return
+    # clear to avoid issues where instance and more snapshots than whats stored on s3
+      if [ -f "$QDRANT_SNAPSHOTS_FILE" ]; then
+          rm "$QDRANT_SNAPSHOTS_FILE"
       fi
+
+      snapshot_count=0
 
       while IFS= read -r line; do
         IFS=',' read -ra cols <<< "$line"
         local host="${cols[0]}"
         local collection_name="${cols[1]}"
-        fetch_collection_snapshot_from_s3 "$host" "$collection_name"
+        fetch_collection_snapshot_from_s3 "$host" "$collection_name" "$datetime"
       done < $QDRANT_COLLECTIONS_FILE
 
-      echo "$QDRANT_SNAPSHOTS_FILE file updated!"
+      _printf "%s file updated, found %d snapshots!\n" "$QDRANT_SNAPSHOTS_FILE" "$snapshot_count"
+
+      snapshot_count=0
     }
 
     # generates a list of collection snapshots from a qdrant node and appends it to $QDRANT_SNAPSHOTS_FILE
     generate_snapshot_file_from_instance() {
+      local datetime="${1:-}"
+
       if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
           get_collections
       fi
@@ -246,14 +319,23 @@ data:
           return
       fi
 
+      if [ ! -f $QDRANT_COLLECTIONS_FILE ]; then
+        _printf "non error exit since file does not %s exist.\n" "$QDRANT_COLLECTIONS_FILE"
+        exit 0
+      fi
+
+      snapshot_count=0
+
       while IFS= read -r line; do
         IFS=',' read -ra cols <<< "$line"
         local host="${cols[0]}"
         local collection_name="${cols[1]}"
-        fetch_collection_snapshot "$host" "$collection_name"
+        fetch_collection_snapshot "$host" "$collection_name" "$datetime"
       done < $QDRANT_COLLECTIONS_FILE
 
-      echo "$QDRANT_SNAPSHOTS_FILE file updated!"
+      _printf "%s file updated, found %d snapshot(s)!\n" "$QDRANT_SNAPSHOTS_FILE" "$snapshot_count"
+
+      snapshot_count=0
     }
 
     # generates an s3 presigned url for collection snapshot recovery
@@ -288,7 +370,6 @@ data:
 
         get_s3_url "$collection_name" "$snapshot_name"
 
-
         result=$(_curl PUT \
                    "$host/collections/$collection_name/snapshots/recover?wait=$QDRANT_WAIT_ON_TASK" \
                    --header "api-key: $QDRANT_API_KEY" \
@@ -298,11 +379,13 @@ data:
         status=$(jq -r '.status' <<< "$result")
 
         if [ "$status" = "ok" ]; then
+          ((recovered_count++))
           _printf "[%s] successfully recovered %s snapshot of %s collection\n" "$host" "$snapshot_name" "$collection_name"
           printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE
         elif [ "$status" = "accepted" ]; then
           _printf "[%s] successfully accepted recovery of snapshot %s for %s collection\n" "$host" "$snapshot_name" "$collection_name"
         else
+          ((fail_recovered_count++))
           _printf "[%s] failed to recover %s snapshot of %s collection, got this %s instead\n" "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
           printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_FAILED_RECOVERY_FILE
         fi
@@ -310,12 +393,21 @@ data:
 
     # restores an collection snapshots from an s3 url, reads $QDRANT_SNAPSHOTS_FILE for the fetched snapshots
     recover_collection_snapshots(){
-      if [[ ! -s "$QDRANT_SNAPSHOTS_FILE" ]]; then
-          generate_snapshot_file_from_s3
+      local datetime="${1:-}"
+
+      generate_snapshot_file_from_s3 "$datetime"
+
+      if [ ! -f $QDRANT_SNAPSHOTS_FILE ]; then
+        _printf "non error exit since file does not %s exist.\n" "$QDRANT_SNAPSHOTS_FILE"
+        exit 0
       fi
 
       touch "$QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE"
 
+      snapshot_count=$(wc -l < $QDRANT_SNAPSHOTS_FILE)
+
+      recovered_count=0
+      fail_recovered_count=0
       while IFS= read -r line; do
         IFS=',' read -ra cols <<< "$line"
 
@@ -326,13 +418,18 @@ data:
           history_count=$(grep -cw "$snapshot_name,ok" "$QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE" || true)
 
           if [ "$history_count" -gt 0 ]; then
-
+            ((recovered_count++))
             _printf "[%s] snapshot %s already recovered, skipping!\n" "$host" "$snapshot_name"
             continue
           fi
           recover_collection_snapshot "$host" "$collection_name" "$snapshot_name"
         done
       done < $QDRANT_SNAPSHOTS_FILE
+
+      _printf "recovery summary: %d/%d snapshots recovered, %d failed.\n" "$recovered_count" "$snapshot_count" "$fail_recovered_count"
+      recovered_count=0
+      fail_recovered_count=0
+      snapshot_count=0
     }
 
     # gets the collection aliases from a qdrant node and appends it to $QDRANT_COLLECTION_ALIASES file
@@ -354,16 +451,21 @@ data:
           exit 1
       fi
 
-      jq -c '.result.aliases[]' <<< "$result" | while read -r item; do
+      _result=$(jq -c '.result.aliases[]' <<< "$result")
+
+      colla_count=0
+      while read -r item; do
         local collection_name=""
         local alias_name=""
         collection_name=$(jq -r '.collection_name' <<< "$item")
         alias_name=$(jq -r '.alias_name' <<< "$item")
         printf '%s,%s\n' "$collection_name" "$alias_name" >> $QDRANT_COLLECTION_ALIASES
-      done
+        ((colla_count++))
+      done <<< "$_result"
 
-      _printf "[%s] completed fetching collection aliases!\n" "$host"
+      _printf "%s file updated, found %d collection alias(es)!\n" "$QDRANT_COLLECTION_ALIASES" "$colla_count"
 
+      colla_count=0
     }
 
     # restores collection alias to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
@@ -392,10 +494,12 @@ data:
       status=$(jq -r '.status' <<< "$result")
 
       if [ "$status" != "ok" ]; then
-          _printf "[%s] failed to fetch collection alias %s:%s, got this instead %s\n" "$host" "$collection_name" "$alias_name" "${result//[[:space:]]/}"
-          return
+        ((failed_recovered_colla_count++))
+        _printf "[%s] failed to fetch collection alias %s:%s, got this instead %s\n" "$host" "$collection_name" "$alias_name" "${result//[[:space:]]/}"
+        return
       fi
 
+      ((recovered_colla_count++))
       printf '%s,%s,%s\n' "$collection_name" "$alias_name" "$status" >> $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
     }
 
@@ -405,12 +509,16 @@ data:
           get_collection_aliases
       fi
 
-      local host="${restore_hosts[0]}"
-
       if [ ! -f "$QDRANT_COLLECTION_ALIASES" ]; then
           _printf "[%s] collection aliases do not exist on source!\n" "$host"
           return
       fi
+
+      colla_count=$(wc -l < $QDRANT_COLLECTION_ALIASES)
+      recovered_colla_count=0
+      failed_recovered_colla_count=0
+
+      local host="${restore_hosts[0]}"
 
       touch $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 
@@ -429,7 +537,11 @@ data:
         recover_collection_alias "$collection_name" "$alias_name"
       done < $QDRANT_COLLECTION_ALIASES
 
-      _printf "[%s] completed recovering collection aliases!\n" "$host"
+      _printf "recovery summary: %d/%d collection aliases recovered, %d failed.\n" "$recovered_colla_count" "$colla_count" "$failed_recovered_colla_count"
+
+      colla_count=0
+      recovered_colla_count=0
+      failed_recovered_colla_count=0
     }
 
     # removes state files with(out) backup
@@ -563,21 +675,48 @@ data:
         get_peers_from_cluster_info
       fi
 
-      if [ "$command" = "get_coll" ]; then
+      if [ "$command" = "get_coll" ] || [ "$command" = "get_collection" ]; then
         get_collections
-      elif [ "$command" = "get_snap" ]; then
-        generate_snapshot_file_from_instance
-      elif [ "$command" = "get_snap_s3" ]; then
+      elif [ "$command" = "get_snap" ] || [ "$command" = "get_snapshot" ]; then
+        this_month="$(date '+%Y-%m')"
+        local DATETIME="$this_month"
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --datetime) DATETIME="$2"; shift 2 ;;
+                -h|--help) usage "$command"; exit 0 ;;
+                *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
+            esac
+        done
+        generate_snapshot_file_from_instance "$DATETIME"
+      elif [ "$command" = "get_snap_s3" ] || [ "$command" = "get_snapshot_s3" ]; then
         setup_s3_storage
-        generate_snapshot_file_from_s3
-      elif [ "$command" = "create_snap" ]; then
+        this_month="$(date '+%Y-%m')"
+        local DATETIME="$this_month"
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --datetime) DATETIME="$2"; shift 2 ;;
+                -h|--help) usage "$command"; exit 0 ;;
+                *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
+            esac
+        done
+        generate_snapshot_file_from_s3 "$DATETIME"
+      elif [ "$command" = "create_snap" ] || [ "$command" = "create_snapshot" ]; then
         create_collection_snapshot
       elif [ "$command" = "recover_snap" ]; then
         setup_s3_storage
-        recover_collection_snapshots
-      elif [ "$command" = "get_colla" ]; then
+        this_month="$(date '+%Y-%m')"
+        local DATETIME="$this_month"
+        while [[ $# -gt 0 ]]; do
+            case $1 in
+                --datetime) DATETIME="$2"; shift 2 ;;
+                -h|--help) usage "$command"; exit 0 ;;
+                *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
+            esac
+        done
+        recover_collection_snapshots "$DATETIME"
+      elif [ "$command" = "get_colla" ] || [ "$command" = "get_collection_alias" ]; then
         get_collection_aliases
-      elif [ "$command" = "recover_colla" ]; then
+      elif [ "$command" = "recover_colla" ] || [ "$command" = "recover_collection_alias" ]; then
         recover_collection_aliases
       elif [ "$command" = "reset" ]; then
         local BACKUP=false
