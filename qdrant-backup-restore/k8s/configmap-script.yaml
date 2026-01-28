@@ -189,11 +189,13 @@ data:
 
       _printf "[%s] fetching snapshots for %s collection.\n" "$host" "$collection_name"
 
+      local key="$QDRANT_S3_BUCKET_NAME/snapshots/$collection_name"
+
       local result=""
-      result=$(mc ls -r --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/snapshots/$collection_name/")
+      result=$(mc ls -r --json "$QDRANT_S3_ALIAS/$key")
 
       if [ "$result" = "" ]; then
-         _printf "[%s] snapshots for %s collection not found! ...skipping\n" "$host" "$collection_name"
+         _printf "[%s] snapshots for %s collection not found in s3 path: %s ...skipping!\n" "$host" "$collection_name" "$key"
          return
       fi
 
@@ -259,13 +261,18 @@ data:
       local collection_name="$1"
       local snapshot_name="$2"
       local key="snapshots/$collection_name/$snapshot_name"
+
       local result=""
+      if result=$(mc share download --expire "$QDRANT_S3_LINK_EXPIRY_DURATION" --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key"); then
+          _printf "succesfully obtained presigned s3 url for %s\n" "$key"
+      fi
+
       local status=""
-      result=$(mc share download --expire "$QDRANT_S3_LINK_EXPIRY_DURATION" --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key" )
       status=$(jq -r '.status?' <<< "$result")
       if [ "$status" != "success" ]; then
           _printf "[%s] failed to fetch snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
       fi
+
       s3_presigned_url=$(jq -r '.share' <<< "$result")
     }
 
