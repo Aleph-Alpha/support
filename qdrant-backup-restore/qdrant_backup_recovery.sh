@@ -252,13 +252,18 @@ get_s3_url() {
   local collection_name="$1"
   local snapshot_name="$2"
   local key="snapshots/$collection_name/$snapshot_name"
+
   local result=""
+  if result=$(mc share download --expire "$QDRANT_S3_LINK_EXPIRY_DURATION" --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key"); then
+      _printf "succesfully obtained presigned s3 url for %s\n" "$key"
+  fi
+
   local status=""
-  result=$(mc share download --expire "$QDRANT_S3_LINK_EXPIRY_DURATION" --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key" )
   status=$(jq -r '.status?' <<< "$result")
   if [ "$status" != "success" ]; then
       _printf "[%s] failed to fetch snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
   fi
+
   s3_presigned_url=$(jq -r '.share' <<< "$result")
 }
 
