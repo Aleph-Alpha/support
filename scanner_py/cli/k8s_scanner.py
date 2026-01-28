@@ -591,6 +591,48 @@ def generate_summary(
     return summary
 
 
+def calculate_cve_categories(
+    critical: int,
+    high: int,
+    medium: int,
+    low: int,
+    min_cve_level: str,
+) -> Tuple[int, int]:
+    """
+    Calculate unaddressed and irrelevant CVE counts based on min_cve_level.
+    
+    Args:
+        critical: Count of CRITICAL CVEs
+        high: Count of HIGH CVEs
+        medium: Count of MEDIUM CVEs
+        low: Count of LOW CVEs
+        min_cve_level: Minimum CVE level considered relevant (CRITICAL, HIGH, MEDIUM, LOW)
+    
+    Returns:
+        Tuple of (unaddressed_count, irrelevant_count)
+    """
+    min_level = min_cve_level.upper()
+    
+    if min_level == "CRITICAL":
+        unaddressed = critical
+        irrelevant = high + medium + low
+    elif min_level == "HIGH":
+        unaddressed = critical + high
+        irrelevant = medium + low
+    elif min_level == "MEDIUM":
+        unaddressed = critical + high + medium
+        irrelevant = low
+    elif min_level == "LOW":
+        unaddressed = critical + high + medium + low
+        irrelevant = 0
+    else:
+        # Default to MEDIUM if invalid
+        unaddressed = critical + high + medium
+        irrelevant = low
+    
+    return (unaddressed, irrelevant)
+
+
 def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     """
     Generate CVE analysis summary in Markdown format for GitHub Actions.
@@ -654,10 +696,11 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
             low = analysis.get("low", 0)
             triaged = analysis.get("triaged", 0)
 
-            # Calculate categories
-            unaddressed = critical + high
+            # Calculate categories based on min_cve_level
+            unaddressed, irrelevant = calculate_cve_categories(
+                critical, high, medium, low, min_cve_level
+            )
             addressed = triaged
-            irrelevant = medium + low
 
             # Get status
             has_triage = triaged > 0  # CVEs were actually triaged/addressed
@@ -798,12 +841,12 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
             low = analysis.get("low", 0)
             triaged = analysis.get("triaged", 0)
 
-            # Unaddressed = Critical + High (above min_cve_level)
-            unaddressed = critical + high
+            # Calculate categories based on min_cve_level
+            unaddressed, irrelevant = calculate_cve_categories(
+                critical, high, medium, low, min_cve_level
+            )
             # Addressed = triaged CVEs
             addressed = triaged
-            # Irrelevant = Medium + Low (below min_cve_level HIGH)
-            irrelevant = medium + low
 
             # Get triage and chainguard status
             has_triage = triaged > 0  # CVEs were actually triaged/addressed
