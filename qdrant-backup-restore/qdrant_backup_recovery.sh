@@ -29,7 +29,7 @@ _curl() {
 
   # Capture both response body and HTTP status code
   local response
-  response=$(curl -sS -w "\n%{http_code}" \
+  response=$(curl -sSf -w "\n%{http_code}" \
     --max-time "${CURL_TIMEOUT}" \
     --connect-timeout 30 \
     -X "${method}" \
