@@ -49,7 +49,7 @@ spec:
             - name: QDRANT_S3_ENDPOINT_URL
               value: "http://minio.default.svc.cluster.local:9000" #"https://object.storage.eu01.onstackit.cloud"
             - name: QDRANT_RESTORE_HOSTS
-              value: "http://qdrant-0.qdrant-headless:6333"
+              value: ""
             - name: GET_PEERS_FROM_CLUSTER_INFO
               value: "true"
             - name: CURL_TIMEOUT

@@ -7,5 +7,5 @@ metadata:
     component: script
 data:
   snapshots: |
-    host,_default_256,_default_256-5528114518172461-2026-01-29-11-44-26.snapshot
-    host,midlib,midlib-567156434043892-2026-01-29-11-44-27.snapshot
+    ,_default_256,_default_256-5528114518172461-2026-01-29-11-44-26.snapshot
+    ,midlib,midlib-567156434043892-2026-01-29-11-44-27.snapshot

@@ -16,12 +16,12 @@ Ensure that Qdrant is configured to use S3 object store for snapshot storage. Mo
 Important steps to note:
 
 - **Create** S3 bucket.
-  - Here you can use object storage service providers like stackit, AWS e.t.c or a self hosted solution like [minio](https://www.min.io/).
+  - Here you can use object storage service providers like StackIt, AWS e.t.c or a self hosted solution like [minio](https://www.min.io/).
   - Acquire the credentials to push/pull from the S3 bucket.
 
-- Add the credentials as a kubernetes secret to the cluster.
-  - Using the Kubernetes secret template provider [here](config-secret.yaml) update the values accordngly.
-    - For Qdrant instances without API key and intances leave the secret as is otherwise update it.
+- Add the S3 credentials as a kubernetes secret to the cluster.
+  - Using the Kubernetes secret template provided [here](config-secret.yaml) update the values accordngly.
+    - For Qdrant instances without API key leave the secret as is otherwise update it.
     - Deploy the secret to the cluster.
 
       ````bash
@@ -31,8 +31,8 @@ Important steps to note:
 - Configure Qdrant Deployment To Use S3 snapshot storage.
   - Using the [Qdrant Helm chart](https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant) update the following configurations;
     - Add the following environment variables in the `env:` config of your the values.yaml.
-      - The `secretKeyRef.name` is the name of the kubernetes secret you deployed on the previous step you can get in from the `metadata.name` section of the file.
-      - Update `QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL` with the endpoint url of your s3 host e.g. for stackit its `https://object.storage.eu01.onstackit.cloud` .
+      - The `secretKeyRef.name` is the name of the kubernetes secret you deployed on the previous step you can get the name from the `metadata.name` section of the secret file.
+      - Update `QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL` with the endpoint url of your s3 host e.g.`https://object.storage.eu01.onstackit.cloud`,`http://minio.default.svc.cluster.local:9000` .
 
       ````yaml
       env:
@@ -57,7 +57,7 @@ Important steps to note:
             value: "s3"
       ````
 
-(Re)Deploy the Qdrant cluster.
+(Re)Deploy the Qdrant cluster! This should trigger a rolling update on the qdrant nodes.
 
 ### Scripts Setup
 
@@ -65,16 +65,20 @@ Important steps to note:
 
 - In the kubernetes cluster there should be kubernetes secret with the following [template](config-secret.yaml) deployed.
 - A healthy Qdrant instance.
-- Create a config-map manifest with the folloing [template](configmap-script.yaml).
+- A config-map manifest with the following [template](configmap-script.yaml).
+  - Create the config-map if its missing and deploy.
+
+    ```bash
+    kubectl -n <namespace> apply -f config-secret.yaml
+    ```
+
   - Unless required modify the `.metadata` fields as needed.
 
-##### Backup
+**Backup Configuration**
 
 - Create `Backup` job or cronjob with the job template [here](backup-job.yaml) or cronjob template [here](backup-cronjob.yaml).
 
-**Configuration**
-
-Update the following environment varibles accordingly;
+Update the following environment varibles in your copy of `backup-cronjob.yaml` accordingly;
 
 1. Update the `secretKeyRef.name` on all `env:` entries under `env.[*].valueFrom` to the name of the kubernetes secrets deployed when configuring Qdrant.
 2. Update the `QDRANT_SOURCE_HOSTS` to the kubernetes service domain of the Qdrant deployment.
@@ -90,10 +94,10 @@ Update the following environment varibles accordingly;
      kubectl get services -lapp=qdrant
      ```
 
-   - Pick the headless service. i.e `qdrant-headless`, the `QDRANT_SOURCE_HOSTS` now becomes `http://qdrant-headless:6333`.
+   - Pick the headless service. i.e `qdrant-headless`, the `QDRANT_SOURCE_HOSTS` now becomes `http://qdrant-headless:6333` or `qdrant-headless.<namespace>.svc.cluster.local` if its in another namespace.
 3. Update the `QDRANT_RESTORE_HOSTS` to `""` empty since in backup the restoration target is not needed.
 4. `GET_PEERS_FROM_CLUSTER_INFO` should be `true` to discover qdrant cluster peers when backing up collections.
-5. `CURL_TIMEOUT` is set at `3000` seconds. This is the max time curl will wait for request to complete. Its increased in scenarios where backup take a while.
+5. `CURL_TIMEOUT` is set at `3000` seconds. This is the max time curl will wait for request to complete. Its increased in scenarios where backup takes a while.
 6. `QDRANT_S3_LINK_EXPIRY_DURATION` is set at `3600`. This is the duration that an s3 presigned url will be active. The url is used during the recovery process.
 7. `QDRANT_WAIT_ON_TASK` is set as `true`. This configuation make backup process synchronous meaning 'wait for snapshot process to finish successfully before moving on'. Its used during backup and recovery.
 
@@ -109,11 +113,9 @@ Check the logs
 kubectl -n <namespace> logs -lapp=qdrant-backup -f
 ```
 
-##### Restore
+**Restore Configuration**
 
 - Create `Restore` job  with the job template [here](restore-job.yaml).
-
-**Configuration**
 
 Update the following environment varibles accordingly;
 
@@ -121,10 +123,10 @@ Update the following environment varibles accordingly;
 2. Update the `QDRANT_SOURCE_HOSTS` to the kubernetes service domain of the source Qdrant deployment.
 3. Update the `QDRANT_RESTORE_HOSTS` to the target qdrant cluster service domain.
 4. `GET_PEERS_FROM_CLUSTER_INFO` should be `true` to discover qdrant cluster peers when backing up collections.
-5. `CURL_TIMEOUT` is set at `3000` seconds. This is the max time curl will wait for request to complete. Its increased in scenarios where backup take a while.
+5. `CURL_TIMEOUT` is set at `3000` seconds. This is the max time curl will wait for request to complete. Its increased in scenarios where restoration takes a while.
 6. `QDRANT_S3_LINK_EXPIRY_DURATION` is set at `3600`. This is the duration that an s3 presigned url will be active. The url is used during the recovery process.
-7. `QDRANT_WAIT_ON_TASK` is set as `true`. This configuation make backup process synchronous meaning 'wait for snapshot process to finish successfully before moving on'. Its used during backuo and recovery.
-8. `QDRANT_SNAPSHOT_DATETIME_FILTER` is empty. Setting this filter out snapshot/backups belonging to a certain date and time using glob pattern matching. e.g "2026-01-29".
+7. `QDRANT_WAIT_ON_TASK` is set as `true`. This configuation make restoration process synchronous meaning 'wait for snapshot process to finish successfully before moving on'. Its used during backup and recovery.
+8. `QDRANT_SNAPSHOT_DATETIME_FILTER` is empty. Setting this filters out snapshot/backups belonging to a certain date and time using glob pattern matching. e.g `"2026-01-29"`.
 
 Deploy the job!
 
@@ -175,7 +177,7 @@ see yaml snippet below;
           sizeLimit: 100Mi
 ```
 
-## Files
+## Contributor Configurations
 
 ### `configmap-script.yaml`
 
@@ -187,12 +189,8 @@ A Kubernetes ConfigMap manifest that stores the `qdrant_backup_recovery.sh` scri
 
 A utility script that automatically updates the ConfigMap with the latest version of the backup/restore script from the source file.
 
-## Contributor Configurations
-
 - **yq** (YAML processor, version 4.0 or higher)
 - **Bash** (version 4.0 or higher)
-
-## Usage
 
 ### Updating the ConfigMap
 
