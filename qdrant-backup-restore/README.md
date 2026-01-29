@@ -43,8 +43,8 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `QDRANT_API_KEY` | Qdrant API key for authentication | `your-api-key-here` |
-| `QDRANT_SOURCE_HOSTS` | Comma-separated list of source Qdrant hosts | `http://qdrant-1:6333,http://qdrant-2:6333` |
-| `QDRANT_RESTORE_HOSTS` | Comma-separated list of destination Qdrant hosts | `http://qdrant-new:6333` |
+| `QDRANT_SOURCE_HOSTS` | Comma-separated list of source Qdrant hosts | `http://localhost:6333` |
+| `QDRANT_RESTORE_HOSTS` | Comma-separated list of destination Qdrant hosts | `http://localhost:6334` |
 | `QDRANT_S3_ENDPOINT_URL` | S3-compatible storage endpoint URL | `http://minio:9000` |
 | `QDRANT_S3_ACCESS_KEY_ID` | S3 access key ID | `your-access-key` |
 | `QDRANT_S3_SECRET_ACCESS_KEY` | S3 secret access key | `your-secret-key` |
@@ -53,12 +53,13 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | `CURL_TIMEOUT` | Timeout for curl operations in seconds, set to 30mins  | `1800` (30mins) |
 | `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned URL expiry duration in seconds | `3600` (1 hour) |
 | `QDRANT_WAIT_ON_TASK` | Waits for changes to happen, used when creating snapshots and restoring snapshots | `true` |
+| `QDRANT_SNAPSHOT_DATETIME_FILTER` | Specify the datea and time filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!! | `` |
 
 ### Example .env File
 
 ```bash
 export QDRANT_API_KEY="your-qdrant-api-key"
-export QDRANT_SOURCE_HOSTS="http://qdrant-source-1:6333,http://qdrant-source-2:6333"
+export QDRANT_SOURCE_HOSTS="http://qdrant-source-1:6333"
 export QDRANT_RESTORE_HOSTS="http://qdrant-dest:6333"
 export QDRANT_S3_ENDPOINT_URL="http://minio.default.svc.cluster.local:9000"
 export QDRANT_S3_ACCESS_KEY_ID="minioadmin"
