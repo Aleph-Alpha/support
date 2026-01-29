@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: qdrant-backup-restore
+  name: qdrant-backup
   labels:
-    app: qdrant-backup-restore
+    app: qdrant-backup
 spec:
   # Cron schedule (min hour day month weekday)
   # Example: "0 0 */7 * 0" → At 00:00 on every 7th day-of-month if it's on Sunday.
@@ -27,11 +27,11 @@ spec:
       template:
         metadata:
           labels:
-            app: qdrant-backup-restore
+            app: qdrant-backup
         spec:
           restartPolicy: OnFailure     # Jobs should usually be Never or OnFailure
           containers:
-            - name: qdrant-bkp-restore
+            - name: qdrant-backup
               image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
               imagePullPolicy: IfNotPresent
               command:
@@ -63,7 +63,7 @@ spec:
                 - name: QDRANT_SOURCE_HOSTS
                   value: "http://qdrant-headless:6333"
                 - name: QDRANT_S3_ENDPOINT_URL
-                  value: "<s3-endpoint-url>"
+                  value: "http://minio.default.svc.cluster.local:9000"
                 - name: QDRANT_RESTORE_HOSTS
                   value: "http://qdrant-0.qdrant-headless:6333"
                 - name: GET_PEERS_FROM_CLUSTER_INFO
