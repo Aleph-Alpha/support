@@ -21,6 +21,7 @@ data:
     QDRANT_S3_ALIAS="qdrant_s3_snaphost"
     QDRANT_S3_LINK_EXPIRY_DURATION="${QDRANT_S3_LINK_EXPIRY_DURATION:-3600s}"
 
+    declare -a peer_uri_map;
     # printf wrapper helper
     _printf() {
       local ts
@@ -80,9 +81,10 @@ data:
 
       local host="${source_hosts[0]}"
 
-      collection_count=0
+      collections_count=0
 
       result=$(_curl GET "$host/collections" --header "api-key: $QDRANT_API_KEY")
+
       status=$(jq -r '.status' <<< "$result")
       if [ "$status" != "ok" ]; then
           _printf "[%s] failed to get collections, got this instead %s\n" "$host" "${result//[[:space:]]/}"
@@ -91,50 +93,113 @@ data:
 
       track_collection "$host" "$result"
 
-      _printf "%s file updated, found %d collections!\n" "$QDRANT_COLLECTIONS_FILE" "$collection_count"
+      _printf "%s file updated, found %d collection(s)!\n" "$QDRANT_COLLECTIONS_FILE" "$collections_count"
+
+      collections_count=0
     }
 
     # appends collection from a qdrant node to $QDRANT_COLLECTIONS_FILE
     track_collection(){
       local host="$1"
       local result="$2"
-      _result=$(jq -c '.result.collections[]' <<< "$result")
+      _result=$(jq -c '.result.collections // [] | .[]' <<< "$result")
 
       while read -r item; do
         local collection_name=""
         collection_name=$(jq -r '.name' <<< "$item")
-        ((collection_count++))
+        ((collections_count=collections_count+1))
         printf '%s,%s\n' "$host" "$collection_name" >> $QDRANT_COLLECTIONS_FILE
       done <<< "$_result"
     }
 
+    create_snapshot_from_peer() {
+      local host="$1"
+      local collection_name="$2"
+      local result=""
+      result=$(_curl POST "$host/collections/$collection_name/snapshots?wait=$QDRANT_WAIT_ON_TASK" --header "api-key: $QDRANT_API_KEY")
+
+      status=$(jq -r '.status' <<< "$result")
+      snapshot_name=$(jq -r '.result.name // "unknown"' <<< "$result")
+
+      if [ "$status" = "ok" ]; then
+        ((success_snapshot_count=success_snapshot_count+1))
+        _printf '[%s] Snapshot %s for %s collection created successfully\n' "$host" "$snapshot_name" "$collection_name"
+      elif [ "$status" = "accepted" ]; then
+        ((success_snapshot_count=success_snapshot_count+1))
+        _printf '[%s] Snapshot %s for %s collection accepted successfully\n' "$host" "$snapshot_name" "$collection_name"
+      else
+        ((failed_snapshot_count=failed_snapshot_count+1))
+        _printf '[%s] Snapshot %s for %s collection failed with %s\n' "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
+      fi
+
+      printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
+    }
+
     # creates and appends created collection snapshot from a qdrant node to $QDRANT_SNAPSHOTS_FILE
     track_created_collection_snapshot() {
-        local host="$1"
-        local collection_name="$2"
+        local host="${source_hosts[0]}"
+        local collection_name="$1"
         local result=""
         local status=""
         local snapshot_name=""
+        local collection_details_result=""
+        local local_shards_length=0
+        local remote_shards_length=0
+        local remote_shards_result=""
+
 
         _printf '[%s] creating snapshot for %s collection\n' "$host" "$collection_name"
 
-        result=$(_curl POST "$host/collections/$collection_name/snapshots?wait=$QDRANT_WAIT_ON_TASK" --header "api-key: $QDRANT_API_KEY")
+        collection_details_result=$(_curl GET "$host/collections/$collection_name" --header "api-key: $QDRANT_API_KEY")
+        status=$(jq -r '.result?.status' <<< "$collection_details_result")
 
-        status=$(jq -r '.status' <<< "$result")
-        snapshot_name=$(jq -r '.result.name // "unknown"' <<< "$result")
-
-        if [ "$status" = "ok" ]; then
-          ((success_snapshot_count++))
-          _printf '[%s] Snapshot %s for %s collection created successfully\n' "$host" "$snapshot_name" "$collection_name"
-        elif [ "$status" = "accepted" ]; then
-          ((success_snapshot_count++))
-          _printf '[%s] Snapshot %s for %s collection accepted successfully\n' "$host" "$snapshot_name" "$collection_name"
-        else
-          ((failed_snapshot_count++))
-          _printf '[%s] Snapshot %s for %s collection failed with %s\n' "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
+        if [ "$status" != "green" ]; then
+          _printf '[%s] snapshot for %s collection will be created with %s status review https://qdrant.tech/documentation/concepts/collections/#collection-info.\n' "$host" "$collection_name" "$status"
         fi
 
-        printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
+        if [ "$GET_PEERS_FROM_CLUSTER_INFO" = "true" ]; then
+          local peer_id=0
+          local peer_url=""
+          cluster_result=$(_curl GET "$host/collections/$collection_name/cluster" --header "api-key: $QDRANT_API_KEY")
+
+          local_shards_length=$(jq -c '(.result.local_shards // []) | length' <<< "$cluster_result")
+
+          peer_id=$(jq -r '.result.peer_id // "unknown"' <<< "$cluster_result")
+
+          if [ "$peer_id" = "unknown" ]; then
+            peer_url="$host"
+          else
+            peer_url=${peer_uri_map[$peer_id]}
+          fi
+
+          if [ "$local_shards_length" -gt 0 ]; then
+            _printf "[%s] found %d local shard(s) for %s collection on peer, will create a snapshot.\n" "$peer_url" "$local_shards_length" "$collection_name"
+            create_snapshot_from_peer "$peer_url" "$collection_name"
+          else
+            _printf "[%s] could not find local shard(s) for %s collection on peer.\n" "$peer_url" "$collection_name"
+          fi
+
+          remote_shards_length=$(jq -c '(.result.remote_shards // []) | length' <<< "$cluster_result")
+
+          remote_shards_result=$(jq -c '.result.remote_shards // [] | .[]' <<< "$cluster_result")
+
+          if [ "$remote_shards_length" -gt 0 ]; then
+            _printf "[%s] found %d remote shard(s) for %s collection on peer, will create a snapshot.\n" "$peer_url" "$remote_shards_length" "$collection_name"
+            while read -r item; do
+              peer_id=$(jq -r '.peer_id' <<< "$item")
+              peer_url=${peer_uri_map[$peer_id]}
+              create_snapshot_from_peer "$peer_url" "$collection_name"
+            done <<< "$remote_shards_result"
+          else
+            _printf "[%s] could not find remote shard(s) for %s collection on peer.\n" "$peer_url" "$collection_name"
+          fi
+        else
+
+          for _host in "${source_hosts[@]}"; do
+            create_snapshot_from_peer "$_host" "$collection_name"
+          done
+
+        fi
 
     }
 
@@ -149,28 +214,17 @@ data:
         exit 0
       fi
 
-      collection_count=$(wc -l < $QDRANT_COLLECTIONS_FILE)
-      source_hosts_len=${#source_hosts[@]}
-      if [[ ${collection_count//[[:space:]]/} =~ ^-?[0-9]+$ ]]; then
-        _collection_count=$((collection_count))
-      fi
-
-      snapshot_count=$((_collection_count * source_hosts_len))
       success_snapshot_count=0
       failed_snapshot_count=0
 
+      while IFS= read -r line; do
+        IFS=',' read -ra cols <<< "$line"
+        local collection_name="${cols[1]}"
+        track_created_collection_snapshot "$collection_name"
+      done < $QDRANT_COLLECTIONS_FILE
 
-      for host in "${source_hosts[@]}"; do
-        while IFS= read -r line; do
-          IFS=',' read -ra cols <<< "$line"
-          local collection_name="${cols[1]}"
-          track_created_collection_snapshot "$host" "$collection_name"
-        done < $QDRANT_COLLECTIONS_FILE
-      done
+      _printf "snapshot creation summary: %d created, %d failed!\n" "$success_snapshot_count" "$failed_snapshot_count"
 
-      _printf "snapshot creation summary: %d/%d created, %d failed!\n" "$success_snapshot_count" "$snapshot_count" "$failed_snapshot_count"
-
-      snapshot_count=0
       failed_snapshot_count=0
       success_snapshot_count=0
     }
@@ -197,25 +251,25 @@ data:
           return
       fi
 
-      resultLength=$(jq -c '.result | length? // 0' <<< "$result")
+      resultLength=$(jq -c '(.result // []) | length' <<< "$result")
 
-      if [ "$resultLength" = 0 ]; then
+      if [ "$resultLength" -eq 0 ]; then
           _printf "[%s] could not find snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
           return
       fi
 
-      item=$(jq -c '.result[0]' <<< "$result")
+      item=$(jq -c '.result[0] // empty' <<< "$result")
 
-      _result=$(jq -c '.result[]' <<< "$result")
+      _result=$(jq -c '.result // [] | .[]' <<< "$result")
       while read -r item; do
         local snapshot_name=""
         snapshot_name=$(jq -r '.name' <<< "$item")
 
-        if [[ "$snapshot_name" != *"$datetime"* ]]; then
+        if [[ -n "$datetime" && "$snapshot_name" != *"$datetime"* ]]; then
           continue
         fi
 
-        ((snapshot_count++))
+        ((snapshot_count=snapshot_count+1))
 
         printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
       done <<< "$_result"
@@ -264,11 +318,11 @@ data:
         local snapshot_name=""
         snapshot_name=$(jq -r '.key' <<< "$item")
 
-        if [[ "$snapshot_name" != *"$datetime"* ]]; then
-            continue
+        if [[ -n "$datetime" && "$snapshot_name" != *"$datetime"* ]]; then
+          continue
         fi
 
-        ((snapshot_count++))
+        ((snapshot_count=snapshot_count+1))
 
         printf '%s,%s,%s\n' "$host" "$collection_name" "$snapshot_name" >> $QDRANT_SNAPSHOTS_FILE
       done <<< "$_result"
@@ -285,11 +339,6 @@ data:
       local datetime="${1:-}"
       if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
           get_collections
-      fi
-
-    # clear to avoid issues where instance and more snapshots than whats stored on s3
-      if [ -f "$QDRANT_SNAPSHOTS_FILE" ]; then
-          rm "$QDRANT_SNAPSHOTS_FILE"
       fi
 
       snapshot_count=0
@@ -379,13 +428,13 @@ data:
         status=$(jq -r '.status' <<< "$result")
 
         if [ "$status" = "ok" ]; then
-          ((recovered_count++))
+          ((recovered_count=recovered_count+1))
           _printf "[%s] successfully recovered %s snapshot of %s collection\n" "$host" "$snapshot_name" "$collection_name"
           printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE
         elif [ "$status" = "accepted" ]; then
           _printf "[%s] successfully accepted recovery of snapshot %s for %s collection\n" "$host" "$snapshot_name" "$collection_name"
         else
-          ((fail_recovered_count++))
+          ((fail_recovered_count=fail_recovered_count+1))
           _printf "[%s] failed to recover %s snapshot of %s collection, got this %s instead\n" "$host" "$snapshot_name" "$collection_name" "${result//[[:space:]]/}"
           printf '%s,%s,%s\n' "$host" "$snapshot_name" "$status" >> $QDRANT_FAILED_RECOVERY_FILE
         fi
@@ -395,11 +444,9 @@ data:
     recover_collection_snapshots(){
       local datetime="${1:-}"
 
-      generate_snapshot_file_from_s3 "$datetime"
 
-      if [ ! -f $QDRANT_SNAPSHOTS_FILE ]; then
-        _printf "non error exit since file does not %s exist.\n" "$QDRANT_SNAPSHOTS_FILE"
-        exit 0
+      if [[ ! -s  $QDRANT_SNAPSHOTS_FILE ]]; then
+        generate_snapshot_file_from_s3 "$datetime"
       fi
 
       touch "$QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE"
@@ -418,7 +465,7 @@ data:
           history_count=$(grep -cw "$snapshot_name,ok" "$QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE" || true)
 
           if [ "$history_count" -gt 0 ]; then
-            ((recovered_count++))
+            ((recovered_count=recovered_count+1))
             _printf "[%s] snapshot %s already recovered, skipping!\n" "$host" "$snapshot_name"
             continue
           fi
@@ -451,21 +498,21 @@ data:
           exit 1
       fi
 
-      _result=$(jq -c '.result.aliases[]' <<< "$result")
+      local colla_length=0
+      colla_length=$(jq -c '(.result.aliases // []) | length' <<< "$result")
 
-      colla_count=0
-      while read -r item; do
-        local collection_name=""
-        local alias_name=""
-        collection_name=$(jq -r '.collection_name' <<< "$item")
-        alias_name=$(jq -r '.alias_name' <<< "$item")
-        printf '%s,%s\n' "$collection_name" "$alias_name" >> $QDRANT_COLLECTION_ALIASES
-        ((colla_count++))
-      done <<< "$_result"
+      if [ "$colla_length" -gt 0 ]; then
+        _result=$(jq -c '.result.aliases // [] | .[]' <<< "$result")
+        while read -r item; do
+          local collection_name=""
+          local alias_name=""
+          collection_name=$(jq -r '.collection_name' <<< "$item")
+          alias_name=$(jq -r '.alias_name' <<< "$item")
+          printf '%s,%s\n' "$collection_name" "$alias_name" >> $QDRANT_COLLECTION_ALIASES
+        done <<< "$_result"
+      fi
 
-      _printf "%s file updated, found %d collection alias(es)!\n" "$QDRANT_COLLECTION_ALIASES" "$colla_count"
-
-      colla_count=0
+      _printf "%s file updated,found %d collection alias(es)!\n" "$QDRANT_COLLECTION_ALIASES" "$colla_length"
     }
 
     # restores collection alias to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
@@ -494,12 +541,12 @@ data:
       status=$(jq -r '.status' <<< "$result")
 
       if [ "$status" != "ok" ]; then
-        ((failed_recovered_colla_count++))
+        ((failed_recovered_colla_count=failed_recovered_colla_count+1))
         _printf "[%s] failed to fetch collection alias %s:%s, got this instead %s\n" "$host" "$collection_name" "$alias_name" "${result//[[:space:]]/}"
         return
       fi
 
-      ((recovered_colla_count++))
+      ((recovered_colla_count=recovered_colla_count+1))
       printf '%s,%s,%s\n' "$collection_name" "$alias_name" "$status" >> $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
     }
 
@@ -566,11 +613,18 @@ data:
     get_peers_from_cluster_info() {
       local host="${source_hosts[0]}"
       result=$(_curl GET "$host/cluster" --header "api-key: $QDRANT_API_KEY")
-      source_hosts=()
-      items=$(jq -r '.result.peers[].uri' <<< "$result")
-      while read -r item; do
-        source_hosts+=("${item%??}3")
-      done <<< "$items"
+      entries=$(jq -r '.result.peers' <<< "$result")
+      peer_uri_entries=$(jq -r 'to_entries[] | "\(.key) \(.value.uri)"' <<< "$entries")
+
+      while read -r id uri; do
+        local _uri="${uri%?????}6333"
+        peer_uri_map["$id"]="$_uri"
+        _printf "registered peer %s with %s uri\n" "$id" "$_uri"
+      done <<< "$peer_uri_entries"
+
+      if [ ${#peer_uri_map[@]} -eq 0 ]; then
+        _printf "no registered host %s exiting" "$host"
+      fi
     }
 
     # initialize minio client
@@ -602,7 +656,6 @@ data:
             _printf "Missing required dependencies: %s. Please install them and try again.\n" "${missing_deps[*]}"
             exit 1
         fi
-
     }
 
     usage() {
@@ -626,16 +679,17 @@ data:
       -h, --help            Show this help message and exit
 
     Environment variables:
-      QDRANT_API_KEY              - Qdrant API key (required)
-      QDRANT_SOURCE_HOSTS         - Comma-separated source hosts (required)
-      QDRANT_RESTORE_HOSTS        - Comma-separated restore hosts (required)
-      QDRANT_S3_ENDPOINT_URL      - S3 endpoint URL (for S3 operations)
-      QDRANT_S3_ACCESS_KEY_ID     - S3 access key ID (for S3 operations)
-      QDRANT_S3_SECRET_ACCESS_KEY - S3 secret access key (for S3 operations)
-      QDRANT_S3_BUCKET_NAME       - S3 bucket name (for S3 operations)
-      GET_PEERS_FROM_CLUSTER_INFO - Set to "true" to auto-discover peers
-      CURL_TIMEOUT                - Curl timeout in seconds (default: 300)
-      QDRANT_WAIT_ON_TASK         - Waits for async tasks to finish
+      QDRANT_API_KEY                  - Qdrant API key
+      QDRANT_SOURCE_HOSTS             - Comma-separated source hosts (required)
+      QDRANT_RESTORE_HOSTS            - Comma-separated restore hosts (required)
+      QDRANT_S3_ENDPOINT_URL          - S3 endpoint URL (for S3 operations)
+      QDRANT_S3_ACCESS_KEY_ID         - S3 access key ID (for S3 operations)
+      QDRANT_S3_SECRET_ACCESS_KEY     - S3 secret access key (for S3 operations)
+      QDRANT_S3_BUCKET_NAME           - S3 bucket name (for S3 operations)
+      GET_PEERS_FROM_CLUSTER_INFO     - Set to "true" to auto-discover peers
+      CURL_TIMEOUT                    - Curl timeout in seconds (default: 300)
+      QDRANT_WAIT_ON_TASK             - Waits for async tasks to finish
+      QDRANT_SNAPSHOT_DATETIME_FILTER - Specify the datea and time filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!!
     Examples:
       $0 get_snap
       $0 recover_snap
@@ -678,41 +732,17 @@ data:
       if [ "$command" = "get_coll" ] || [ "$command" = "get_collection" ]; then
         get_collections
       elif [ "$command" = "get_snap" ] || [ "$command" = "get_snapshot" ]; then
-        this_month="$(date '+%Y-%m')"
-        local DATETIME="$this_month"
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                --datetime) DATETIME="$2"; shift 2 ;;
-                -h|--help) usage "$command"; exit 0 ;;
-                *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
-            esac
-        done
+        local DATETIME="${QDRANT_SNAPSHOT_DATETIME_FILTER:-}"
         generate_snapshot_file_from_instance "$DATETIME"
       elif [ "$command" = "get_snap_s3" ] || [ "$command" = "get_snapshot_s3" ]; then
         setup_s3_storage
-        this_month="$(date '+%Y-%m')"
-        local DATETIME="$this_month"
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                --datetime) DATETIME="$2"; shift 2 ;;
-                -h|--help) usage "$command"; exit 0 ;;
-                *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
-            esac
-        done
+        local DATETIME="${QDRANT_SNAPSHOT_DATETIME_FILTER:-}"
         generate_snapshot_file_from_s3 "$DATETIME"
       elif [ "$command" = "create_snap" ] || [ "$command" = "create_snapshot" ]; then
         create_collection_snapshot
       elif [ "$command" = "recover_snap" ]; then
         setup_s3_storage
-        this_month="$(date '+%Y-%m')"
-        local DATETIME="$this_month"
-        while [[ $# -gt 0 ]]; do
-            case $1 in
-                --datetime) DATETIME="$2"; shift 2 ;;
-                -h|--help) usage "$command"; exit 0 ;;
-                *) echo "unknown option: $1"; usage "$command"; exit 1 ;;
-            esac
-        done
+        local DATETIME="${QDRANT_SNAPSHOT_DATETIME_FILTER:-}"
         recover_collection_snapshots "$DATETIME"
       elif [ "$command" = "get_colla" ] || [ "$command" = "get_collection_alias" ]; then
         get_collection_aliases
@@ -733,6 +763,8 @@ data:
         usage
         exit 1
       fi
+
+      exit 0
     }
 
     run "$@"
