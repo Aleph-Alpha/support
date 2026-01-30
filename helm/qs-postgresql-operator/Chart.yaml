@@ -3,9 +3,9 @@ name: qs-postgresql-operator
 home: https://aleph-alpha.com/phariaai/
 icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
 description: Pharia AI Quick Start Helm chart for Cloudnative PG Operator
-version: 0.1.2
+version: 0.2.0
 
 dependencies:
   - name: cloudnative-pg
-    version: 0.26.1
+    version: 0.27.0
     repository: https://cloudnative-pg.github.io/charts
