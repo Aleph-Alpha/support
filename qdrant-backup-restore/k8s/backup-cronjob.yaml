@@ -61,15 +61,15 @@ spec:
                       name: qdrant-credentials
                       key: QDRANT_API_KEY
                 - name: QDRANT_SOURCE_HOSTS
-                  value: "http://qdrant-headless:6333"
+                  value: "http://qdrant-headless:6333" # change this to your qdrant kubernetes headless service name
                 - name: QDRANT_S3_ENDPOINT_URL
-                  value: "http://minio.default.svc.cluster.local:9000"
+                  value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
                 - name: QDRANT_RESTORE_HOSTS
-                  value: "http://qdrant-0.qdrant-headless:6333"
+                  value: ""
                 - name: GET_PEERS_FROM_CLUSTER_INFO
                   value: "true"
                 - name: CURL_TIMEOUT
-                  value: "3000"
+                  value: "3000" #increase if more time is needed for a single backup
               resources:
                 requests:
                   cpu: "100m"

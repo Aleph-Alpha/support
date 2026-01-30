@@ -8,6 +8,7 @@ This directory provides production-grade scripts to back up Qdrant snapshots and
 - **curl**
 - **jq**
 - **mc**
+- **S3 Bucket and it's credentials**
 
 ## Installation
 
@@ -34,7 +35,22 @@ This directory provides production-grade scripts to back up Qdrant snapshots and
 
 ## Configuration
 
-### Environment Variables
+### TL;DR
+
+- Jump to [deployment guide](#deployment-guide).
+- Jump to [common workflows](#common-workflows).
+
+### Qdrant Configuration
+
+- **Create** S3 bucket.
+  - Here you can use object storage service providers like StackIt, AWS e.t.c or a self hosted solution like [minio](https://www.min.io/).
+  - Acquire the credentials to push and pull from the S3 bucket.
+- Update Qdrant deployment with above credentials.
+  - For Kubernetes configuration continue [here](k8s/README.md#qdrant-setup).
+  - For running the scripts directly;
+    - Update Qdrant environment variables or the configuration yaml as stated [here](https://qdrant.tech/documentation/concepts/snapshots/#s3).
+
+### Script Environment Variables
 
 Create a `.env` file based on `.env.sample` with the following variables:
 
@@ -42,7 +58,7 @@ Create a `.env` file based on `.env.sample` with the following variables:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `QDRANT_API_KEY` | Qdrant API key for authentication | `your-api-key-here` |
+| `QDRANT_API_KEY` | Qdrant API key for authentication. Leave as is if none exists. | `your-api-key-here` |
 | `QDRANT_SOURCE_HOSTS` | Comma-separated list of source Qdrant hosts | `http://localhost:6333` |
 | `QDRANT_RESTORE_HOSTS` | Comma-separated list of destination Qdrant hosts | `http://localhost:6334` |
 | `QDRANT_S3_ENDPOINT_URL` | S3-compatible storage endpoint URL | `http://minio:9000` |
@@ -50,10 +66,15 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | `QDRANT_S3_SECRET_ACCESS_KEY` | S3 secret access key | `your-secret-key` |
 | `QDRANT_S3_BUCKET_NAME` | S3 bucket name where snapshots are stored | `bucket-name` |
 | `GET_PEERS_FROM_CLUSTER_INFO` | Auto-discover peers from cluster info endpoint (useful for Kubernetes) | `false` |
+
+#### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
 | `CURL_TIMEOUT` | Timeout for curl operations in seconds, set to 30mins  | `1800` (30mins) |
 | `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned URL expiry duration in seconds | `3600` (1 hour) |
 | `QDRANT_WAIT_ON_TASK` | Waits for changes to happen, used when creating snapshots and restoring snapshots | `true` |
-| `QDRANT_SNAPSHOT_DATETIME_FILTER` | Specify the datea and time filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!! | `` |
+| `QDRANT_SNAPSHOT_DATETIME_FILTER` | Specify the datetime filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!! | `` |
 
 ### Example .env File
 
@@ -66,7 +87,7 @@ export QDRANT_S3_ACCESS_KEY_ID="minioadmin"
 export QDRANT_S3_SECRET_ACCESS_KEY="minioadmin"
 export QDRANT_S3_BUCKET_NAME="qdrant-snapshots"
 export GET_PEERS_FROM_CLUSTER_INFO="false"
-export CURL_TIMEOUT="300"
+export CURL_TIMEOUT="3000"
 ```
 
 ## Overview
@@ -136,6 +157,8 @@ Collection aliases are not included in snapshots and must be backed up separatel
 
 ## Restore Operations
 
+> NOTE: Updating `QDRANT_SNAPSHOT_DATETIME_FILTER` filters the snapshots that will be restored based on their datetime but can also work with collection name since glob pattern matching is applied on the entire snapshot name.
+
 ### Fetch Snapshots from S3
 
 Lists snapshots available in S3 storage:
@@ -186,6 +209,8 @@ Restores collections from snapshots to target hosts:
 
 ### Recover Collection Aliases
 
+> NOTE: Since collection aliases are not part of snapshots created during backup, they have to be backed-up and restored separately.
+
 Restores collection aliases to target hosts:
 
 ```bash
@@ -217,13 +242,10 @@ source .env
 # 1. Source environment variables (pointing to destination)
 source .env
 
-# 2. Fetch snapshots from S3
-./qdrant_backup_recovery.sh get_snap_s3 # or get_snap if accessing source directly
-
 # 3. Recover all snapshots
 ./qdrant_backup_recovery.sh recover_snap
 
-# 4. Recover collection aliases
+# 4. Fetch collection aliases from Qdrant Source Hosts and recovers collection aliases
 ./qdrant_backup_recovery.sh recover_colla
 ```
 
@@ -233,11 +255,9 @@ source .env
 # On source environment
 source .env.source
 ./qdrant_backup_recovery.sh create_snap
-./qdrant_backup_recovery.sh get_colla
 
 # On destination environment
 source .env.dest
-./qdrant_backup_recovery.sh get_snap_s3  # or get_snap if accessing source directly
 ./qdrant_backup_recovery.sh recover_snap
 ./qdrant_backup_recovery.sh recover_colla
 ```
@@ -251,3 +271,44 @@ source .env.dest
 # Or backup state files before deletion
 ./qdrant_backup_recovery.sh reset --bkp true
 ```
+
+## Deployment Guide
+
+- For Kubernetes deployments kindly refer to [Kubernetes deployment documentation](k8s/README.md).
+- For running scripts directly use the following steps;
+  - Go through the steps in the [configuration section](#configuration).
+  - Review of important configurations;
+    - Ensure these configuration exist in your `.env` file.
+
+      ```bash
+      export QDRANT_API_KEY="your-qdrant-api-key"
+      export QDRANT_SOURCE_HOSTS="http://qdrant-source-1:6333"
+      export QDRANT_RESTORE_HOSTS="http://qdrant-dest:6333"
+      export QDRANT_S3_ENDPOINT_URL="http://minio.default.svc.cluster.local:9000"
+      export QDRANT_S3_ACCESS_KEY_ID="minioadmin"
+      export QDRANT_S3_SECRET_ACCESS_KEY="minioadmin"
+      export QDRANT_S3_BUCKET_NAME="qdrant-snapshots"
+      export GET_PEERS_FROM_CLUSTER_INFO="false"
+      export CURL_TIMEOUT="300"
+      ```
+
+    - Update the following configurations;
+      - `QDRANT_API_KEY` - set your Qdrant api key if it exists otherwise leave as is.
+      - `QDRANT_SOURCE_HOSTS` - set your Qdrant source host. if you are connecting to your a qdrant cluster deployed on kubernetes use port forwarding. Ensure **all** the pods/containers can be reached locally. Add these comma seperated hosts in this config .e.g `"http://qdrant-source-1:6333,http://qdrant-source-1:6334"`. This is required only for the backup process. In Kubernetes, service/peer discovery is done automatically by enabling `GET_PEERS_FROM_CLUSTER_INFO`.
+      - `QDRANT_RESTORE_HOSTS` - set your Qdrant target restore host.
+      - `QDRANT_S3_ENDPOINT_URL` - set it to your s3 endpoint url.
+      - `QDRANT_S3_ACCESS_KEY_ID` - set it to your s3 access key id credentials.
+      - `QDRANT_S3_SECRET_ACCESS_KEY`- set it to your s3 secret access key credentials.
+      - `QDRANT_S3_BUCKET_NAME`- set it to your s3 bucket name.
+      - `GET_PEERS_FROM_CLUSTER_INFO`- leave as is for non-kubernetes usecases.
+  - Run below to make the environment variables available.
+
+    ```bash
+    source .env
+    ```
+
+  - Run the desired command.
+
+    ```bash
+    ./qdrant_backup_recovery.sh create_snap
+    ```

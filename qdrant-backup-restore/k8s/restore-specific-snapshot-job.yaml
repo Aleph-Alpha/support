@@ -67,6 +67,9 @@ spec:
           - name: qdrant-backup-restore-script
             mountPath: /scripts/qdrant_backup_recovery.sh
             subPath: qdrant_backup_recovery.sh
+          - name: qdrant-snapshots-file
+            mountPath: /scripts/snapshots
+            subPath: snapshots
           - name: scripts
             mountPath: /scripts
       volumes:
@@ -74,6 +77,10 @@ spec:
         configMap:
           name: qdrant-backup-restore-script
           defaultMode: 0755
+      - name: qdrant-snapshots-file
+        configMap:
+          name: qdrant-snapshots-file
+          defaultMode: 0666
       - name: scripts
         emptyDir:
           sizeLimit: 100Mi

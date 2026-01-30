@@ -17,7 +17,7 @@ Important steps to note:
 
 - **Create** S3 bucket.
   - Here you can use object storage service providers like StackIt, AWS e.t.c or a self hosted solution like [minio](https://www.min.io/).
-  - Acquire the credentials to push/pull from the S3 bucket.
+  - Acquire the credentials to push and pull from the S3 bucket.
 
 - Add the S3 credentials as a kubernetes secret to the cluster.
   - Using the Kubernetes secret template provided [here](config-secret.yaml) update the values accordngly.
@@ -126,7 +126,7 @@ Update the following environment varibles accordingly;
 5. `CURL_TIMEOUT` is set at `3000` seconds. This is the max time curl will wait for request to complete. Its increased in scenarios where restoration takes a while.
 6. `QDRANT_S3_LINK_EXPIRY_DURATION` is set at `3600`. This is the duration that an s3 presigned url will be active. The url is used during the recovery process.
 7. `QDRANT_WAIT_ON_TASK` is set as `true`. This configuation make restoration process synchronous meaning 'wait for snapshot process to finish successfully before moving on'. Its used during backup and recovery.
-8. `QDRANT_SNAPSHOT_DATETIME_FILTER` is empty. Setting this filters out snapshot/backups belonging to a certain date and time using glob pattern matching. e.g `"2026-01-29"`.
+8. `QDRANT_SNAPSHOT_DATETIME_FILTER` is empty. Setting this filters out snapshot/backups belonging to a certain date and time using glob pattern matching. e.g `"2026-01-29"` = all snapshots in 29th January 2026, `2026-01` = all backups in January 2026.
 
 Deploy the job!
 
