@@ -43,7 +43,7 @@ This directory provides production-grade scripts to back up Qdrant snapshots and
 ### Qdrant Configuration
 
 - **Create** S3 bucket.
-  - Here you can use object storage service providers like StackIt, AWS e.t.c or a self hosted solution like [minio](https://www.min.io/).
+  - Here you can use object storage service providers like StackIt, AWS e.t.c or a self hosted solution like [garage](https://garagehq.deuxfleurs.fr/), [minio](https://www.min.io/) e.t.c.
   - Acquire the credentials to push and pull from the S3 bucket.
 - Update Qdrant deployment with above credentials.
   - For Kubernetes configuration continue [here](k8s/README.md#qdrant-setup).
