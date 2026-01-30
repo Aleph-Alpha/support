@@ -57,7 +57,27 @@ Important steps to note:
             value: "s3"
       ````
 
-(Re)Deploy the Qdrant cluster! This should trigger a rolling update on the qdrant nodes.
+(Re)Deploy the Qdrant cluster!
+
+Depending on how your kubernetes cluster has been setup there are several ways to update the applications on a cluster; the most common ones is using a tool such as helm or kustomize together with a deployment pipeline tool.
+
+**With Helm**
+
+[Using Offical Qdrant Helm Chart](https://github.com/qdrant/qdrant-helm/tree/main/charts/qdrant)
+
+1. Fetch helm chart
+
+    ```bash
+    helm repo add qdrant https://qdrant.github.io/qdrant-helm
+    ```
+
+2. Deploy changes
+
+    The below command should trigger a rolling update on the qdrant nodes.
+
+    ```bash
+    helm upgrade -i <release-name> qdrant/qdrant -f <your-helm-values-file-with-above-config>
+    ```
 
 ### Scripts Setup
 
