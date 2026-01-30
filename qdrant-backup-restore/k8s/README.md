@@ -127,6 +127,7 @@ Update the following environment varibles accordingly;
 6. `QDRANT_S3_LINK_EXPIRY_DURATION` is set at `3600`. This is the duration that an s3 presigned url will be active. The url is used during the recovery process.
 7. `QDRANT_WAIT_ON_TASK` is set as `true`. This configuation make restoration process synchronous meaning 'wait for snapshot process to finish successfully before moving on'. Its used during backup and recovery.
 8. `QDRANT_SNAPSHOT_DATETIME_FILTER` is empty. Setting this filters out snapshot/backups belonging to a certain date and time using glob pattern matching. e.g `"2026-01-29"` = all snapshots in 29th January 2026, `2026-01` = all backups in January 2026.
+9. `MC_CONFIG_DIR` is `mc`. This overrides the default storage location ($HOME) for mc s3 client configurations. Essential in set ups that use stricter securityContext configuration like `readOnlyRootFilesystem: true`.
 
 Deploy the job!
 

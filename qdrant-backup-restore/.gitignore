@@ -7,3 +7,4 @@ snapshots
 alias_recovery_history
 collection_aliases
 *.bkp
+mc
