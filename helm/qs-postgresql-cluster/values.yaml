@@ -79,6 +79,9 @@ clusterPharia:
     # -- Name of the container image, supporting both tags (<image>:<tag>) and digests for deterministic and repeatable deployments:
     # <image>:<tag>@sha256:<digestValue>
     imageName: ""  # Default value depends on type (postgresql/postgis/timescaledb)
+    # -- mounting custom files inside the Postgres pods through .spec.projectedVolumeTemplate
+    # See https://cloudnative-pg.io/documentation/current/cluster_conf/#projected-volumes
+    projectedVolumeTemplate: {}
     storage:
       size: 250Gi
       storageClass: ""
@@ -472,6 +475,9 @@ clusterTemporal:
     # -- Name of the container image, supporting both tags (<image>:<tag>) and digests for deterministic and repeatable deployments:
     # <image>:<tag>@sha256:<digestValue>
     imageName: ""  # Default value depends on type (postgresql/postgis/timescaledb)
+    # -- mounting custom files inside the Postgres pods through .spec.projectedVolumeTemplate
+    # See https://cloudnative-pg.io/documentation/current/cluster_conf/#projected-volumes
+    projectedVolumeTemplate: {}
     storage:
       size: 250Gi
       storageClass: ""
