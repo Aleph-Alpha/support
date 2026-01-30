@@ -18,6 +18,8 @@ spec:
         - name: qdrant-backup
           image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
           imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
           command:
             - /bin/bash
           args:
