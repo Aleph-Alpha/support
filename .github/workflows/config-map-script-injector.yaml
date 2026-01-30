@@ -1,0 +1,27 @@
+name: Update ConfigMap Qdrant Script
+on:
+  push:
+    paths:
+      - 'qdrant-backup-restore/qdrant_backup_recovery.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  update-qdrant-configmap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Update ConfigMap
+        run: |
+          cd qdrant-backup-restore
+          ./k8s/config_map_updater.sh k8s/configmap-script.yaml qdrant_backup_recovery.sh
+
+      - name: Commit And Push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add qdrant-backup-restore/k8s/configmap-script.yaml
+          git commit -m "Update ConfigMap with latest script changes" || exit 0
+          git push

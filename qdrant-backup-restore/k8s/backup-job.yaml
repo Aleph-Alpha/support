@@ -1,0 +1,81 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: qdrant-backup
+  labels:
+    app: qdrant-backup
+spec:
+  backoffLimit: 0              # Number of retries before marking failed
+  activeDeadlineSeconds: 7200  # Timeout after 2 hours
+  ttlSecondsAfterFinished: 300 # Auto-cleanup after completion (optional)
+  template:
+    metadata:
+      labels:
+        app: qdrant-backup
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: qdrant-backup
+          image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            readOnlyRootFilesystem: true
+          command:
+            - /bin/bash
+          args:
+            - -c
+            - "cd scripts && ./qdrant_backup_recovery.sh create_snap"
+          env:
+            - name: QDRANT_S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  key: QDRANT_S3_ACCESS_KEY_ID
+            - name: QDRANT_S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  key: QDRANT_S3_SECRET_ACCESS_KEY
+            - name: QDRANT_S3_BUCKET_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  key: QDRANT_S3_BUCKET_NAME
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  key: QDRANT_API_KEY
+            - name: QDRANT_SOURCE_HOSTS
+              value: "http://qdrant-headless:6333"  # change this to your qdrant kubernetes headless service name
+            - name: QDRANT_S3_ENDPOINT_URL
+              value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
+            - name: QDRANT_RESTORE_HOSTS
+              value: ""
+            - name: GET_PEERS_FROM_CLUSTER_INFO
+              value: "true"
+            - name: CURL_TIMEOUT
+              value: "3000" # increase if more time is needed for a single backup
+            - name: MC_CONFIG_DIR
+              value: "mc" # sets the configuration location for mc S3 client
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          volumeMounts:
+          - name: qdrant-backup-restore-script
+            mountPath: /scripts/qdrant_backup_recovery.sh
+            subPath: qdrant_backup_recovery.sh
+          - name: scripts
+            mountPath: /scripts
+      volumes:
+      - name: qdrant-backup-restore-script
+        configMap:
+          name: qdrant-backup-restore-script
+          defaultMode: 0755
+      - name: scripts
+        emptyDir:
+          sizeLimit: 100Mi
