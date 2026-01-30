@@ -161,6 +161,12 @@ Example content:
         default=600,
         help="Timeout for Trivy scan in seconds (default: 600)",
     )
+    parser.add_argument(
+        "--min-cve-level",
+        default="MEDIUM",
+        choices=["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+        help="Minimum CVE level to consider relevant (default: MEDIUM)",
+    )
 
     # Mode options
     parser.add_argument(
@@ -376,15 +382,30 @@ def run_trivy_scan(
     return True, None
 
 
-def extract_high_critical_cves(trivy_json_file: str) -> Set[str]:
+def extract_relevant_cves(trivy_json_file: str, min_cve_level: str = "MEDIUM") -> Set[str]:
     """
-    Extract HIGH and CRITICAL CVE IDs from Trivy JSON output.
+    Extract CVE IDs from Trivy JSON output based on minimum severity level.
 
-    Equivalent to: jq -r '.Results[] | select(.Vulnerabilities != null) |
-                   .Vulnerabilities[] | select(.Severity == "HIGH" or .Severity == "CRITICAL") |
-                   .VulnerabilityID'
+    Args:
+        trivy_json_file: Path to Trivy JSON output file
+        min_cve_level: Minimum CVE level to include (LOW, MEDIUM, HIGH, CRITICAL)
+
+    Returns:
+        Set of CVE IDs matching the severity threshold
     """
     cves = set()
+    min_level = min_cve_level.upper()
+
+    # Define severity hierarchy
+    severity_levels = {
+        "CRITICAL": ["CRITICAL"],
+        "HIGH": ["HIGH", "CRITICAL"],
+        "MEDIUM": ["MEDIUM", "HIGH", "CRITICAL"],
+        "LOW": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+    }
+
+    # Get list of severities to include
+    included_severities = severity_levels.get(min_level, ["HIGH", "CRITICAL"])
 
     try:
         with open(trivy_json_file) as f:
@@ -394,7 +415,7 @@ def extract_high_critical_cves(trivy_json_file: str) -> Set[str]:
             vulns = result.get("Vulnerabilities") or []
             for vuln in vulns:
                 severity = vuln.get("Severity", "").upper()
-                if severity in ("HIGH", "CRITICAL"):
+                if severity in included_severities:
                     cve_id = vuln.get("VulnerabilityID")
                     if cve_id:
                         cves.add(cve_id)
@@ -403,6 +424,12 @@ def extract_high_critical_cves(trivy_json_file: str) -> Set[str]:
         logger.debug(f"Failed to parse Trivy output: {e}")
 
     return cves
+
+
+# Keep old function name for backward compatibility
+def extract_high_critical_cves(trivy_json_file: str) -> Set[str]:
+    """Legacy function - use extract_relevant_cves instead."""
+    return extract_relevant_cves(trivy_json_file, min_cve_level="HIGH")
 
 
 def find_triage_reference(
@@ -550,6 +577,7 @@ def scan_image(
     output_dir: Path,
     timeout: int = 300,
     verbose: bool = False,
+    min_cve_level: str = "MEDIUM",
 ) -> ImageScanResult:
     """
     Scan a single image - equivalent to one iteration of 2-oras-scan.sh loop.
@@ -580,8 +608,8 @@ def scan_image(
         (image_dir / "error.txt").write_text(result.error)
         return result
 
-    # Extract HIGH/CRITICAL CVEs
-    result.high_critical_cves = extract_high_critical_cves(str(trivy_output))
+    # Extract relevant CVEs based on min_cve_level
+    result.high_critical_cves = extract_relevant_cves(str(trivy_output), min_cve_level)
     (image_dir / "high-critical-cves.txt").write_text(
         "\n".join(sorted(result.high_critical_cves))
     )
@@ -612,6 +640,7 @@ def generate_markdown_report(
     filter_unaddressed: bool = False,
     filter_missing_triage: bool = False,
     namespace: str = "N/A",
+    min_cve_level: str = "MEDIUM",
 ) -> str:
     """
     Generate beautiful Markdown vulnerability report.
@@ -635,9 +664,9 @@ def generate_markdown_report(
     lines.append("")
 
     if total_unaddressed_cves == 0:
-        lines.append("> 🎉 **All HIGH/CRITICAL CVEs have been addressed!**")
+        lines.append(f"> 🎉 **All {min_cve_level} and above CVEs have been addressed!**")
     else:
-        lines.append(f"> ⚠️ **{total_unaddressed_cves} unaddressed CVEs across {images_with_unaddressed} images need attention**")
+        lines.append(f"> ⚠️ **{total_unaddressed_cves} unaddressed CVEs (≥{min_cve_level}) across {images_with_unaddressed} images need attention**")
     lines.append("")
 
     # Scan info table
@@ -647,6 +676,7 @@ def generate_markdown_report(
     lines.append("|--------|------:|")
     lines.append(f"| **Namespace** | `{namespace}` |")
     lines.append(f"| **Scan Date** | {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC |")
+    lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append(f"| **Total Images** | {len(successful)} |")
     lines.append(f"| **Failed Scans** | {len(failed)} |")
     lines.append(f"| **Images with Triage** | {images_with_triage} |")
@@ -658,9 +688,9 @@ def generate_markdown_report(
     lines.append("")
     lines.append("| Category | Count | Description |")
     lines.append("|----------|------:|-------------|")
-    lines.append(f"| 🔴 **Unaddressed** | **{total_unaddressed_cves}** | HIGH/CRITICAL CVEs not in triage |")
-    lines.append(f"| ✅ **Addressed** | {total_addressed_cves} | HIGH/CRITICAL CVEs covered by triage |")
-    lines.append(f"| ⚪ **Irrelevant** | {total_irrelevant_cves} | Triaged CVEs no longer detected |")
+    lines.append(f"| 🔴 **Unaddressed** | **{total_unaddressed_cves}** | {min_cve_level}+ CVEs not in triage |")
+    lines.append(f"| ✅ **Addressed** | {total_addressed_cves} | {min_cve_level}+ CVEs covered by triage |")
+    lines.append(f"| ⚪ **Irrelevant** | {total_irrelevant_cves} | Triaged CVEs not detected or below {min_cve_level} |")
     lines.append("")
 
     # Main vulnerability table
@@ -778,6 +808,7 @@ def print_cli_summary(
     namespace: str = "N/A",
     filter_unaddressed: bool = False,
     filter_missing_triage: bool = False,
+    min_cve_level: str = "MEDIUM",
 ) -> None:
     """Print beautiful summary to CLI matching the markdown report format."""
     successful = [r for r in results if r.success]
@@ -798,9 +829,9 @@ def print_cli_summary(
 
     # Status banner
     if total_unaddressed == 0:
-        print("  🎉 All HIGH/CRITICAL CVEs have been addressed!")
+        print(f"  🎉 All {min_cve_level} and above CVEs have been addressed!")
     else:
-        print(f"  ⚠️  {total_unaddressed} unaddressed CVEs across {images_with_unaddressed} images need attention")
+        print(f"  ⚠️  {total_unaddressed} unaddressed CVEs (≥{min_cve_level}) across {images_with_unaddressed} images need attention")
     print()
 
     # Scan Overview
@@ -808,6 +839,7 @@ def print_cli_summary(
     print("│ 📊 SCAN OVERVIEW                                                            │")
     print("├─────────────────────────────────────────────────────────────────────────────┤")
     print(f"│  Namespace:              {namespace:<50} │")
+    print(f"│  Minimum CVE Level:      {min_cve_level:<50} │")
     print(f"│  Total Images:           {len(successful):<50} │")
     print(f"│  Failed Scans:           {len(failed):<50} │")
     print(f"│  Images with Triage:     {images_with_triage:<50} │")
@@ -819,9 +851,9 @@ def print_cli_summary(
     print("┌─────────────────────────────────────────────────────────────────────────────┐")
     print("│ 📈 CVE STATISTICS                                                           │")
     print("├─────────────────────────────────────────────────────────────────────────────┤")
-    print(f"│  🔴 Unaddressed:  {total_unaddressed:<8} HIGH/CRITICAL CVEs not in triage              │")
-    print(f"│  ✅ Addressed:    {total_addressed:<8} HIGH/CRITICAL CVEs covered by triage           │")
-    print(f"│  ⚪ Irrelevant:   {total_irrelevant:<8} Triaged CVEs no longer detected                │")
+    print(f"│  🔴 Unaddressed:  {total_unaddressed:<8} {min_cve_level}+ CVEs not in triage                      │")
+    print(f"│  ✅ Addressed:    {total_addressed:<8} {min_cve_level}+ CVEs covered by triage                     │")
+    print(f"│  ⚪ Irrelevant:   {total_irrelevant:<8} Triaged CVEs not detected or below {min_cve_level:<10} │")
     print("└─────────────────────────────────────────────────────────────────────────────┘")
     print()
 
@@ -944,7 +976,7 @@ def load_results_from_dir(output_dir: Path) -> List[ImageScanResult]:
             output_dir=str(image_dir),
         )
 
-        # Read HIGH/CRITICAL CVEs
+        # Read relevant CVEs (based on min_cve_level)
         cve_file = image_dir / "high-critical-cves.txt"
         if cve_file.exists():
             content = cve_file.read_text().strip()
@@ -996,6 +1028,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
             namespace=args.namespace,
             filter_unaddressed=args.filter_unaddressed,
             filter_missing_triage=args.filter_missing_triage,
+            min_cve_level=args.min_cve_level,
         )
 
         report = generate_markdown_report(
@@ -1003,6 +1036,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
             filter_unaddressed=args.filter_unaddressed,
             filter_missing_triage=args.filter_missing_triage,
             namespace=args.namespace,
+            min_cve_level=args.min_cve_level,
         )
 
         if args.output:
@@ -1025,6 +1059,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
     print(f"   • Namespace: {args.namespace}")
     print(f"   • Output: {args.output_dir}")
     print(f"   • Parallel: {args.parallel}")
+    print(f"   • Minimum CVE Level: {args.min_cve_level}")
     print()
 
     # Step 1: Get images from Kubernetes
@@ -1080,7 +1115,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
 
     with ThreadPoolExecutor(max_workers=args.parallel) as executor:
         futures = {
-            executor.submit(scan_image, image, output_dir, args.timeout, args.verbose): image
+            executor.submit(scan_image, image, output_dir, args.timeout, args.verbose, args.min_cve_level): image
             for image in images
         }
 
@@ -1110,6 +1145,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
         namespace=args.namespace,
         filter_unaddressed=args.filter_unaddressed,
         filter_missing_triage=args.filter_missing_triage,
+        min_cve_level=args.min_cve_level,
     )
 
     # Step 3: Generate report (unless scan-only mode)
@@ -1119,6 +1155,7 @@ def run_oras_scan(args: argparse.Namespace) -> int:
             filter_unaddressed=args.filter_unaddressed,
             filter_missing_triage=args.filter_missing_triage,
             namespace=args.namespace,
+            min_cve_level=args.min_cve_level,
         )
 
         if args.output:

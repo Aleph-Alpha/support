@@ -600,19 +600,19 @@ def calculate_cve_categories(
 ) -> Tuple[int, int]:
     """
     Calculate unaddressed and irrelevant CVE counts based on min_cve_level.
-    
+
     Args:
         critical: Count of CRITICAL CVEs
         high: Count of HIGH CVEs
         medium: Count of MEDIUM CVEs
         low: Count of LOW CVEs
         min_cve_level: Minimum CVE level considered relevant (CRITICAL, HIGH, MEDIUM, LOW)
-    
+
     Returns:
         Tuple of (unaddressed_count, irrelevant_count)
     """
     min_level = min_cve_level.upper()
-    
+
     if min_level == "CRITICAL":
         unaddressed = critical
         irrelevant = high + medium + low
@@ -629,7 +629,7 @@ def calculate_cve_categories(
         # Default to MEDIUM if invalid
         unaddressed = critical + high + medium
         irrelevant = low
-    
+
     return (unaddressed, irrelevant)
 
 
