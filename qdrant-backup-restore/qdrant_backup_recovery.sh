@@ -11,6 +11,7 @@ QDRANT_WAIT_ON_TASK=${QDRANT_WAIT_ON_TASK:-true}
 CURL_TIMEOUT="${CURL_TIMEOUT:-1800}"
 QDRANT_S3_ALIAS="qdrant_s3_snaphost"
 QDRANT_S3_LINK_EXPIRY_DURATION="${QDRANT_S3_LINK_EXPIRY_DURATION:-3600s}"
+QDRANT_HTTP_PORT="${QDRANT_HTTP_PORT:-6333}"
 
 declare -a peer_uri_map;
 # printf wrapper helper
@@ -600,7 +601,7 @@ delete_files() {
   done
 }
 
-# gets qdrant peer host url using cluster info endpoint. Sets the port to 6333 the http port.
+# gets qdrant peer host url using cluster info endpoint. Sets the port to $QDRANT_HTTP_PORT the http port.
 get_peers_from_cluster_info() {
   local host="${source_hosts[0]}"
   result=$(_curl GET "$host/cluster" --header "api-key: $QDRANT_API_KEY")
@@ -608,7 +609,7 @@ get_peers_from_cluster_info() {
   peer_uri_entries=$(jq -r 'to_entries[] | "\(.key) \(.value.uri)"' <<< "$entries")
 
   while read -r id uri; do
-    local _uri="${uri%?????}6333"
+    local _uri="${uri%:*}:$QDRANT_HTTP_PORT"
     peer_uri_map["$id"]="$_uri"
     _printf "registered peer %s with %s uri\n" "$id" "$_uri"
   done <<< "$peer_uri_entries"

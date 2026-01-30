@@ -76,6 +76,7 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | `QDRANT_WAIT_ON_TASK` | Waits for changes to happen, used when creating snapshots and restoring snapshots | `true` |
 | `QDRANT_SNAPSHOT_DATETIME_FILTER` | Specify the datetime filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!! | `` |
 | `MC_CONFIG_DIR` | This overrides the default storage location for mc s3 client configurations. | `$HOME` |
+| `QDRANT_HTTP_PORT` | This changes the default Qdrant HTTP port | `6333` |
 
 ### Example .env File
 
