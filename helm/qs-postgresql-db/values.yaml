@@ -19,6 +19,59 @@ extensionJob:
   image: "ghcr.io/aleph-alpha/shared-images/pharia-helper:v1.0.4"
   # SSL mode for PostgreSQL connection
   sslMode: "prefer"
+  # Security context for job containers
+  securityContext:
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  # Temp volume configuration (mounted at /tmp for write access with readOnlyRootFilesystem)
+  tmpVolume:
+    enabled: true
+    sizeLimit: 10Mi
+  # Additional volumes to add to job pods
+  # Example:
+  #   extraVolumes:
+  #     - name: custom-config
+  #       configMap:
+  #         name: my-config
+  #     - name: secrets
+  #       secret:
+  #         secretName: my-secret
+  extraVolumes: []
+  # Additional volume mounts to add to job containers
+  # Example:
+  #   extraVolumeMounts:
+  #     - name: custom-config
+  #       mountPath: /etc/custom
+  #     - name: secrets
+  #       mountPath: /etc/secrets
+  #       readOnly: true
+  extraVolumeMounts: []
+  # Additional labels to add to Job resources
+  # Example:
+  #   extraLabels:
+  #     custom-label: my-value
+  extraLabels: {}
+  # Additional annotations to add to Job resources
+  # Example:
+  #   extraAnnotations:
+  #     custom-annotation: my-value
+  extraAnnotations: {}
+  # Additional labels to add to Pod templates
+  # Example:
+  #   podExtraLabels:
+  #     sidecar.istio.io/inject: "false"
+  podExtraLabels: {}
+  # Additional annotations to add to Pod templates
+  # Example:
+  #   podExtraAnnotations:
+  #     prometheus.io/scrape: "false"
+  podExtraAnnotations: {}
 
 # ============================================================================
 # Helm Test Configuration

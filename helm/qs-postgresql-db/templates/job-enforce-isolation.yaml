@@ -20,10 +20,16 @@ metadata:
     {{- include "qs-postgresql-db.labels" $ | nindent 4 }}
     app.kubernetes.io/component: access-control
     cluster: {{ $clusterName }}
+    {{- with $.Values.extensionJob.extraLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "15"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- with $.Values.extensionJob.extraAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   ttlSecondsAfterFinished: 300
   backoffLimit: 5
@@ -33,12 +39,40 @@ spec:
         {{- include "qs-postgresql-db.selectorLabels" $ | nindent 8 }}
         app.kubernetes.io/component: access-control
         cluster: {{ $clusterShortName }}
+        {{- with $.Values.extensionJob.podExtraLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with $.Values.extensionJob.podExtraAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       restartPolicy: OnFailure
+      volumes:
+        {{- if $.Values.extensionJob.tmpVolume.enabled }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: {{ $.Values.extensionJob.tmpVolume.sizeLimit | default "10Mi" }}
+        {{- end }}
+        {{- with $.Values.extensionJob.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       containers:
         - name: enforce-isolation
           image: {{ $.Values.extensionJob.image | default "postgres:17" }}
           imagePullPolicy: IfNotPresent
+          {{- with $.Values.extensionJob.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if $.Values.extensionJob.tmpVolume.enabled }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with $.Values.extensionJob.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: PGHOST
               value: "{{ $clusterName }}-rw"
