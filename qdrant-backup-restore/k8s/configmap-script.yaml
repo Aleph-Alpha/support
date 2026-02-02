@@ -159,6 +159,7 @@ data:
         fi
 
         if [ "$GET_PEERS_FROM_CLUSTER_INFO" = "true" ]; then
+          declare -a peer_uri_pass;
           local peer_id=0
           local peer_url=""
           cluster_result=$(_curl GET "$host/collections/$collection_name/cluster" --header "api-key: $QDRANT_API_KEY")
@@ -188,12 +189,17 @@ data:
             _printf "[%s] found %d remote shard(s) for %s collection on peer, will create a snapshot.\n" "$peer_url" "$remote_shards_length" "$collection_name"
             while read -r item; do
               peer_id=$(jq -r '.peer_id' <<< "$item")
+              if [[ -n "${peer_uri_pass[peer_id]+x}" ]]; then # skip already visited peers
+                  continue
+              fi
               peer_url=${peer_uri_map[$peer_id]}
+              peer_uri_pass["$peer_id"]=1
               create_snapshot_from_peer "$peer_url" "$collection_name"
             done <<< "$remote_shards_result"
           else
             _printf "[%s] could not find remote shard(s) for %s collection on peer.\n" "$peer_url" "$collection_name"
           fi
+          peer_uri_pass=()
         else
 
           for _host in "${source_hosts[@]}"; do
