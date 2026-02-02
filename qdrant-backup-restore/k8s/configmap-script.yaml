@@ -614,7 +614,7 @@ data:
     get_peers_from_cluster_info() {
       local host="${source_hosts[0]}"
       result=$(_curl GET "$host/cluster" --header "api-key: $QDRANT_API_KEY")
-      entries=$(jq -r '.result.peers' <<< "$result")
+      entries=$(jq -r '.result.peers // {}' <<< "$result")
       peer_uri_entries=$(jq -r 'to_entries[] | "\(.key) \(.value.uri)"' <<< "$entries")
 
       while read -r id uri; do
@@ -624,7 +624,8 @@ data:
       done <<< "$peer_uri_entries"
 
       if [ ${#peer_uri_map[@]} -eq 0 ]; then
-        _printf "no registered host %s exiting" "$host"
+        _printf "no registered host peers in %s... exiting" "$host"
+        exit 1
       fi
     }
 
