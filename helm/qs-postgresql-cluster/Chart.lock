@@ -1,9 +1,9 @@
 dependencies:
 - name: cluster
   repository: file://../cluster
-  version: 0.5.0
+  version: 0.5.2
 - name: cluster
   repository: file://../cluster
-  version: 0.5.0
-digest: sha256:c82bdfe0f81b4ba20c1f65f56a850202809c09c219962c216bfacf0ce05e6ec2
-generated: "2026-01-30T15:54:06.610374+01:00"
+  version: 0.5.2
+digest: sha256:5511d084c9c08be4cc334cdea9ad16d543adee5d8bf797c58f97c04a70bea52a
+generated: "2026-02-02T18:01:30.637388+01:00"
