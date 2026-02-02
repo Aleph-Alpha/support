@@ -42,21 +42,6 @@ spec:
                 - -c
                 - "cd scripts && ./qdrant_backup_recovery.sh create_snap"
               env:
-                - name: QDRANT_S3_ACCESS_KEY_ID
-                  valueFrom:
-                    secretKeyRef:
-                      name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
-                      key: QDRANT_S3_ACCESS_KEY_ID
-                - name: QDRANT_S3_SECRET_ACCESS_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
-                      key: QDRANT_S3_SECRET_ACCESS_KEY
-                - name: QDRANT_S3_BUCKET_NAME
-                  valueFrom:
-                    secretKeyRef:
-                      name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
-                      key: QDRANT_S3_BUCKET_NAME
                 - name: QDRANT_API_KEY
                   valueFrom:
                     secretKeyRef:
@@ -64,16 +49,12 @@ spec:
                       key: QDRANT_API_KEY
                 - name: QDRANT_SOURCE_HOSTS
                   value: "http://qdrant-headless:6333" # change this to your qdrant kubernetes headless service name
-                - name: QDRANT_S3_ENDPOINT_URL
-                  value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
                 - name: QDRANT_RESTORE_HOSTS
                   value: ""
                 - name: GET_PEERS_FROM_CLUSTER_INFO
                   value: "true"
                 - name: CURL_TIMEOUT
                   value: "3000" # increase if more time is needed for a single backup
-                - name: MC_CONFIG_DIR
-                  value: "mc" # sets the configuration location for mc S3 client
               resources:
                 requests:
                   cpu: "100m"

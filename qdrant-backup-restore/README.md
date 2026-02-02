@@ -54,7 +54,16 @@ This directory provides production-grade scripts to back up Qdrant snapshots and
 
 Create a `.env` file based on `.env.sample` with the following variables:
 
-#### Required Variables
+#### Required Variables For Backup
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QDRANT_API_KEY` | Qdrant API key for authentication. Leave as is if none exists. | `your-api-key-here` |
+| `QDRANT_SOURCE_HOSTS` | Comma-separated list of source Qdrant hosts | `http://localhost:6333` |
+| `QDRANT_RESTORE_HOSTS` | Comma-separated list of destination Qdrant hosts set as `""` | `""` |
+| `GET_PEERS_FROM_CLUSTER_INFO` | Auto-discover peers from Qdrant cluster info endpoint (only for Kubernetes) | `false` |
+
+#### Required Variables For Restore
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -74,7 +83,8 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | `CURL_TIMEOUT` | Timeout for curl operations in seconds, set to 30mins  | `1800` (30mins) |
 | `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned URL expiry duration in seconds | `3600` (1 hour) |
 | `QDRANT_WAIT_ON_TASK` | Waits for changes to happen, used when creating snapshots and restoring snapshots | `true` |
-| `QDRANT_SNAPSHOT_DATETIME_FILTER` | Specify the datetime filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!! | `` |
+| `QDRANT_SNAPSHOT_DATETIME_FILTER` | Specify the datetime filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot! | `` |
+| `QDRANT_HTTP_PORT` | This changes the default Qdrant HTTP port | `6333` |
 | `MC_CONFIG_DIR` | This overrides the default storage location for mc s3 client configurations. | `$HOME` |
 | `QDRANT_HTTP_PORT` | This changes the default Qdrant HTTP port | `6333` |
 
@@ -297,12 +307,12 @@ source .env.dest
     - Update the following configurations;
       - `QDRANT_API_KEY` - set your Qdrant api key if it exists otherwise leave as is.
       - `QDRANT_SOURCE_HOSTS` - set your Qdrant source host. if you are connecting to your a qdrant cluster deployed on kubernetes use port forwarding. Ensure **all** the pods/containers can be reached locally. Add these comma seperated hosts in this config .e.g `"http://qdrant-source-1:6333,http://qdrant-source-1:6334"`. This is required only for the backup process. In Kubernetes, service/peer discovery is done automatically by enabling `GET_PEERS_FROM_CLUSTER_INFO`.
-      - `QDRANT_RESTORE_HOSTS` - set your Qdrant target restore host.
-      - `QDRANT_S3_ENDPOINT_URL` - set it to your s3 endpoint url.
-      - `QDRANT_S3_ACCESS_KEY_ID` - set it to your s3 access key id credentials.
-      - `QDRANT_S3_SECRET_ACCESS_KEY`- set it to your s3 secret access key credentials.
-      - `QDRANT_S3_BUCKET_NAME`- set it to your s3 bucket name.
-      - `GET_PEERS_FROM_CLUSTER_INFO`- leave as is for non-kubernetes usecases.
+      - `QDRANT_RESTORE_HOSTS` - set your Qdrant target restore host **(for restore only)** set as `""` when backing up.
+      - `QDRANT_S3_ENDPOINT_URL` - set it to your s3 endpoint url **(for restore only)**.
+      - `QDRANT_S3_ACCESS_KEY_ID` - set it to your s3 access key id credentials **(for restore only)**.
+      - `QDRANT_S3_SECRET_ACCESS_KEY`- set it to your s3 secret access key credentials **(for restore only)**.
+      - `QDRANT_S3_BUCKET_NAME`- set it to your s3 bucket name **(for restore only)**.
+      - `GET_PEERS_FROM_CLUSTER_INFO`- leave as is (`false`) for non-cluster usecases.
   - Run below to make the environment variables available.
 
     ```bash
