@@ -1,7 +1,8 @@
 {{- define "cluster.externalClusters" -}}
-externalClusters:
 {{- if eq .Values.mode "standalone" }}
+externalClusters: []
 {{- else if eq .Values.mode "recovery" }}
+externalClusters:
   {{- if eq .Values.recovery.method "pg_basebackup" }}
   - name: pgBaseBackupSource
      {{- include "cluster.externalSourceCluster" .Values.recovery.pgBaseBackup.source | nindent 4 }}
@@ -16,6 +17,7 @@ externalClusters:
       {{- include "cluster.barmanObjectStoreConfig" $d | nindent 4 }}
   {{- end }}
 {{- else if eq .Values.mode "replica" }}
+externalClusters:
   - name: originCluster
   {{- if not (empty .Values.replica.origin.objectStore.provider) }}
     barmanObjectStore:
