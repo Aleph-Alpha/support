@@ -7,12 +7,12 @@ version: 0.2.0
 
 dependencies:
   - name: cluster
-    version: 0.5.0
+    version: 0.5.1
     alias: clusterPharia
     condition: clusterPharia.enabled
     repository: file://../cluster
   - name: cluster
-    version: 0.5.0
+    version: 0.5.1
     alias: clusterTemporal
     condition: clusterTemporal.enabled
     repository: file://../cluster
