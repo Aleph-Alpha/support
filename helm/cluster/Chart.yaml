@@ -13,4 +13,4 @@ name: cluster
 sources:
 - https://github.com/cloudnative-pg/charts
 type: application
-version: 0.5.1
+version: 0.5.2

@@ -3,16 +3,16 @@ name: qs-postgresql-cluster
 home: https://aleph-alpha.com/phariaai/
 icon: https://aleph-alpha.com/wp-content/themes/sbd-blank/dist/img/logo.svg
 description: Pharia AI Quick Start Helm chart for Postgresql Cluster
-version: 0.2.1
+version: 0.2.2
 
 dependencies:
   - name: cluster
-    version: 0.5.1
+    version: 0.5.2
     alias: clusterPharia
     condition: clusterPharia.enabled
     repository: file://../cluster
   - name: cluster
-    version: 0.5.1
+    version: 0.5.2
     alias: clusterTemporal
     condition: clusterTemporal.enabled
     repository: file://../cluster
