@@ -451,7 +451,7 @@ def print_cli_summary(
 
         # Print table header
         header = (
-            f"{'Image':<35} "
+            f"{'Image':<55} "
             f"{'Unaddressed CVEs':>17} "
             f"{'Addressed CVEs':>15} "
             f"{'Irrelevant CVEs':>16} "
