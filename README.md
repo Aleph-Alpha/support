@@ -5,6 +5,8 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
 ## 📋 Table of Contents
 
 - [Overview](#overview)
+- [Operations Manuals](#operations-manuals)
+  - [Upgrade Operations Manual](#upgrade-operations-manual)
 - [Scripts](#scripts)
   - [Scanner Scripts](#scanner-scripts)
     - [k8s-image-scanner.sh](#k8s-image-scannersh)
@@ -22,6 +24,26 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
 ## 🔍 Overview
 
 This repository contains utility scripts designed to help Aleph Alpha customers manage and interact with container images, security attestations, database backup and restore operations, and related infrastructure components. These tools are particularly useful for organizations working with signed container images, security compliance requirements, and operational maintenance of Pharia AI deployments.
+
+## 📚 Operations Manuals
+
+### Upgrade Operations Manual
+
+For customers performing Pharia AI version upgrades, we provide a comprehensive [**Upgrade Operations Manual**](UPGRADE-OPERATIONS.md) that covers:
+
+- **Pre-Upgrade Backup Procedures**: Step-by-step instructions for backing up PostgreSQL databases, Kubernetes secrets, and Qdrant vector databases
+- **Upgrade Procedure**: Helm upgrade process with verification steps
+- **Post-Upgrade Verification**: Testing and validation procedures
+- **Rollback Procedure**: Complete rollback process if issues are encountered
+
+The manual is designed for maintenance windows and includes:
+- Detailed step-by-step instructions
+- Time estimates for each phase
+- Troubleshooting guides
+- Quick reference commands
+- Checklists for verification
+
+> **📖 See [UPGRADE-OPERATIONS.md](UPGRADE-OPERATIONS.md) for the complete operations manual.**
 
 ## 🛠️ Scripts
 
@@ -817,10 +839,25 @@ A comprehensive backup and restore solution for Pharia AI deployments, providing
 
 #### What's NOT Included
 
-- ⚠️ **Qdrant Database Backup** - Vector database backups are not supported
+- ⚠️ **Qdrant Database Backup** - Vector database backups are handled separately (see below)
 - ⚠️ **Application State** - Only database and secrets are backed up
 
-> **Note:** If your application uses Qdrant or other vector databases, you'll need to backup those separately using Qdrant's native backup tools.
+> **Note:** If your application uses Qdrant or other vector databases, you'll need to backup those separately using the Qdrant backup tools (see below).
+
+#### qdrant-backup-restore
+
+A production-grade backup and restore solution for Qdrant vector databases, supporting snapshot creation, S3 storage, and recovery operations across multiple instances.
+
+**Features:**
+- **Snapshot Management**: Create and manage Qdrant collection snapshots
+- **S3 Integration**: Store snapshots in S3-compatible storage
+- **Collection Aliases**: Backup and restore collection aliases separately
+- **Kubernetes Support**: Native Kubernetes job and cronjob support
+- **Multi-Instance Support**: Backup from and restore to multiple Qdrant instances
+
+For detailed documentation, see [qdrant-backup-restore/README.md](qdrant-backup-restore/README.md).
+
+> **📖 For complete upgrade procedures including both PostgreSQL and Qdrant backups, see the [Upgrade Operations Manual](UPGRADE-OPERATIONS.md).**
 
 #### Usage Examples
 
