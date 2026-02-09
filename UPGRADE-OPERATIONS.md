@@ -606,6 +606,8 @@ If issues are encountered after the upgrade, follow this restore procedure to re
 > 1. Perform rollback steps in the exact order specified
 > 2. Do not skip any steps
 > 3. Application deployments should remain scaled down during restore
+> 4. Postgres Expectation: provide a new Postgres database instance matching same PG version of old instance where the restoration will happen
+> 4. Qdrant Expectation: Qdrant supports overwrite so you can use same Qdrant instance for restoration or provide a new Qdrant instance with same Qdrant version
 
 ### Step 1: Document Issues
 
@@ -718,6 +720,8 @@ kubectl get secret <secret-name> -n pharia-ai -o yaml
 
 ### Step 6: Qdrant Vector Database Restore
 
+> 4. Expectation is you provide a new database instance matching same PG version of old instance where the restoration will happen
+
 #### 6.1 Configure Qdrant Restore Environment
 
 ```bash
@@ -734,6 +738,7 @@ nano .env
 export QDRANT_API_KEY="your-api-key-here"
 
 # Source hosts (where snapshots are stored)
+# Port forward qdrant service to local
 export QDRANT_SOURCE_HOSTS="http://localhost:6333"
 
 # Restore hosts (target Qdrant instances)
@@ -755,6 +760,9 @@ export CURL_TIMEOUT="1800"
 export QDRANT_WAIT_ON_TASK="true"
 
 # Optional: Filter snapshots by datetime (leave empty for all)
+# (e.g 2026-01-29 or even include time 2026-01-29-08-55) was taken
+# Format yyyy-mm-dd-hh-mm-ss; collection snapshots(s)=full backup
+# This can be extended to match entire name of the snapshot e.g prefix-cache-398093660832563-2026-01-29-08-55-49.snapshot but filtering using # datetime is more sensible.
 export QDRANT_SNAPSHOT_DATETIME_FILTER=""
 ```
 
@@ -770,21 +778,7 @@ echo "Restore hosts: $QDRANT_RESTORE_HOSTS"
 echo "S3 bucket: $QDRANT_S3_BUCKET_NAME"
 ```
 
-#### 6.3 Fetch Snapshots from S3
-
-```bash
-# Fetch snapshot metadata from S3
-./qdrant_backup_recovery.sh get_snap_s3
-```
-
-**Expected Output:**
-```
-[2025-01-XX XX:XX:XX] Fetching snapshots from S3...
-[2025-01-XX XX:XX:XX] Found X snapshot(s) in S3
-[2025-01-XX XX:XX:XX] Snapshots file updated
-```
-
-#### 6.4 Restore Snapshots
+#### 6.3 Restore Snapshots
 
 ```bash
 # Restore all snapshots
@@ -800,7 +794,7 @@ echo "S3 bucket: $QDRANT_S3_BUCKET_NAME"
 [2025-01-XX XX:XX:XX] All snapshots recovered
 ```
 
-#### 6.5 Restore Collection Aliases
+#### 6.4 Restore Collection Aliases
 
 ```bash
 # Restore collection aliases
@@ -815,7 +809,7 @@ echo "S3 bucket: $QDRANT_S3_BUCKET_NAME"
 [2025-01-XX XX:XX:XX] All aliases recovered
 ```
 
-#### 6.6 Verify Qdrant Restore
+#### 6.5 Verify Qdrant Restore
 
 ```bash
 # Verify collections exist
