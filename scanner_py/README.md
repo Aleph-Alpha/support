@@ -128,6 +128,21 @@ scanner-py verify-chainguard --image myapp:latest --output-level none
 scanner-py verify-chainguard --image myapp:latest --no-error
 ```
 
+### Retrieve Triage from CVE Scan Results
+
+Collect triage files from Cosign/ORAS scan output and optionally generate a Markdown report (CVE, score, date, acceptance per image):
+
+```bash
+# Collect triage files from Cosign scan output
+scanner-py retrieve-triage --cosign-dir scan-results -o triage-files
+
+# Generate Markdown report from collected triage files
+scanner-py retrieve-triage --report triage-report.md --report-from triage-files
+
+# Collect and generate report in one run
+scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report triage-report.md
+```
+
 ## Python API
 
 You can also use the package programmatically:

@@ -12,6 +12,7 @@ from .verify_chainguard import create_chainguard_parser, run_chainguard
 from .generate_report import create_generate_report_parser, run_generate_report
 from .generate_sbom_report import create_generate_sbom_report_parser, run_generate_sbom_report
 from .oras_scan import create_oras_scan_parser, run_oras_scan
+from .retrieve_triage import create_retrieve_triage_parser, run_retrieve_triage
 
 
 def create_main_parser() -> argparse.ArgumentParser:
@@ -30,6 +31,7 @@ Commands:
   verify-chainguard Check if image uses Chainguard base image
   generate-report   Generate reports from existing scan results
   generate-sbom-report Generate detailed SBOM analysis report from scan results
+  retrieve-triage  Retrieve triage files from CVE scan results and generate reports
 
 Examples:
   # Simple triage scan (direct Trivy scan, triage.toml support)
@@ -46,6 +48,9 @@ Examples:
 
   # Generate detailed SBOM report
   scanner-py generate-sbom-report --input-dir ./scan-results -o sbom-report.md
+
+  # Retrieve triage files and generate report
+  scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report triage-report.md
 
   # Scan a single image
   scanner-py scan-image --image registry.io/app:v1.0
@@ -69,6 +74,7 @@ Examples:
     create_chainguard_parser(subparsers)
     create_generate_report_parser(subparsers)
     create_generate_sbom_report_parser(subparsers)
+    create_retrieve_triage_parser(subparsers)
 
     return parser
 
@@ -100,6 +106,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         "verify-chainguard": run_chainguard,
         "generate-report": run_generate_report,
         "generate-sbom-report": run_generate_sbom_report,
+        "retrieve-triage": run_retrieve_triage,
     }
 
     handler = command_handlers.get(args.command)

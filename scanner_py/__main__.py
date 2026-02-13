@@ -4,6 +4,7 @@ Main entry point for the scanner package.
 Usage:
     python -m scanner_py cosign-scan [OPTIONS]
     python -m scanner_py oras-scan [OPTIONS]
+    python -m scanner_py retrieve-triage [OPTIONS]
     python -m scanner_py verify [OPTIONS]
     python -m scanner_py extract [OPTIONS]
     python -m scanner_py verify-chainguard [OPTIONS]
