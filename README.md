@@ -11,6 +11,7 @@ A collection of public support scripts and utilities for Aleph Alpha customers t
   - [Scanner Scripts](#scanner-scripts)
     - [k8s-image-scanner.sh](#k8s-image-scannersh)
     - [cosign-scan-image.sh](#cosign-scan-imagesh)
+  - [CVE Scan Triage Retrieval](#cve-scan-triage-retrieval)
   - [Cosign Scripts](#cosign-scripts)
     - [cosign-extract.sh](#cosign-extractsh)
     - [cosign-verify-image.sh](#cosign-verify-imagesh)
@@ -485,6 +486,40 @@ The scanner leverages existing scripts for consistent behavior:
 - **cosign** (for signature verification and attestation extraction)
 - **cosign-extract.sh** (for extracting SBOM and triage attestations)
 - **cosign-verify-image.sh** (for verifying image signatures)
+
+### CVE Scan Triage Retrieval
+
+The [CVE Scans](https://github.com/Aleph-Alpha/scheduled-workflows/blob/main/.github/workflows/CVE%20Scans.yaml) workflow runs Cosign and ORAS vulnerability scans and uses triage information attached to images. To collect all triage files from the result of a CVE scan (e.g. from workflow artifacts or a local run), use the **`retrieve-triage`** command in `scanner_py`:
+
+**`scanner-py retrieve-triage`** — Collects triage files (Cosign: `triage.json`, `triage.trivyignore`; ORAS: `triage.toml`) from Cosign and/or ORAS scan output directories. Optionally generates a Markdown report with CVE, score, date, and acceptance per image.
+
+**Usage:**
+
+```bash
+# From Cosign scan output (e.g. workflow default: scanner_py/scan-results)
+scanner-py retrieve-triage --cosign-dir scanner_py/scan-results -o triage-files
+
+# From ORAS scan output (e.g. scanner_py/cve-triage)
+scanner-py retrieve-triage --oras-dir scanner_py/cve-triage -o triage-files
+
+# From both (e.g. after downloading both scan artifacts)
+scanner-py retrieve-triage --cosign-dir scan-results --oras-dir cve-triage -o triage-files
+
+# Manifest only (no file copy)
+scanner-py retrieve-triage --cosign-dir scan-results --manifest-only --manifest manifest.json
+
+# Generate Markdown report from triage files (CVE, score, date, acceptance per image)
+scanner-py retrieve-triage --report triage-report.md --report-from triage-files
+
+# Collect and generate report in one run
+scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report triage-report.md
+```
+
+From the support repo root (with `pip install -e scanner_py`), you can also run `python retrieve-cve-scan-triage.py ...` as a thin wrapper that forwards to `scanner-py retrieve-triage`.
+
+**Options:** `--cosign-dir`, `--oras-dir`, `-o` / `--output-dir`, `--manifest`, `--manifest-only`, `--report` / `-r`, `--report-from`, `--no-trivyignore`, `--verbose`.
+
+The **report** (with `--report` / `-r`) is a Markdown file that lists, for each image that has a triage file, a table of **CVE**, **Score**, **Date**, and **Acceptance**.
 
 ### Cosign Scripts
 

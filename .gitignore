@@ -21,3 +21,5 @@ CHART.md
 __pycache__/
 scanner_py.egg-info/
 *cve-triage*/
+triage-files/
+triage-report.md
