@@ -515,9 +515,22 @@ scanner-py retrieve-triage --report triage-report.md --report-from triage-files
 scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report triage-report.md
 ```
 
+**Triage report from image list (for external customers):**  
+If you have a `scanned-images.txt` from the CVE workflow (one image per line, e.g. `alephalpha.jfrog.io/container-images/etl-workflow:v0.77.3`), you can generate a triage report by fetching triage from the registry on a machine that has access to the images:
+
+```bash
+# Using the dedicated script (recommended for customers)
+python triage-report-from-images-list.py scanned-images.txt -o triage-files -r triage-report.md
+
+# Or via scanner-py
+scanner-py retrieve-triage -i scanned-images.txt -o triage-files -r triage-report.md
+```
+
+Requires: `oras`, `cosign`, `jq`, `crane`, and registry access (e.g. `docker login` or equivalent). The script tries Cosign triage attestations first, then ORAS `triage.toml` for each image, and writes the same style Markdown report (CVE, score, date, acceptance per image).
+
 From the support repo root (with `pip install -e scanner_py`), you can also run `python retrieve-cve-scan-triage.py ...` as a thin wrapper that forwards to `scanner-py retrieve-triage`.
 
-**Options:** `--cosign-dir`, `--oras-dir`, `-o` / `--output-dir`, `--manifest`, `--manifest-only`, `--report` / `-r`, `--report-from`, `--no-trivyignore`, `--verbose`.
+**Options:** `--cosign-dir`, `--oras-dir`, `--images-file` / `-i`, `-o` / `--output-dir`, `--manifest`, `--manifest-only`, `--report` / `-r`, `--report-from`, `--timeout`, `--no-trivyignore`, `--verbose`.
 
 The **report** (with `--report` / `-r`) is a Markdown file that lists, for each image that has a triage file, a table of **CVE**, **Score**, **Date**, and **Acceptance**.
 
