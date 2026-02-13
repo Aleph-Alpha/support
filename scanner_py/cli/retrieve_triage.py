@@ -16,9 +16,62 @@ from pathlib import Path
 from typing import Any, List
 
 from ..utils.logging import setup_logging, LogLevel, get_logger
-
+from ..utils.progress import ProgressBar, ProgressStyle
+from ..core.attestation import AttestationExtractor
 
 logger = get_logger(__name__)
+
+
+def load_images_from_file(path: Path) -> List[str]:
+    """Load image references from a text file (one per line). Skip empty lines and # comments."""
+    images: List[str] = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            images.append(line)
+    return images
+
+
+def fetch_triage_for_image(
+    image: str,
+    output_dir: Path,
+    timeout: int,
+    extractor: AttestationExtractor,
+    verbose: bool = False,
+) -> bool:
+    """
+    Fetch triage for one image from the registry (Cosign attestation or ORAS triage.toml).
+    Writes triage.json or triage.toml into output_dir / sanitized_image /.
+    Returns True if triage was fetched and saved.
+    """
+    from .oras_scan import find_triage_reference, fetch_triage_toml, get_image_name
+
+    dir_name = sanitize_image_dir(image)
+    image_dir = output_dir / dir_name
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    # Try Cosign triage attestation first
+    triage_json = image_dir / "triage.json"
+    if extractor.extract_triage(image, str(triage_json), verify=False):
+        if verbose:
+            logger.info(f"Fetched Cosign triage for {image}")
+        return True
+
+    # Fallback: ORAS triage.toml
+    triage_ref = find_triage_reference(image, timeout=timeout, verbose=verbose)
+    if triage_ref:
+        triage_toml = image_dir / "triage.toml"
+        manifest_file = image_dir / "manifest.json"
+        if fetch_triage_toml(image, triage_ref, str(triage_toml), str(manifest_file), timeout=timeout):
+            if verbose:
+                logger.info(f"Fetched ORAS triage for {image}")
+            return True
+
+    if verbose:
+        logger.debug(f"No triage found for {image}")
+    return False
 
 
 def sanitize_image_dir(name: str) -> str:
@@ -268,6 +321,9 @@ Examples:
 
   # Collect and generate report in one run
   scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report triage-report.md
+
+  # From scanned-images.txt (customer list): fetch triage from registry and generate report
+  scanner-py retrieve-triage -i scanned-images.txt -o triage-files -r triage-report.md
 """,
     )
     parser.add_argument(
@@ -318,6 +374,17 @@ Examples:
         help="Directory containing triage files for report (default: output dir after collection)",
     )
     parser.add_argument(
+        "--images-file", "-i",
+        metavar="FILE",
+        help="Text file with one image reference per line (e.g. scanned-images.txt from CVE workflow). Fetches triage from registry for each image; requires local access to the images (oras, cosign).",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=180,
+        help="Timeout in seconds for fetching triage from registry (default: 180)",
+    )
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Enable verbose logging",
@@ -331,8 +398,12 @@ def run_retrieve_triage(args: Any) -> int:
     setup_logging(log_level, show_errors=args.verbose)
 
     report_only = bool(args.report and args.report_from)
-    if not args.cosign_dir and not args.oras_dir and not report_only:
-        print("Error: Specify at least one of: --cosign-dir, --oras-dir, or (--report with --report-from)", file=sys.stderr)
+    images_file_mode = bool(args.images_file)
+    if not args.cosign_dir and not args.oras_dir and not report_only and not images_file_mode:
+        print(
+            "Error: Specify at least one of: --cosign-dir, --oras-dir, --images-file, or (--report with --report-from)",
+            file=sys.stderr,
+        )
         return 1
 
     output_dir = Path(args.output_dir).resolve() if not args.manifest_only and not report_only else None
@@ -342,7 +413,39 @@ def run_retrieve_triage(args: Any) -> int:
     include_trivyignore = args.include_trivyignore and not args.no_trivyignore
     all_entries: List[dict] = []
 
-    if not report_only and args.cosign_dir:
+    if not report_only and args.images_file:
+        images_path = Path(args.images_file)
+        if not images_path.exists():
+            print(f"Error: Images file not found: {images_path}", file=sys.stderr)
+            return 1
+        images = load_images_from_file(images_path)
+        if not images:
+            print("Error: No images found in file (empty or only comments)", file=sys.stderr)
+            return 1
+        from ..utils.subprocess import check_prerequisites
+        missing = check_prerequisites(["oras", "cosign", "jq", "crane"])
+        if missing:
+            print(f"Error: Missing required tools for registry fetch: {', '.join(missing)}", file=sys.stderr)
+            return 1
+        extractor = AttestationExtractor(timeout=args.timeout)
+        timeout = getattr(args, "timeout", 180)
+        fetched = 0
+        print(f"Fetching triage for {len(images)} image(s) from registry...")
+        progress = ProgressBar(len(images), "Fetching triage", ProgressStyle(width=30))
+        for image in images:
+            got = fetch_triage_for_image(image, output_dir, timeout, extractor, verbose=args.verbose)
+            if got:
+                fetched += 1
+                d = sanitize_image_dir(image)
+                all_entries.append({"image": image, "source": "registry", "dir": d, "files": ["triage.json", "triage.toml"]})
+                progress.update(status="success", current_item=image.split("/")[-1])
+            else:
+                progress.update(status="skipped", current_item=image.split("/")[-1])
+        progress.finish()
+        print(f"Fetched triage for {fetched}/{len(images)} images -> {output_dir}")
+        if args.verbose and fetched < len(images):
+            logger.info(f"Images with no triage: {len(images) - fetched}")
+    elif not report_only and args.cosign_dir:
         cosign_path = Path(args.cosign_dir)
         if not cosign_path.exists():
             print(f"Error: Cosign directory not found: {cosign_path}", file=sys.stderr)
@@ -371,7 +474,7 @@ def run_retrieve_triage(args: Any) -> int:
 
     if args.manifest_only:
         print(json.dumps(manifest, indent=2))
-    elif not report_only:
+    elif not report_only and not images_file_mode:
         print(f"Collected {len(all_entries)} triage file set(s) -> {output_dir}")
 
     if args.report:
