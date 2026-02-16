@@ -6,7 +6,7 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
         args: ['--allow-multiple-documents']
-        exclude: ^helm/.*/templates/
+        exclude: ^helm/.*/templates|prometheus_rules/
       - id: check-added-large-files
       - id: check-merge-conflict
       - id: mixed-line-ending

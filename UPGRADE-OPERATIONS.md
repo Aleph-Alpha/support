@@ -126,7 +126,7 @@ Scaling down provides several critical benefits:
 ### Step 1: Identify Application Deployments
 
 ```bash
-# List all deployments in the namespace 
+# List all deployments in the namespace
 kubectl get deployments -n <namespace>
 
 # You might also be able to get all pharia-ai deployments using our default label
@@ -965,10 +965,10 @@ If you encounter issues not covered in this manual:
    ```bash
    # Application logs
    kubectl logs -n <namespace> <pod-name> --tail=100
-   
+
    # Helm release events
    helm get events <release-name> -n <namespace>
-   
+
    # Kubernetes events
    kubectl get events -n <namespace> --sort-by='.lastTimestamp'
    ```

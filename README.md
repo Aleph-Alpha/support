@@ -515,7 +515,7 @@ scanner-py retrieve-triage --report triage-report.md --report-from triage-files
 scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report triage-report.md
 ```
 
-**Triage report from image list (for external customers):**  
+**Triage report from image list (for external customers):**
 If you have a `scanned-images.txt` from the CVE workflow (one image per line, e.g. `alephalpha.jfrog.io/container-images/etl-workflow:v0.77.3`), you can generate a triage report by fetching triage from the registry on a machine that has access to the images:
 
 ```bash
