@@ -141,6 +141,9 @@ scanner-py retrieve-triage --report triage-report.md --report-from triage-files
 
 # Collect and generate report in one run
 scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report triage-report.md
+
+# From a list of images (e.g. scanned-images.txt for customers): fetch triage from registry and generate report
+scanner-py retrieve-triage -i scanned-images.txt -o triage-files -r triage-report.md
 ```
 
 ## Python API
