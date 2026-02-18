@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/Aleph-Alpha/support/compare/v1.3.0...v1.4.0) (2026-02-18)
+
+
+### Features
+
+* **version:** bump version for transcribe removal ([#100](https://github.com/Aleph-Alpha/support/issues/100)) ([09e5749](https://github.com/Aleph-Alpha/support/commit/09e574929f6552e0946fa3476b82d8d073d9e249))
+
 ## [1.3.0](https://github.com/Aleph-Alpha/support/compare/v1.2.11...v1.3.0) (2026-02-18)
 
 
