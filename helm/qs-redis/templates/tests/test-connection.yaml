@@ -3,7 +3,7 @@ Test pods for each Redis instance.
 Tests connection, authentication, and basic SET/GET operations.
 */ -}}
 {{- $root := . -}}
-{{- $instanceKeys := list "pharia-assistant-api-redis" "pharia-transcribe-app-redis" -}}
+{{- $instanceKeys := list "pharia-assistant-api-redis" -}}
 {{- range $k := $instanceKeys }}
 {{- $cfg := index $root.Values $k | default dict -}}
 {{- if and $cfg $cfg.enabled $cfg.redisStandalone $cfg.redisStandalone.redisSecret }}
