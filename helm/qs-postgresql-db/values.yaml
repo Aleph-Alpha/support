@@ -369,18 +369,6 @@ databases:
       - pg_trgm
       - btree_gin
 
-  - name: "pharia-transcribe-app"
-    enabled: true
-    cluster: "qs-postgresql-cluster-pharia"
-    owner: "pharia_transcribe_app"
-    connectionLimit: 50
-    extensions:
-      - uuid-ossp
-      - pgcrypto
-      - pg_stat_statements
-      - pg_trgm
-      - btree_gin
-
   - name: "pharia-data"
     enabled: true
     cluster: "qs-postgresql-cluster-pharia"

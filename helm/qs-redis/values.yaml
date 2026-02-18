@@ -77,28 +77,3 @@ pharia-assistant-api-redis:
   #       resources:
   #         requests:
   #           storage: 1Gi
-
-# Redis instance for pharia-transcribe-app
-pharia-transcribe-app-redis:
-  enabled: true
-  # Redis instance name (used for the Redis CRD resource name)
-  redisStandalone:
-    name: qs-redis-pharia-transcribe-app
-    # Enable password authentication using the secret
-    redisSecret:
-      secretName: qs-redis-pharia-transcribe-app
-      secretKey: password
-  externalConfig:
-    enabled: true
-    data: |
-      tcp-keepalive 300
-  # Add any specific values for the redis chart here
-  # For example:
-  # kubernetesConfig:
-  #   image: "quay.io/opstree/redis:v7.2.0"
-  # storage:
-  #   volumeClaimTemplate:
-  #     spec:
-  #       resources:
-  #         requests:
-  #           storage: 1Gi

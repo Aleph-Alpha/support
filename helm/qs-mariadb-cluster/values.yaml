@@ -177,11 +177,6 @@ mariadb-cluster:
     collate: utf8mb4_unicode_ci
     cleanupPolicy: Delete
 
-  - name: pharia-transcribe-app
-    characterSet: utf8mb4
-    collate: utf8mb4_unicode_ci
-    cleanupPolicy: Delete
-
   - name: pharia-data
     characterSet: utf8mb4
     collate: utf8mb4_unicode_ci
@@ -302,13 +297,6 @@ mariadb-cluster:
   - name: pharia-numinous
     passwordSecretKeyRef:
       name: qs-postgresql-cluster-access-pharia-numinous
-      key: password
-    host: "%"
-    cleanupPolicy: Delete
-
-  - name: pharia-transcribe-app
-    passwordSecretKeyRef:
-      name: qs-postgresql-cluster-access-pharia-transcribe-app
       key: password
     host: "%"
     cleanupPolicy: Delete
@@ -486,16 +474,6 @@ mariadb-cluster:
     database: pharia-numinous
     table: "*"
     username: pharia-numinous
-    grantOption: true
-    host: "%"
-    cleanupPolicy: Delete
-
-  - name: pharia-transcribe-app-grant
-    privileges:
-      - "ALL PRIVILEGES"
-    database: pharia-transcribe-app
-    table: "*"
-    username: pharia-transcribe-app
     grantOption: true
     host: "%"
     cleanupPolicy: Delete

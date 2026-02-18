@@ -373,7 +373,7 @@ kubectl create secret generic qs-postgresql-cluster-access-document-index -n pha
 # Repeat for all roles: pharia_os, inference_api, pharia_studio,
 # pharia_oauth_gateway, pharia_assistant, pharia_chat, pharia_catch,
 # zitadel, openfga, dex, pharia_conductor, pharia_numinous,
-# pharia_transcribe_app, pharia_data, mlflow
+# pharia_data, mlflow
 ```
 
 </details>
@@ -597,7 +597,6 @@ The PostgreSQL setup supports the following Pharia applications and components:
 | Pharia Catch | `pharia-catch` | `pharia_catch` |
 | Pharia Conductor | `pharia-conductor` | `pharia_conductor` |
 | Pharia Numinous | `pharia-numinous` | `pharia_numinous` |
-| Pharia Transcribe | `pharia-transcribe-app` | `pharia_transcribe_app` |
 | Pharia Data | `pharia-data` | `pharia_data` |
 | Zitadel | `zitadel` | `zitadel` |
 | OpenFGA | `openfga` | `openfga` |
@@ -1215,12 +1214,6 @@ kubectl create secret generic qs-redis-pharia-assistant-api -n pharia-ai \
   --from-literal=username="default" \
   --from-literal=password="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)"
 
-# Create secret for pharia-transcribe-app Redis instance
-kubectl create secret generic qs-redis-pharia-transcribe-app -n pharia-ai \
-  --from-literal=host="qs-redis-pharia-transcribe-app" \
-  --from-literal=port="6379" \
-  --from-literal=username="default" \
-  --from-literal=password="$(openssl rand -base64 32 | tr -d '=+/' | cut -c1-25)"
 ```
 
 **Important Notes:**
@@ -1241,7 +1234,6 @@ The Redis setup provides the following instances for Pharia applications:
 | Instance | Secret Name | Application | Description |
 |----------|-------------|-------------|-------------|
 | `qs-pharia-assistant-api-redis` | `qs-redis-pharia-assistant-api` | Pharia Assistant API | Session storage and caching for assistant service |
-| `qs-pharia-transcribe-app-redis` | `qs-redis-pharia-transcribe-app` | Pharia Transcribe App | Queue management for transcription jobs |
 
 **Connection Configuration:**
 - **Host:** `{instance-name}` (e.g., `qs-pharia-assistant-api-redis`)
@@ -1299,12 +1291,6 @@ helm test qs-redis -n pharia-ai
 **Test Output Example:**
 ```
 Testing Redis instance: qs-pharia-assistant-api-redis
-✅ Redis is ready
-✅ Authentication successful
-✅ PING command: PONG
-✅ SET/GET commands working
-
-Testing Redis instance: qs-pharia-transcribe-app-redis
 ✅ Redis is ready
 ✅ Authentication successful
 ✅ PING command: PONG
