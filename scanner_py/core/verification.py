@@ -33,7 +33,7 @@ class CosignVerifier:
     DEFAULT_OIDC_ISSUER = "https://token.actions.githubusercontent.com"
     DEFAULT_IDENTITY_REGEXP = (
         "https://github.com/Aleph-Alpha/shared-workflows/"
-        ".github/workflows/build-and-push.yaml@.*"
+        ".github/workflows/(build-and-push|scan-and-reattest).yaml@.*"
     )
     DEFAULT_REKOR_URL = "https://rekor.sigstore.dev"
 
