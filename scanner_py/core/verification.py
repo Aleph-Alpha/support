@@ -44,7 +44,7 @@ class CosignVerifier:
         certificate_identity: Optional[str] = None,
         key_file: Optional[str] = None,
         rekor_url: str = DEFAULT_REKOR_URL,
-        timeout: int = 60,
+        timeout: int = 600,
     ):
         """
         Initialize the verifier.
@@ -110,7 +110,7 @@ class CosignVerifier:
         logger.debug(f"Verifying image signature for: {image_ref}")
 
         # Build cosign arguments
-        args = ["cosign", "verify"]
+        args = ["cosign", "verify", f"--timeout={self.timeout // 60}m"]
 
         if self.keyless:
             logger.debug(f"Mode: Keyless verification")
