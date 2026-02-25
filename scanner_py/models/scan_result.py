@@ -182,7 +182,7 @@ class ScanSummary:
     # Results
     successful_images: List[str] = field(default_factory=list)
     failed_images: List[Dict[str, str]] = field(default_factory=list)
-    skipped_images: List[str] = field(default_factory=list)
+    skipped_images: List[Dict[str, str]] = field(default_factory=list)
     cve_analysis: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:

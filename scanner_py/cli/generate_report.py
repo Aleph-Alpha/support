@@ -273,7 +273,28 @@ def generate_markdown_report(
     lines.append(f"| **Images Processed** | {ss.get('images_processed', 0)} |")
     lines.append(f"| **Successful Scans** | ✅ {ss.get('successful_scans', 0)} |")
     lines.append(f"| **Failed Scans** | ❌ {ss.get('failed_scans', 0)} |")
-    lines.append(f"| **Skipped (unsigned)** | 🚫 {ss.get('skipped_scans', 0)} |")
+    # Categorize skipped images by reason
+    unsigned_skipped = []
+    no_sbom_skipped = []
+    other_skipped_items = []
+    for item in skipped_scans:
+        if isinstance(item, dict):
+            reason = item.get("reason", "")
+            if reason == "Image is not signed":
+                unsigned_skipped.append(item)
+            elif reason == "Image has no SBOM attestation":
+                no_sbom_skipped.append(item)
+            else:
+                other_skipped_items.append(item)
+        else:
+            unsigned_skipped.append({"image": item, "reason": "Image is not signed"})
+
+    if unsigned_skipped:
+        lines.append(f"| **Skipped (unsigned)** | 🚫 {len(unsigned_skipped)} |")
+    if no_sbom_skipped:
+        lines.append(f"| **Skipped (no SBOM)** | 📦 {len(no_sbom_skipped)} |")
+    if other_skipped_items:
+        lines.append(f"| **Skipped (other)** | ⏭️ {len(other_skipped_items)} |")
     lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append("")
 
@@ -399,15 +420,43 @@ def generate_markdown_report(
         lines.append("</details>")
         lines.append("")
 
-    # Skipped scans section
-    if skipped_scans:
+    # Skipped scans section (grouped by reason)
+    if unsigned_skipped:
         lines.append("## 🚫 Skipped Scans (Unsigned Images)")
         lines.append("")
         lines.append("<details>")
-        lines.append("<summary>Click to expand skipped images</summary>")
+        lines.append("<summary>Click to expand unsigned images</summary>")
         lines.append("")
-        for image in skipped_scans:
-            lines.append(f"- `{image}`")
+        for item in unsigned_skipped:
+            img = item["image"] if isinstance(item, dict) else item
+            lines.append(f"- `{img}`")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    if no_sbom_skipped:
+        lines.append("## 📦 Skipped Scans (Signed, No SBOM Attestation)")
+        lines.append("")
+        lines.append("> These images are signed but have no SBOM attestation attached.")
+        lines.append("> They cannot be scanned for vulnerabilities via SBOM-based scanning.")
+        lines.append("")
+        lines.append("<details>")
+        lines.append("<summary>Click to expand images without SBOM</summary>")
+        lines.append("")
+        for item in no_sbom_skipped:
+            lines.append(f"- `{item['image']}`")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
+
+    if other_skipped_items:
+        lines.append("## ⏭️ Skipped Scans (Other Reasons)")
+        lines.append("")
+        lines.append("<details>")
+        lines.append("<summary>Click to expand</summary>")
+        lines.append("")
+        for item in other_skipped_items:
+            lines.append(f"- `{item['image']}` — {item.get('reason', 'Unknown')}")
         lines.append("")
         lines.append("</details>")
         lines.append("")
@@ -439,7 +488,27 @@ def print_cli_summary(
     print()
     print(f"  ✅ Successful:    {ss.get('successful_scans', 0)}")
     print(f"  ❌ Failed:        {ss.get('failed_scans', 0)}")
-    print(f"  🚫  Skipped:       {ss.get('skipped_scans', 0)} (unsigned)")
+
+    skipped_scans = summary_data.get("skipped_scans", [])
+    unsigned_count = sum(
+        1 for s in skipped_scans
+        if (isinstance(s, dict) and s.get("reason") == "Image is not signed")
+        or isinstance(s, str)
+    )
+    no_sbom_count = sum(
+        1 for s in skipped_scans
+        if isinstance(s, dict) and s.get("reason") == "Image has no SBOM attestation"
+    )
+    other_count = ss.get("skipped_scans", 0) - unsigned_count - no_sbom_count
+
+    if unsigned_count > 0:
+        print(f"  🚫 Skipped:       {unsigned_count} (unsigned)")
+    if no_sbom_count > 0:
+        print(f"  📦 Skipped:       {no_sbom_count} (signed, no SBOM)")
+    if other_count > 0:
+        print(f"  ⏭️  Skipped:       {other_count} (other)")
+    if ss.get("skipped_scans", 0) == 0:
+        print(f"  ⏭️  Skipped:       0")
     print()
 
     if cve_analysis:

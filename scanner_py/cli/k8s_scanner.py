@@ -102,7 +102,16 @@ Examples:
 
   # Test flow - only scan first valid image
   scanner-py cosign-scan --namespace production --test-flow
+
+  # Scan images from a file (skip Kubernetes discovery)
+  scanner-py cosign-scan --image-file images.txt --verbose
 """,
+    )
+
+    # Image source options
+    parser.add_argument(
+        "--image-file",
+        help="File containing images to scan (one per line), skips Kubernetes discovery",
     )
 
     # Kubernetes options
@@ -271,10 +280,14 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
         cache.init()
         cache.clear()
 
-    # Check prerequisites
-    missing = check_prerequisites([
-        "kubectl", "trivy", "jq", "cosign", "docker", "crane", "oras"
-    ])
+    # Determine which tools are required based on mode
+    using_image_file = args.image_file is not None
+    if using_image_file:
+        required_tools = ["trivy", "jq", "cosign", "docker", "crane", "oras"]
+    else:
+        required_tools = ["kubectl", "trivy", "jq", "cosign", "docker", "crane", "oras"]
+
+    missing = check_prerequisites(required_tools)
     if missing:
         print(f"❌ Missing required tools: {', '.join(missing)}", file=sys.stderr)
         return 1
@@ -283,7 +296,10 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
     print("🚀 Aleph Alpha - Cosign Image Scanner")
     print()
     print("⚙️  Configuration:")
-    print(f"   • Namespace: {args.namespace}")
+    if using_image_file:
+        print(f"   • Source: {args.image_file}")
+    else:
+        print(f"   • Namespace: {args.namespace}")
     print(f"   • Output: {args.output_dir}")
 
     if args.no_cache:
@@ -302,49 +318,74 @@ def run_cosign_scanner(args: argparse.Namespace) -> int:
     # Initialize cache
     cache.init()
 
-    # Setup Kubernetes connection
-    k8s_config = KubernetesConfig(
-        namespace=args.namespace,
-        kubeconfig=args.kubeconfig,
-        context=args.context,
-    )
-    k8s_extractor = KubernetesImageExtractor(config=k8s_config)
+    if using_image_file:
+        # Load images from file, skipping Kubernetes discovery
+        from ..core.kubernetes import ImageExtractionResult
+        image_file_path = Path(args.image_file)
+        if not image_file_path.exists():
+            print(f"❌ Image file not found: {args.image_file}", file=sys.stderr)
+            return 1
 
-    # Test connectivity with spinner
-    spinner = Spinner("Testing Kubernetes connectivity...")
-    spinner.spin()
-    if not k8s_extractor.test_connectivity():
-        spinner.finish("Failed to connect to Kubernetes cluster", success=False)
-        return 1
-    spinner.finish(f"Connected to namespace: {args.namespace}", success=True)
+        images = []
+        with open(image_file_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    images.append(line)
 
-    # Load ignore patterns
-    ignore_patterns = []
-    if args.ignore_file:
-        ignore_patterns = k8s_extractor.load_ignore_patterns(args.ignore_file)
-        print(f"📂 Loaded {len(ignore_patterns)} ignore patterns")
+        if not images:
+            print("⚠️  No images found in file")
+            return 0
 
-    # Setup registry checker
-    registry_checker = RegistryChecker()
+        extraction_result = ImageExtractionResult(
+            images=images,
+            total_found=len(images),
+        )
+        print(f"📄 Loaded {len(images)} images from {args.image_file}")
+    else:
+        # Setup Kubernetes connection
+        k8s_config = KubernetesConfig(
+            namespace=args.namespace,
+            kubeconfig=args.kubeconfig,
+            context=args.context,
+        )
+        k8s_extractor = KubernetesImageExtractor(config=k8s_config)
 
-    # Extract images with spinner
-    spinner = Spinner("Discovering images...")
-    spinner.spin()
-    extraction_result = k8s_extractor.extract_images(
-        ignore_patterns=ignore_patterns,
-        registry_checker=registry_checker.is_registry_accessible,
-    )
-    spinner.finish(f"Found {len(extraction_result.images)} images to scan", success=True)
+        # Test connectivity with spinner
+        spinner = Spinner("Testing Kubernetes connectivity...")
+        spinner.spin()
+        if not k8s_extractor.test_connectivity():
+            spinner.finish("Failed to connect to Kubernetes cluster", success=False)
+            return 1
+        spinner.finish(f"Connected to namespace: {args.namespace}", success=True)
 
-    if not extraction_result.images:
-        print("⚠️  No images found to scan")
-        return 0
+        # Load ignore patterns
+        ignore_patterns = []
+        if args.ignore_file:
+            ignore_patterns = k8s_extractor.load_ignore_patterns(args.ignore_file)
+            print(f"📂 Loaded {len(ignore_patterns)} ignore patterns")
 
-    # Show summary of ignored/inaccessible
-    if extraction_result.ignored_count > 0:
-        print(f"   🚫 {extraction_result.ignored_count} ignored")
-    if extraction_result.inaccessible_count > 0:
-        print(f"   🚫 {extraction_result.inaccessible_count} from inaccessible registries")
+        # Setup registry checker
+        registry_checker = RegistryChecker()
+
+        # Extract images with spinner
+        spinner = Spinner("Discovering images...")
+        spinner.spin()
+        extraction_result = k8s_extractor.extract_images(
+            ignore_patterns=ignore_patterns,
+            registry_checker=registry_checker.is_registry_accessible,
+        )
+        spinner.finish(f"Found {len(extraction_result.images)} images to scan", success=True)
+
+        if not extraction_result.images:
+            print("⚠️  No images found to scan")
+            return 0
+
+        # Show summary of ignored/inaccessible
+        if extraction_result.ignored_count > 0:
+            print(f"   🚫 {extraction_result.ignored_count} ignored")
+        if extraction_result.inaccessible_count > 0:
+            print(f"   🚫 {extraction_result.inaccessible_count} from inaccessible registries")
 
     # Create output directory
     output_dir = Path(args.output_dir)
@@ -572,8 +613,9 @@ def generate_summary(
     failed = [r for r in results if not r.success and not r.skipped]
     skipped = [r for r in results if r.skipped]
 
+    namespace_label = args.image_file if args.image_file else args.namespace
     summary = ScanSummary(
-        namespace=args.namespace,
+        namespace=namespace_label,
         total_images_found=extraction_result.total_found,
         images_skipped=extraction_result.ignored_count + extraction_result.inaccessible_count,
         images_processed=len(results),
@@ -584,7 +626,10 @@ def generate_summary(
         severity_filter=args.severity,
         successful_images=[r.image for r in successful],
         failed_images=[{"image": r.image, "error": r.error or "Unknown"} for r in failed],
-        skipped_images=[r.image for r in skipped],
+        skipped_images=[
+            {"image": r.image, "reason": r.skip_reason or "Unknown"}
+            for r in skipped
+        ],
         cve_analysis=[r.to_dict() for r in successful],
     )
 
@@ -662,7 +707,21 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     lines.append(f"| **Images Processed** | {summary.images_processed} |")
     lines.append(f"| **Successful Scans** | ✅ {summary.successful_scans} |")
     lines.append(f"| **Failed Scans** | ❌ {summary.failed_scans} |")
-    lines.append(f"| **Skipped (unsigned)** | 🚫 {summary.skipped_scans} |")
+    unsigned_count = sum(
+        1 for s in summary.skipped_images
+        if s.get("reason", "") == "Image is not signed"
+    )
+    no_sbom_count = sum(
+        1 for s in summary.skipped_images
+        if s.get("reason", "") == "Image has no SBOM attestation"
+    )
+    if unsigned_count > 0:
+        lines.append(f"| **Skipped (unsigned)** | 🚫 {unsigned_count} |")
+    if no_sbom_count > 0:
+        lines.append(f"| **Skipped (no SBOM)** | 📦 {no_sbom_count} |")
+    other_skipped = summary.skipped_scans - unsigned_count - no_sbom_count
+    if other_skipped > 0:
+        lines.append(f"| **Skipped (other)** | ⏭️ {other_skipped} |")
     lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append("")
 
@@ -758,18 +817,50 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         lines.append("</details>")
         lines.append("")
 
-    # Skipped scans section
+    # Skipped scans section (grouped by reason)
     if summary.skipped_scans > 0:
-        lines.append("## 🚫 Skipped Scans (Unsigned Images)")
-        lines.append("")
-        lines.append("<details>")
-        lines.append("<summary>Click to expand skipped images</summary>")
-        lines.append("")
-        for image in summary.skipped_images:
-            lines.append(f"- `{image}`")
-        lines.append("")
-        lines.append("</details>")
-        lines.append("")
+        unsigned = [s for s in summary.skipped_images if s.get("reason") == "Image is not signed"]
+        no_sbom = [s for s in summary.skipped_images if s.get("reason") == "Image has no SBOM attestation"]
+        other = [s for s in summary.skipped_images if s not in unsigned and s not in no_sbom]
+
+        if unsigned:
+            lines.append("## 🚫 Skipped Scans (Unsigned Images)")
+            lines.append("")
+            lines.append("<details>")
+            lines.append("<summary>Click to expand unsigned images</summary>")
+            lines.append("")
+            for item in unsigned:
+                lines.append(f"- `{item['image']}`")
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
+
+        if no_sbom:
+            lines.append("## 📦 Skipped Scans (Signed, No SBOM Attestation)")
+            lines.append("")
+            lines.append("> These images are signed but have no SBOM attestation attached.")
+            lines.append("> They cannot be scanned for vulnerabilities via SBOM-based scanning.")
+            lines.append("")
+            lines.append("<details>")
+            lines.append("<summary>Click to expand images without SBOM</summary>")
+            lines.append("")
+            for item in no_sbom:
+                lines.append(f"- `{item['image']}`")
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
+
+        if other:
+            lines.append("## ⏭️ Skipped Scans (Other Reasons)")
+            lines.append("")
+            lines.append("<details>")
+            lines.append("<summary>Click to expand</summary>")
+            lines.append("")
+            for item in other:
+                lines.append(f"- `{item['image']}` — {item.get('reason', 'Unknown')}")
+            lines.append("")
+            lines.append("</details>")
+            lines.append("")
 
     # Footer
     lines.append("---")
@@ -790,7 +881,25 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
     print()
     print(f"  ✅ Successful:    {summary.successful_scans}")
     print(f"  ❌ Failed:        {summary.failed_scans}")
-    print(f"  🚫  Skipped:       {summary.skipped_scans} (unsigned)")
+
+    unsigned_count = sum(
+        1 for s in summary.skipped_images
+        if s.get("reason", "") == "Image is not signed"
+    )
+    no_sbom_count = sum(
+        1 for s in summary.skipped_images
+        if s.get("reason", "") == "Image has no SBOM attestation"
+    )
+    other_skipped = summary.skipped_scans - unsigned_count - no_sbom_count
+
+    if unsigned_count > 0:
+        print(f"  🚫 Skipped:       {unsigned_count} (unsigned)")
+    if no_sbom_count > 0:
+        print(f"  📦 Skipped:       {no_sbom_count} (signed, no SBOM)")
+    if other_skipped > 0:
+        print(f"  ⏭️  Skipped:       {other_skipped} (other)")
+    if summary.skipped_scans == 0:
+        print(f"  ⏭️  Skipped:       0")
     print()
 
     # Only show failed scan details in verbose mode
