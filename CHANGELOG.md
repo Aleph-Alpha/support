@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.5.0](https://github.com/Aleph-Alpha/support/compare/v1.4.0...v1.5.0) (2026-02-25)
+
+
+### Features
+
+* **report:** enhance report generation to categorize skipped scans by reason ([7362fa6](https://github.com/Aleph-Alpha/support/commit/7362fa63c268e8fcf58ac36cb5c4d20062f3a29d))
+
+
+### Bug Fixes
+
+* **verification:** increase timeout for Cosign verification from 60 to 600 seconds ([4c6ed0f](https://github.com/Aleph-Alpha/support/commit/4c6ed0f58a78585f8ce4d6b43f49788a1fef0cfb))
+* **verification:** update identity regexp to include scan-and-retest workflow ([860ad15](https://github.com/Aleph-Alpha/support/commit/860ad15ce7c20dc42ffac62b60b2bf8585822324))
+
 ## [1.4.0](https://github.com/Aleph-Alpha/support/compare/v1.3.0...v1.4.0) (2026-02-18)
 
 
