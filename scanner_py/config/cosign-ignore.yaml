@@ -8,3 +8,10 @@ brancz/kube-rbac-proxy
 proxy-ghcr/zitadel/zitadel
 prometheuscommunity/postgres-exporter
 proxy-ghcr/zitadel/zitadel
+docker.io/apteno/alpine-jq
+docker.io/curlimages/curl
+ghcr.io/zitadel/zitadel
+kserve/kserve-controller
+temporalio/admin-tools
+temporalio/server
+temporalio/ui
