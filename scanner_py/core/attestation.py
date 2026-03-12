@@ -137,29 +137,14 @@ class AttestationExtractor:
                 logger.error(f"Failed to resolve digest for {image}")
             return AttestationList()
 
-        image_with_digest = f"{image}@{digest}"
-        logger.debug(f"Listing attestations for: {image_with_digest}")
+        logger.debug(f"Listing attestations for: {image} ({digest})")
 
-        # Get referrers
-        result = run_command(
-            ["oras", "discover", image_with_digest, "--format", "json"],
-            timeout=self.timeout,
-        )
-
-        if not result.success:
+        referrers = self._discover_referrers(image, digest)
+        if not referrers:
             if is_verbose():
-                logger.error(f"Failed to discover referrers: {result.stderr}")
+                logger.error(f"Failed to discover referrers for {image}")
             return AttestationList()
 
-        try:
-            data = json.loads(result.stdout)
-            referrers = data.get("referrers", [])
-        except json.JSONDecodeError:
-            if is_verbose():
-                logger.error("Failed to parse oras output")
-            return AttestationList()
-
-        # Filter for bundle artifact types
         bundle_type = "application/vnd.dev.sigstore.bundle.v0.3+json"
         bundle_refs = [
             r for r in referrers
@@ -169,18 +154,16 @@ class AttestationExtractor:
         if not bundle_refs:
             return AttestationList()
 
-        # Extract predicate types from bundles IN PARALLEL
-        # This is a major performance improvement - each bundle fetch takes ~1-2 sec
         predicate_types: Dict[str, int] = {}
+        image_name = self._strip_tag(image)
 
         def fetch_predicate_type(ref: dict) -> Optional[str]:
             ref_digest = ref.get("digest")
             if not ref_digest:
                 return None
-            return self._get_predicate_type_from_bundle(image, ref_digest)
+            return self._get_predicate_type_from_bundle(image_name, ref_digest)
 
-        # Use ThreadPoolExecutor for parallel fetching
-        max_workers = min(len(bundle_refs), 5)  # Cap at 5 parallel requests
+        max_workers = min(len(bundle_refs), 5)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(fetch_predicate_type, ref): ref
@@ -193,27 +176,25 @@ class AttestationExtractor:
                     if pred_type:
                         predicate_types[pred_type] = predicate_types.get(pred_type, 0) + 1
                 except Exception:
-                    # Silently skip failed fetches
                     pass
 
         return AttestationList(attestations=predicate_types)
 
     def _get_predicate_type_from_bundle(
-        self, image: str, ref_digest: str
+        self, image_name: str, ref_digest: str
     ) -> Optional[str]:
         """
         Extract predicate type from a bundle referrer.
 
         Args:
-            image: Image reference
+            image_name: Image name without tag (registry/repo only)
             ref_digest: Referrer digest
 
         Returns:
             Predicate type or None
         """
-        # Get manifest to find layer digest
         result = run_command(
-            ["oras", "manifest", "fetch", f"{image}@{ref_digest}"],
+            ["oras", "manifest", "fetch", f"{image_name}@{ref_digest}"],
             timeout=30,
         )
 
@@ -232,12 +213,11 @@ class AttestationExtractor:
         if not layer_digest:
             return None
 
-        # Fetch bundle blob
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as f:
             bundle_file = f.name
 
         result = run_command(
-            ["oras", "blob", "fetch", f"{image}@{layer_digest}",
+            ["oras", "blob", "fetch", f"{image_name}@{layer_digest}",
              "--output", bundle_file],
             timeout=30,
         )
@@ -250,7 +230,6 @@ class AttestationExtractor:
             with open(bundle_file) as f:
                 bundle = json.load(f)
 
-            # Decode payload
             payload_b64 = bundle.get("dsseEnvelope", {}).get("payload")
             if not payload_b64:
                 return None
@@ -355,28 +334,58 @@ class AttestationExtractor:
         result = run_with_timeout(args, self.timeout)
         return result.success
 
-    def _find_attestation_digests(
-        self, image: str, pred_type: str, image_digest: str
-    ) -> List[str]:
-        """Find all attestation digests matching a predicate type."""
-        image_with_digest = f"{image}@{image_digest}"
+    def _discover_referrers(self, image: str, image_digest: Optional[str] = None) -> List[dict]:
+        """
+        Discover OCI referrers for an image.
+
+        Tries image@digest first for precision, falls back to image with tag
+        if the registry doesn't support digest-based referrer discovery (e.g. JFrog).
+        """
+        if image_digest:
+            image_with_digest = f"{image}@{image_digest}"
+            result = run_command(
+                ["oras", "discover", image_with_digest, "--format", "json"],
+                timeout=self.timeout,
+            )
+            if result.success:
+                try:
+                    data = json.loads(result.stdout)
+                    return data.get("referrers", [])
+                except json.JSONDecodeError:
+                    pass
+            logger.debug(f"Digest-based oras discover failed, falling back to tag: {result.stderr}")
 
         result = run_command(
-            ["oras", "discover", image_with_digest, "--format", "json"],
+            ["oras", "discover", image, "--format", "json"],
             timeout=self.timeout,
         )
-
         if not result.success:
             return []
 
         try:
             data = json.loads(result.stdout)
-            referrers = data.get("referrers", [])
+            return data.get("referrers", [])
         except json.JSONDecodeError:
             return []
 
+    @staticmethod
+    def _strip_tag(image: str) -> str:
+        """Return image reference without tag (keep registry/repo only)."""
+        if "@" in image:
+            return image.split("@")[0]
+        if ":" in image.rsplit("/", 1)[-1]:
+            return image.rsplit(":", 1)[0]
+        return image
+
+    def _find_attestation_digests(
+        self, image: str, pred_type: str, image_digest: str
+    ) -> List[str]:
+        """Find all attestation digests matching a predicate type."""
+        referrers = self._discover_referrers(image, image_digest)
+
         bundle_type = "application/vnd.dev.sigstore.bundle.v0.3+json"
         matching_digests = []
+        image_name = self._strip_tag(image)
 
         for ref in referrers:
             if ref.get("artifactType") != bundle_type:
@@ -386,9 +395,8 @@ class AttestationExtractor:
             if not ref_digest:
                 continue
 
-            # Check if this bundle has the right predicate type
             actual_pred_type = self._get_predicate_type_from_bundle(
-                image, ref_digest
+                image_name, ref_digest
             )
             if actual_pred_type == pred_type:
                 matching_digests.append(ref_digest)
@@ -399,9 +407,10 @@ class AttestationExtractor:
         self, image: str, ref_digest: str
     ) -> Optional[Dict[str, Any]]:
         """Fetch and decode attestation content."""
-        # Get layer digest from manifest
+        image_name = self._strip_tag(image)
+
         result = run_command(
-            ["oras", "manifest", "fetch", f"{image}@{ref_digest}"],
+            ["oras", "manifest", "fetch", f"{image_name}@{ref_digest}"],
             timeout=30,
         )
 
@@ -414,12 +423,11 @@ class AttestationExtractor:
         except (json.JSONDecodeError, KeyError, IndexError):
             return None
 
-        # Fetch bundle blob
         with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as f:
             bundle_file = f.name
 
         result = run_command(
-            ["oras", "blob", "fetch", f"{image}@{layer_digest}",
+            ["oras", "blob", "fetch", f"{image_name}@{layer_digest}",
              "--output", bundle_file],
             timeout=30,
         )
