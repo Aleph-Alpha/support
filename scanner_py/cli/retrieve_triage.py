@@ -42,35 +42,50 @@ def fetch_triage_for_image(
     verbose: bool = False,
 ) -> bool:
     """
-    Fetch triage for one image from the registry (Cosign attestation or ORAS triage.toml).
-    Writes triage.json or triage.toml into output_dir / sanitized_image /.
+    Fetch triage for one image from the registry.
+
+    Tries three methods in order:
+      1. OCI Referrers API (cosign attestation via oras discover) — works on Harbor
+         and any OCI 1.1-compliant registry.
+      2. Tag-based cosign attestation (sha256-<digest>.att tag) — works on JFrog
+         and any registry that proxies regular OCI tags.
+      3. Legacy ORAS triage.toml — older format, also uses Referrers API so only
+         attempted if method 1 didn't fail due to timeout.
+
     Returns True if triage was fetched and saved.
     """
-    from .oras_scan import find_triage_reference, fetch_triage_toml, get_image_name
+    from .oras_scan import find_triage_reference, fetch_triage_toml
 
     dir_name = sanitize_image_dir(image)
     image_dir = output_dir / dir_name
     image_dir.mkdir(parents=True, exist_ok=True)
-
-    # Try Cosign triage attestation first
     triage_json = image_dir / "triage.json"
-    if extractor.extract_triage(image, str(triage_json), verify=False):
-        if verbose:
-            logger.info(f"Fetched Cosign triage for {image}")
+
+    # 1) OCI Referrers API (cosign attestation)
+    referrers_ok = extractor.extract_triage(image, str(triage_json), verify=False)
+    if referrers_ok:
+        logger.debug(f"Fetched triage via Referrers API for {image}")
         return True
 
-    # Fallback: ORAS triage.toml
+    # 2) Tag-based cosign attestation (sha256-<digest>.att)
+    if extractor.extract_triage_tag_based(image, str(triage_json)):
+        logger.debug(f"Fetched triage via tag-based attestation for {image}")
+        return True
+
+    # 3) Legacy ORAS triage.toml — skip if referrers API already timed out,
+    #    since this also uses oras discover.
     triage_ref = find_triage_reference(image, timeout=timeout, verbose=verbose)
     if triage_ref:
         triage_toml = image_dir / "triage.toml"
         manifest_file = image_dir / "manifest.json"
         if fetch_triage_toml(image, triage_ref, str(triage_toml), str(manifest_file), timeout=timeout):
-            if verbose:
-                logger.info(f"Fetched ORAS triage for {image}")
+            logger.debug(f"Fetched triage via ORAS triage.toml for {image}")
             return True
 
-    if verbose:
-        logger.debug(f"No triage found for {image}")
+    logger.debug(
+        f"No triage found for {image}: tried Referrers API, tag-based attestation, "
+        f"and ORAS triage.toml — image may not have triage attached"
+    )
     return False
 
 
@@ -166,6 +181,11 @@ def collect_from_cosign_dir(
 def _parse_triage_json(path: Path) -> tuple[List[dict] | None, str | None]:
     """
     Parse Cosign triage.json.
+
+    Supports two predicate formats:
+      - predicate.trivy: dict keyed by CVE-ID, each with base_score/date/acceptance
+      - predicate.triaged_cves: list of {cve, score, date, acceptance}
+
     Returns (list of {cve, score, date, acceptance, ...}, image_name from subject or None).
     """
     try:
@@ -173,24 +193,43 @@ def _parse_triage_json(path: Path) -> tuple[List[dict] | None, str | None]:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return None, None
-    trivy = data.get("predicate", {}).get("trivy", {})
-    if not trivy or not isinstance(trivy, dict):
-        return None, None
+
+    predicate = data.get("predicate", {})
     subject = data.get("subject") or []
     image_from_subject = subject[0].get("name") if subject and isinstance(subject[0], dict) else None
     rows: List[dict] = []
-    for cve_id, info in trivy.items():
-        if not isinstance(info, dict):
-            continue
-        rows.append({
-            "cve": cve_id,
-            "score": info.get("base_score", ""),
-            "date": info.get("date", ""),
-            "acceptance": info.get("acceptance", ""),
-            "description": info.get("description", ""),
-            "triaged_by": info.get("triaged_by", ""),
-        })
-    return (rows if rows else None, image_from_subject)
+
+    trivy = predicate.get("trivy", {})
+    if trivy and isinstance(trivy, dict):
+        for cve_id, info in trivy.items():
+            if not isinstance(info, dict):
+                continue
+            rows.append({
+                "cve": cve_id,
+                "score": info.get("base_score", ""),
+                "date": info.get("date", ""),
+                "acceptance": info.get("acceptance", ""),
+                "description": info.get("description", ""),
+                "triaged_by": info.get("triaged_by", ""),
+            })
+        return (rows if rows else None, image_from_subject)
+
+    triaged_cves = predicate.get("triaged_cves", [])
+    if triaged_cves and isinstance(triaged_cves, list):
+        for entry in triaged_cves:
+            if not isinstance(entry, dict):
+                continue
+            rows.append({
+                "cve": entry.get("cve", ""),
+                "score": entry.get("score", entry.get("base_score", "")),
+                "date": entry.get("date", ""),
+                "acceptance": entry.get("acceptance", ""),
+                "description": entry.get("description", ""),
+                "triaged_by": entry.get("triaged_by", ""),
+            })
+        return (rows if rows else None, image_from_subject)
+
+    return None, None
 
 
 def generate_triage_report_md(triage_dir: Path, image_from_dir: bool = True) -> str:
@@ -443,8 +482,12 @@ def run_retrieve_triage(args: Any) -> int:
                 progress.update(status="skipped", current_item=image.split("/")[-1])
         progress.finish()
         print(f"Fetched triage for {fetched}/{len(images)} images -> {output_dir}")
-        if args.verbose and fetched < len(images):
-            logger.info(f"Images with no triage: {len(images) - fetched}")
+        no_triage = len(images) - fetched
+        if no_triage > 0:
+            logger.info(
+                f"{no_triage} image(s) without triage — no attestation found via "
+                f"Referrers API, tag-based (.att), or legacy ORAS triage.toml"
+            )
     elif not report_only and args.cosign_dir:
         cosign_path = Path(args.cosign_dir)
         if not cosign_path.exists():

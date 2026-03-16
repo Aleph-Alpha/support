@@ -340,31 +340,45 @@ class AttestationExtractor:
 
         Tries image@digest first for precision, falls back to image with tag
         if the registry doesn't support digest-based referrer discovery (e.g. JFrog).
+
+        Returns an empty list if the registry doesn't support the Referrers API
+        (timeout or error). Callers should use extract_triage_tag_based() as fallback.
         """
+        fast_timeout = min(self.timeout, 15)
+
         if image_digest:
             image_with_digest = f"{image}@{image_digest}"
             result = run_command(
                 ["oras", "discover", image_with_digest, "--format", "json"],
-                timeout=self.timeout,
+                timeout=fast_timeout,
             )
             if result.success:
                 try:
                     data = json.loads(result.stdout)
-                    return data.get("referrers", [])
+                    refs = data.get("referrers", data.get("manifests", []))
+                    return refs if refs is not None else []
                 except json.JSONDecodeError:
                     pass
+
+            if result.timed_out:
+                logger.debug(f"Referrers API timed out for {image} — registry may not support it")
+                return []
+
             logger.debug(f"Digest-based oras discover failed, falling back to tag: {result.stderr}")
 
         result = run_command(
             ["oras", "discover", image, "--format", "json"],
-            timeout=self.timeout,
+            timeout=fast_timeout,
         )
         if not result.success:
+            if result.timed_out:
+                logger.debug(f"Referrers API timed out for {image} — registry may not support it")
             return []
 
         try:
             data = json.loads(result.stdout)
-            return data.get("referrers", [])
+            refs = data.get("referrers", data.get("manifests", []))
+            return refs if refs is not None else []
         except json.JSONDecodeError:
             return []
 
@@ -487,7 +501,7 @@ class AttestationExtractor:
         self, image: str, output_file: str, verify: bool = False
     ) -> bool:
         """
-        Extract triage attestation from an image.
+        Extract triage attestation from an image via OCI Referrers API.
 
         Args:
             image: Image reference
@@ -507,6 +521,51 @@ class AttestationExtractor:
         )
 
         return content is not None
+
+    def extract_triage_tag_based(
+        self, image: str, output_file: str
+    ) -> bool:
+        """
+        Extract triage attestation via tag-based cosign storage (sha256-<digest>.att).
+
+        Fallback for registries that don't support the OCI Referrers API
+        (e.g. JFrog remote/virtual repos). Tag-based attestations are stored as
+        regular OCI tags that any registry can proxy.
+
+        Args:
+            image: Image reference
+            output_file: Path to save triage file
+
+        Returns:
+            True if successful
+        """
+        triage_pred_type = PREDICATE_TYPE_MAP[AttestationTypeEnum.TRIAGE]
+
+        result = run_command(
+            ["cosign", "download", "attestation", image],
+            timeout=self.timeout,
+        )
+        if not result.success:
+            logger.debug(f"No tag-based attestations for {image}")
+            return False
+
+        for line in result.stdout.strip().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                envelope = json.loads(line)
+                payload = json.loads(base64.b64decode(envelope.get("payload", "")))
+                if payload.get("predicateType") == triage_pred_type:
+                    with open(output_file, "w") as f:
+                        json.dump(payload, f, indent=2)
+                    logger.debug(f"Tag-based triage attestation written to {output_file}")
+                    return True
+            except (json.JSONDecodeError, KeyError, ValueError):
+                continue
+
+        logger.debug(f"No triage predicate in tag-based attestations for {image}")
+        return False
 
 
 class LegacyTriageExtractor:
