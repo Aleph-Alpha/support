@@ -146,6 +146,14 @@ scanner-py retrieve-triage --cosign-dir scan-results -o triage-files --report tr
 scanner-py retrieve-triage -i scanned-images.txt -o triage-files -r triage-report.md
 ```
 
+When fetching triage from a registry (`-i` mode), the tool automatically tries three methods in order:
+
+1. **OCI Referrers API** — discovers cosign attestations via `oras discover`. Works on Harbor and OCI 1.1-compliant registries.
+2. **Tag-based cosign attestation** — downloads attestations stored as `sha256-<digest>.att` tags via `cosign download attestation`. Works on JFrog and any registry that proxies regular OCI tags.
+3. **Legacy ORAS triage.toml** — older format attached as an ORAS referrer.
+
+This makes the tool work transparently against both Harbor (direct) and JFrog (remote/virtual repos), where the OCI Referrers API is not supported.
+
 ## Python API
 
 You can also use the package programmatically:

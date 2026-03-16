@@ -526,7 +526,13 @@ python triage-report-from-images-list.py scanned-images.txt -o triage-files -r t
 scanner-py retrieve-triage -i scanned-images.txt -o triage-files -r triage-report.md
 ```
 
-Requires: `oras`, `cosign`, `jq`, `crane`, and registry access (e.g. `docker login` or equivalent). The script tries Cosign triage attestations first, then ORAS `triage.toml` for each image, and writes the same style Markdown report (CVE, score, date, acceptance per image).
+Requires: `oras`, `cosign`, `jq`, `crane`, and registry access (e.g. `docker login` or equivalent). The script automatically tries three methods to fetch triage for each image:
+
+1. **OCI Referrers API** — discovers cosign attestations via `oras discover` (works on Harbor and OCI 1.1-compliant registries)
+2. **Tag-based cosign attestation** — downloads from `sha256-<digest>.att` tags via `cosign download attestation` (works on JFrog remote/virtual repos and any registry that proxies regular OCI tags)
+3. **Legacy ORAS triage.toml** — older format attached as an ORAS referrer
+
+This makes the script work transparently against both Harbor (direct) and JFrog (remote/virtual repos where the OCI Referrers API is not supported). The output is the same style Markdown report (CVE, score, date, acceptance per image).
 
 From the support repo root (with `pip install -e scanner_py`), you can also run `python retrieve-cve-scan-triage.py ...` as a thin wrapper that forwards to `scanner-py retrieve-triage`.
 
