@@ -45,7 +45,7 @@ jobs:
       tag_exists: ${{ steps.check_tag.outputs.exists }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -93,7 +93,7 @@ jobs:
       tag_name: ${{ steps.create_tag.outputs.tag }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -133,7 +133,7 @@ jobs:
       github.event.inputs.action_type == 'tag_and_release'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
