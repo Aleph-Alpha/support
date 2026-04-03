@@ -1,0 +1,85 @@
+on:
+  workflow_call:
+    inputs:
+      chart_name:
+        required: true
+        type: string
+      chart_version:
+        required: false
+        type: string
+        description: 'Chart version to use (defaults to version in Chart.yaml)'
+    secrets:
+      HARBOR_PASSWORD:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  HELM_OCI: oci://${{ vars.HARBOR_REGISTRY }}/support-helm
+
+jobs:
+  package-and-push-helm:
+    name: Package & push Helm chart to Harbor (OCI)
+    runs-on: cpu-runner-8c-32gb-01
+    env:
+      WORKING_DIRECTORY: helm/${{ inputs.chart_name }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ env.WORKING_DIRECTORY }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Helm with JFrog
+        uses: Aleph-Alpha/actions/helm/setup@main
+
+      - name: Update dependencies
+        run: |
+          if [ -f Chart.lock ]; then
+            echo "Chart.lock found, building dependencies..."
+            helm dependency build .
+          else
+            echo "No Chart.lock found, skipping dependency build"
+          fi
+
+      - name: Get chart version
+        id: chart-version
+        run: |
+          if [ -n "${{ inputs.chart_version }}" ]; then
+            VERSION="${{ inputs.chart_version }}"
+          else
+            VERSION=$(helm show chart . | grep '^version:' | awk '{print $2}')
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Using chart version: $VERSION"
+
+      - name: Package chart
+        run: |
+          VERSION="${{ steps.chart-version.outputs.version }}"
+          helm package . --version "$VERSION"
+
+      - name: Harbor login for Helm (OCI)
+        run: echo '${{ secrets.HARBOR_PASSWORD }}' | helm registry login '${{ vars.HARBOR_REGISTRY }}' --username '${{ vars.HARBOR_USER }}' --password-stdin --debug
+
+      - name: Push chart to Harbor OCI
+        run: |
+          CHART_TGZ=$(ls *.tgz)
+          echo "Pushing $CHART_TGZ to ${{ env.HELM_OCI }}"
+          helm push "$CHART_TGZ" ${{ env.HELM_OCI }}
+
+      - name: Summary
+        run: |
+          echo "### ✅ Helm Chart Published" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Chart**: ${{ inputs.chart_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.chart-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry**: ${{ env.HELM_OCI }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Install command:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "helm install my-release ${{ env.HELM_OCI }}/${{ inputs.chart_name }} --version ${{ steps.chart-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
