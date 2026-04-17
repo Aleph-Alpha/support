@@ -126,7 +126,21 @@ class CosignVerifier:
         # Build cosign arguments. Use the (capped) verify_timeout so a hung
         # call against an unsigned / slow registry does not eat minutes per
         # image. We still pass it as seconds (cosign accepts ``Ns``).
-        args = ["cosign", "verify", f"--timeout={self.verify_timeout}s"]
+        #
+        # ``--new-bundle-format`` (cosign >= 2.5) is required so cosign
+        # discovers signatures stored as ``application/vnd.dev.sigstore.bundle.v0.3+json``
+        # OCI 1.1 referrers. Without it cosign only probes the legacy
+        # ``<image>:sha256-<digest>.sig`` tag, 404s, and returns "no
+        # signatures found" even when a perfectly valid sigstore bundle
+        # signature is attached to the image via the Referrers API.
+        # The sister ``_verify_attestation`` helper already uses this flag,
+        # so this aligns signature verification with attestation verification.
+        args = [
+            "cosign",
+            "verify",
+            f"--timeout={self.verify_timeout}s",
+            "--new-bundle-format",
+        ]
 
         if self.keyless:
             logger.debug(f"Mode: Keyless verification")
