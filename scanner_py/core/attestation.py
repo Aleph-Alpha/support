@@ -13,7 +13,7 @@ import re
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Set
+from typing import Optional, List, Dict, Any, Set, Tuple
 from pathlib import Path
 from enum import Enum
 
@@ -124,6 +124,16 @@ class AttestationExtractor:
         self.certificate_oidc_issuer = certificate_oidc_issuer
         self.certificate_identity_regexp = certificate_identity_regexp
         self.timeout = timeout
+        # Per-instance cache populated by ``list_attestations`` and
+        # consulted by ``_find_attestation_digests``. Maps
+        # ``(image_name, image_digest)`` -> ``{predicate_type: [bundle_digests]}``
+        # so that ``extract_sbom`` / ``extract_triage`` (which would
+        # otherwise serially re-decode every sigstore bundle on the
+        # image) can reuse the parallel decode work
+        # ``ImageScanner.detect_attestation_type`` has already paid for.
+        self._predicate_digests_cache: Dict[
+            Tuple[str, str], Dict[str, List[str]]
+        ] = {}
 
     def resolve_digest(self, image: str) -> Optional[str]:
         """
@@ -207,6 +217,12 @@ class AttestationExtractor:
         # Empirically this brings classify latency for the heaviest known
         # image from "doesn't finish in 20 minutes" down to ~5-15 s.
         predicate_types: Dict[str, int] = {}
+        # Bundle digests grouped by their decoded in-toto predicate type.
+        # Populated alongside ``predicate_types`` so the cache hit path in
+        # ``_find_attestation_digests`` (used by extract_sbom /
+        # extract_triage) can avoid re-decoding bundles we have already
+        # seen.
+        predicate_digests: Dict[str, List[str]] = {}
         image_name = self._strip_tag(image)
 
         # Predicates that change the cosign-scan classification. As soon
@@ -233,11 +249,13 @@ class AttestationExtractor:
             has_triage = PREDICATE_TYPE_MAP[AttestationTypeEnum.TRIAGE] in seen
             return has_sig and has_sbom and has_triage
 
-        def fetch_predicate_type(ref: dict) -> Optional[str]:
+        def fetch_predicate_type(ref: dict) -> Tuple[Optional[str], Optional[str]]:
             ref_digest = ref.get("digest")
             if not ref_digest:
-                return None
-            return self._get_predicate_type_from_bundle(image_name, ref_digest)
+                return None, None
+            return ref_digest, self._get_predicate_type_from_bundle(
+                image_name, ref_digest
+            )
 
         max_workers = min(len(bundle_refs), 20)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -249,13 +267,16 @@ class AttestationExtractor:
             try:
                 for future in as_completed(futures):
                     try:
-                        pred_type = future.result()
+                        ref_digest, pred_type = future.result()
                     except Exception:
                         continue
-                    if not pred_type:
+                    if not pred_type or not ref_digest:
                         continue
                     predicate_types[pred_type] = (
                         predicate_types.get(pred_type, 0) + 1
+                    )
+                    predicate_digests.setdefault(pred_type, []).append(
+                        ref_digest
                     )
                     # Once we have at least one of every decision
                     # predicate, classifications are stable. Stop early.
@@ -268,6 +289,17 @@ class AttestationExtractor:
                 # already-running workers on context exit.
                 for pending in futures:
                     pending.cancel()
+
+        # Cache so downstream extract_sbom / extract_triage can reuse the
+        # bundle digests we already paid to decode. Key on
+        # ``(image_name, digest)`` to be tag-stable across the same
+        # registry digest. Mark partial enumerations explicitly so
+        # ``_find_attestation_digests`` can decide whether to fall back
+        # to a full enumeration when its requested predicate type is
+        # absent from the cache.
+        self._predicate_digests_cache[(image_name, digest)] = dict(
+            predicate_digests
+        )
 
         return AttestationList(attestations=predicate_types)
 
@@ -528,26 +560,50 @@ class AttestationExtractor:
     def _find_attestation_digests(
         self, image: str, pred_type: str, image_digest: str
     ) -> List[str]:
-        """Find all attestation digests matching a predicate type."""
-        referrers = self._discover_referrers(image, image_digest)
+        """Find all attestation digests matching a predicate type.
 
-        bundle_type = "application/vnd.dev.sigstore.bundle.v0.3+json"
-        matching_digests = []
+        Reads from the per-instance predicate-digest cache populated by
+        ``list_attestations`` whenever possible -- the cache hit path
+        avoids re-enumerating + re-decoding every sigstore bundle on the
+        image, which on heavily-attested images (pharia-os-app: 400+
+        bundles) was the dominant cosign-scan latency. Falls back to a
+        20-way parallel decode if the cache has no entry for this image
+        OR if the requested predicate type is missing from the cached
+        map (e.g. ``list_attestations`` early-terminated before reaching
+        a SLSA / vuln bundle that an unusual caller might want).
+        """
         image_name = self._strip_tag(image)
+        cached_map = self._predicate_digests_cache.get((image_name, image_digest))
+        if cached_map is not None and pred_type in cached_map:
+            return list(cached_map[pred_type])
 
-        for ref in referrers:
-            if ref.get("artifactType") != bundle_type:
-                continue
+        referrers = self._discover_referrers(image, image_digest)
+        bundle_type = "application/vnd.dev.sigstore.bundle.v0.3+json"
+        bundle_refs = [
+            r for r in referrers
+            if r.get("artifactType") == bundle_type and r.get("digest")
+        ]
 
-            ref_digest = ref.get("digest")
-            if not ref_digest:
-                continue
+        if not bundle_refs:
+            return []
 
-            actual_pred_type = self._get_predicate_type_from_bundle(
+        def fetch(ref: dict) -> Tuple[str, Optional[str]]:
+            ref_digest = ref["digest"]
+            return ref_digest, self._get_predicate_type_from_bundle(
                 image_name, ref_digest
             )
-            if actual_pred_type == pred_type:
-                matching_digests.append(ref_digest)
+
+        matching_digests: List[str] = []
+        max_workers = min(len(bundle_refs), 20)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(fetch, ref) for ref in bundle_refs]
+            for future in as_completed(futures):
+                try:
+                    ref_digest, actual_pred_type = future.result()
+                except Exception:
+                    continue
+                if actual_pred_type == pred_type:
+                    matching_digests.append(ref_digest)
 
         return matching_digests
 
