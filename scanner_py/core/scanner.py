@@ -365,8 +365,24 @@ class ImageScanner:
         attestations = self.extractor.list_attestations(image)
 
         if not attestations.has_signature():
-            logger.debug(
-                f"No cosign signature bundle for {image}; treating as unsigned"
+            # Log predicate map at INFO level so CI diagnostics capture
+            # *why* an image was classified unsigned without needing to
+            # enable --verbose globally. Seeing the predicate map here
+            # distinguishes the main failure modes:
+            #   * empty dict, discovery_failed=True  -> Referrers API
+            #                                           timed out (rerun
+            #                                           may succeed).
+            #   * empty dict, discovery_failed=False -> image legitimately
+            #                                           has no referrers
+            #                                           (truly unsigned).
+            #   * non-empty but no sig predicate     -> decode failures
+            #                                           suppressed the
+            #                                           signature bundle
+            #                                           under high load.
+            logger.info(
+                f"Classifying {image} as UNSIGNED; "
+                f"predicates={dict(attestations.attestations)} "
+                f"discovery_failed={attestations.discovery_failed}"
             )
             return AttestationType.UNSIGNED
 
