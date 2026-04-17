@@ -315,11 +315,13 @@ class ImageScanner:
         ``oras discover`` is a single Referrers API GET capped at 15 s.
 
         Aleph-Alpha images attach all signature, SBOM and triage bundles via
-        OCI 1.1 referrers, so ``list_attestations`` already tells us whether
-        the image has anything to verify. If the referrers list is empty we
-        can mark the image UNSIGNED immediately and skip the slow cosign
-        round-trip entirely. We only run ``cosign verify`` once we know
-        there is actually a sigstore bundle to validate.
+        OCI 1.1 referrers. We use the Referrers API as a fast pre-check:
+        when it definitively returns an empty referrers list we can mark
+        the image UNSIGNED without invoking the slow cosign round-trip.
+        On any discovery failure (timeout, network glitch, registry that
+        doesn't expose the Referrers API) we fall back to ``cosign verify``
+        so we never misclassify a signed image as unsigned because of a
+        transient registry hiccup.
 
         Args:
             image: Image reference
@@ -334,21 +336,26 @@ class ImageScanner:
             return AttestationType.UNSIGNED
 
         # Fast path: a single oras-discover call (~1 RTT, ~15 s timeout).
-        # If there are no referrers at all, the image cannot be signed by
-        # cosign with OCI 1.1 referrers mode either -- skip the expensive
-        # cosign verify step.
-        attestations = self.extractor.list_attestations(image)
-        if not attestations.attestations:
+        # ``discover_referrers`` returns ``None`` on transient failures so
+        # we only short-circuit when discovery succeeded AND the image
+        # truly has no referrers attached.
+        referrers = self.extractor.discover_referrers(image, digest)
+        if referrers is not None and len(referrers) == 0:
             logger.debug(
-                f"No referrers / attestations for {image}; skipping cosign verify"
+                f"No referrers for {image}; skipping cosign verify"
             )
             return AttestationType.UNSIGNED
 
-        # We have referrers; now confirm the signature chain.
+        # Either discovery failed or we found referrers: fall through to the
+        # full cosign verify so we don't mark a signed image as unsigned
+        # because of a flaky registry call.
         verification = self.verifier.verify(image)
         if not verification.success:
             logger.debug(f"Image is not signed: {image}")
             return AttestationType.UNSIGNED
+
+        # List available attestations (already uses cached digest).
+        attestations = self.extractor.list_attestations(image)
 
         has_sbom = attestations.has_sbom()
         has_triage = attestations.has_triage()
