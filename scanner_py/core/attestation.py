@@ -536,16 +536,24 @@ class AttestationExtractor:
         """
         # The oras discover request hits the registry's OCI 1.1 Referrers
         # API. On Harbor this is O(N) in referrer count -- empirically
-        # ~8 s for 36 refs, ~95 s for 403 refs. The previous 15 s cap
-        # turned every heavily-attested image into a false ``None``
-        # (timeout) result, which downstream callers interpret as either
-        # "fall back to cosign verify" (also slow) or "discovery failed,
-        # treat as empty" (a silent miss). 120 s comfortably covers our
-        # heaviest known images (pharia-os-app at ~95 s) while still
-        # bounding worker latency. Capped at ``self.timeout`` so callers
-        # that supply a tighter budget (e.g. unit tests) keep control.
-        fast_timeout = min(self.timeout, 120)
+        # ~8 s for 36 refs locally, ~95 s for 403 refs locally, but
+        # observed 120+ s in GitHub-hosted runners against the same
+        # images (extra round-trip latency + TLS setup cost amplifies
+        # the per-referrer cost). 240 s covers the tail we have seen
+        # in CI while still bounding worker wall-clock; an individual
+        # cosign-scan image is still bounded by the 10-minute trivy
+        # budget after discovery completes. Capped at ``self.timeout``
+        # so callers that supply a tighter budget (e.g. unit tests)
+        # keep control.
+        fast_timeout = min(self.timeout, 240)
 
+        # Try digest-based discovery first (more precise: it avoids a
+        # second tag->digest round trip inside the registry) and fall
+        # back to tag-based on ANY failure, including timeout. A timeout
+        # on digest-based doesn't mean the Referrers API is unsupported;
+        # it usually means Harbor was slow on this particular request.
+        # Retrying via the tag path often succeeds because Harbor caches
+        # the tag->digest mapping separately.
         if image_digest:
             image_with_digest = f"{image}@{image_digest}"
             result = run_command(
@@ -563,14 +571,17 @@ class AttestationExtractor:
                     )
                     return None
 
-            if result.timed_out:
-                logger.debug(
-                    f"Referrers API timed out for {image} — registry may not support it"
-                )
-                return None
-
-            logger.debug(
-                f"Digest-based oras discover failed, falling back to tag: {result.stderr}"
+            # Log the failure reason (timeout / other error) at stderr
+            # so CI captures it; then fall through to the tag-based
+            # retry. The previous implementation bailed out on timeout,
+            # which bricked heavily-attested images whose digest-based
+            # request happened to be the slow one on a given run.
+            fail_reason = "timed out" if result.timed_out else "failed"
+            print(
+                f"[cosign-scan] Digest-based oras discover {fail_reason}"
+                f" for {image}; retrying via tag-based discovery",
+                file=sys.stderr,
+                flush=True,
             )
 
         result = run_command(
@@ -578,10 +589,13 @@ class AttestationExtractor:
             timeout=fast_timeout,
         )
         if not result.success:
-            if result.timed_out:
-                logger.debug(
-                    f"Referrers API timed out for {image} — registry may not support it"
-                )
+            fail_reason = "timed out" if result.timed_out else "failed"
+            print(
+                f"[cosign-scan] Tag-based oras discover {fail_reason}"
+                f" for {image} after {fast_timeout}s",
+                file=sys.stderr,
+                flush=True,
+            )
             return None
 
         try:
