@@ -121,6 +121,14 @@ Examples:
         help="Kubernetes namespace to scan (default: pharia-ai)",
     )
     parser.add_argument(
+        "--source-label",
+        help=(
+            "Logical label for the scan source shown in the report header "
+            "(overrides --namespace / --image-file basename). Use this when "
+            "scanning a static image list that is not backed by a K8s namespace."
+        ),
+    )
+    parser.add_argument(
         "--kubeconfig",
         help="Path to kubeconfig file",
     )
@@ -613,7 +621,15 @@ def generate_summary(
     failed = [r for r in results if not r.success and not r.skipped]
     skipped = [r for r in results if r.skipped]
 
-    namespace_label = args.image_file if args.image_file else args.namespace
+    # Prefer explicit --source-label, else the basename of --image-file, else --namespace.
+    # Using the full --image-file path as a label produced unreadable "Namespace"
+    # values like "/home/runner/work/.../images-harbor.txt" in the step summary.
+    if getattr(args, "source_label", None):
+        namespace_label = args.source_label
+    elif args.image_file:
+        namespace_label = Path(args.image_file).name
+    else:
+        namespace_label = args.namespace
     summary = ScanSummary(
         namespace=namespace_label,
         total_images_found=extraction_result.total_found,
@@ -702,7 +718,7 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     lines.append("")
     lines.append(f"| Metric | Value |")
     lines.append("|--------|-------|")
-    lines.append(f"| **Namespace** | `{summary.namespace}` |")
+    lines.append(f"| **Image source** | `{summary.namespace}` |")
     lines.append(f"| **Images Found** | {summary.total_images_found} |")
     lines.append(f"| **Images Processed** | {summary.images_processed} |")
     lines.append(f"| **Successful Scans** | ✅ {summary.successful_scans} |")
@@ -742,11 +758,14 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in summary.cve_analysis:
-            image_short = analysis["image"].split("/")[-1]
-            # Truncate if too long
-            if len(image_short) > 40:
-                image_short = image_short[:37] + "..."
+        for analysis in sorted(summary.cve_analysis, key=lambda a: a.get("image", "").lower()):
+            # Keep the Harbor project segment (e.g. `pharia-ai-images/pharia-os-app:1.30.4`)
+            # so duplicate basenames across projects remain distinguishable. Only
+            # truncate very long refs (> 60 chars) by clipping the tag end.
+            image_parts = analysis["image"].split("/")
+            image_short = "/".join(image_parts[-2:]) if len(image_parts) >= 2 else image_parts[-1]
+            if len(image_short) > 60:
+                image_short = image_short[:57] + "..."
 
             # Get CVE counts
             critical = analysis.get("critical", 0)
@@ -940,8 +959,10 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in summary.cve_analysis:
-            image_short = analysis["image"].split("/")[-1][:33]
+        for analysis in sorted(summary.cve_analysis, key=lambda a: a.get("image", "").lower()):
+            image_parts = analysis["image"].split("/")
+            image_ref = "/".join(image_parts[-2:]) if len(image_parts) >= 2 else image_parts[-1]
+            image_short = image_ref[:33]
 
             # Get CVE counts
             critical = analysis.get("critical", 0)

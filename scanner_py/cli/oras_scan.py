@@ -763,6 +763,9 @@ def generate_markdown_report(
     Equivalent to 3-gen-report.sh but with enhanced formatting.
     """
     lines = []
+    # Sort alphabetically by image so the rendered table is stable regardless
+    # of scan-completion order (parallel workers finish in arbitrary order).
+    results = sorted(results, key=lambda r: r.image.lower())
     successful = [r for r in results if r.success]
     failed = [r for r in results if not r.success]
 
@@ -789,7 +792,7 @@ def generate_markdown_report(
     lines.append("")
     lines.append("| Metric | Value |")
     lines.append("|--------|------:|")
-    lines.append(f"| **Namespace** | `{namespace}` |")
+    lines.append(f"| **Image source** | `{namespace}` |")
     lines.append(f"| **Scan Date** | {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC |")
     lines.append(f"| **Minimum CVE Level** | `{min_cve_level}` |")
     lines.append(f"| **Total Images** | {len(successful)} |")
@@ -926,6 +929,7 @@ def print_cli_summary(
     min_cve_level: str = "MEDIUM",
 ) -> None:
     """Print beautiful summary to CLI matching the markdown report format."""
+    results = sorted(results, key=lambda r: r.image.lower())
     successful = [r for r in results if r.success]
     failed = [r for r in results if not r.success]
 
