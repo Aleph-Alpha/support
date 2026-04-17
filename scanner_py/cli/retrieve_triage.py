@@ -258,7 +258,16 @@ def generate_triage_report_md(triage_dir: Path, image_from_dir: bool = True) -> 
         rest = "_".join(parts[:-1])
         return rest.replace("_", "/") + ":" + tag
 
-    subdirs = sorted(d for d in triage_dir.iterdir() if d.is_dir())
+    def _sort_key(d: Path) -> str:
+        # Sort by the image basename (last path segment of the derived ref)
+        # rather than the full sanitized directory name. Sorting by the raw
+        # sanitized path puts everything under the same registry prefix
+        # together and makes the report order effectively arbitrary from a
+        # reader's point of view.
+        ref = dir_to_image_ref(d.name)
+        return ref.rsplit("/", 1)[-1].lower()
+
+    subdirs = sorted((d for d in triage_dir.iterdir() if d.is_dir()), key=_sort_key)
     for subdir in subdirs:
         triage_json = subdir / "triage.json"
         triage_toml = subdir / "triage.toml"

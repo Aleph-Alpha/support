@@ -316,7 +316,7 @@ def generate_markdown_report(
         images_with_chainguard = 0
         displayed_count = 0
 
-        for analysis in cve_analysis:
+        for analysis in sorted(cve_analysis, key=lambda a: a.get("image", "").lower()):
             # Get CVE counts
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
@@ -356,10 +356,14 @@ def generate_markdown_report(
 
             displayed_count += 1
 
-            # Format image name
-            image_short = analysis["image"].split("/")[-1]
-            if len(image_short) > 40:
-                image_short = image_short[:37] + "..."
+            # Format image name: keep the Harbor project segment (e.g.
+            # `pharia-ai-images/pharia-os-app:1.30.4`) so duplicate basenames
+            # across projects remain distinguishable. Only truncate very long
+            # refs (> 60 chars) by clipping the tag.
+            image_parts = analysis["image"].split("/")
+            image_short = "/".join(image_parts[-2:]) if len(image_parts) >= 2 else image_parts[-1]
+            if len(image_short) > 60:
+                image_short = image_short[:57] + "..."
 
             # Format cells
             unaddr_str = f"✅ {unaddressed}" if unaddressed == 0 else f"🔴 **{unaddressed}**"
@@ -536,7 +540,7 @@ def print_cli_summary(
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in cve_analysis:
+        for analysis in sorted(cve_analysis, key=lambda a: a.get("image", "").lower()):
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
             medium = analysis.get("medium", 0)
