@@ -341,27 +341,34 @@ class ImageScanner:
             logger.debug(f"Failed to resolve digest for {image}")
             return AttestationType.UNSIGNED
 
-        # Fast path: a single oras-discover call (~1 RTT, ~15 s timeout).
-        # ``discover_referrers`` returns ``None`` on transient failures so
-        # we only short-circuit when discovery succeeded AND the image
-        # truly has no referrers attached.
-        referrers = self.extractor.discover_referrers(image, digest)
-        if referrers is not None and len(referrers) == 0:
+        # Single source of truth: enumerate the OCI 1.1 referrers and
+        # decode each sigstore bundle's DSSE payload to learn its
+        # ``predicateType``. ``list_attestations`` already does both, in
+        # parallel, with cache-friendly oras calls. From its result we can
+        # derive every classification we need:
+        #
+        #   * ``has_signature()`` -> a ``cosign/sign/v1`` bundle is present
+        #     (proof the image was signed by *something*; downstream code
+        #     verifies the cert chain when it actually pulls the SBOM /
+        #     triage attestation).
+        #   * ``has_sbom()`` -> a CycloneDX / SPDX bundle is attached.
+        #   * ``has_triage()`` -> an Aleph-Alpha triage bundle is attached.
+        #
+        # Previous versions of this method called ``cosign verify`` here as
+        # a separate gating step, which on Harbor enumerated the Referrers
+        # API a *second* time -- adding 30-90 s per heavily-attested image
+        # and frequently timing out (Harbor's referrers latency is O(N) in
+        # referrer count, ~95 s for 400+ refs). That false-negatived every
+        # properly signed pharia-os image with hundreds of attestations.
+        # Relying on the predicate map keeps this path O(1) cosign calls
+        # and immune to Referrers API tail latency.
+        attestations = self.extractor.list_attestations(image)
+
+        if not attestations.has_signature():
             logger.debug(
-                f"No referrers for {image}; skipping cosign verify"
+                f"No cosign signature bundle for {image}; treating as unsigned"
             )
             return AttestationType.UNSIGNED
-
-        # Either discovery failed or we found referrers: fall through to the
-        # full cosign verify so we don't mark a signed image as unsigned
-        # because of a flaky registry call.
-        verification = self.verifier.verify(image)
-        if not verification.success:
-            logger.debug(f"Image is not signed: {image}")
-            return AttestationType.UNSIGNED
-
-        # List available attestations (already uses cached digest).
-        attestations = self.extractor.list_attestations(image)
 
         has_sbom = attestations.has_sbom()
         has_triage = attestations.has_triage()
