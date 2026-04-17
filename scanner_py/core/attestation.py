@@ -60,6 +60,14 @@ class AttestationList:
     """List of available attestations."""
     attestations: Dict[str, int] = field(default_factory=dict)
 
+    # Predicate type emitted by ``cosign sign`` (the image-signature DSSE
+    # statement), used to detect that an image is signed without invoking
+    # ``cosign verify`` against the registry. This is the same payload that
+    # cosign verify-attestation downloads as the signature half of a
+    # sigstore bundle, so its mere presence in the image's OCI 1.1 referrers
+    # list is sufficient evidence of a cosign signature.
+    COSIGN_SIGNATURE_PREDICATE = "https://sigstore.dev/cosign/sign/v1"
+
     def has_sbom(self) -> bool:
         """Check if SBOM attestation exists."""
         sbom_types = [
@@ -71,6 +79,19 @@ class AttestationList:
     def has_triage(self) -> bool:
         """Check if triage attestation exists."""
         return PREDICATE_TYPE_MAP[AttestationTypeEnum.TRIAGE] in self.attestations
+
+    def has_signature(self) -> bool:
+        """Check if a cosign signature DSSE statement is present.
+
+        The image-signature side of a cosign-signed image is a DSSE
+        envelope with predicateType ``https://sigstore.dev/cosign/sign/v1``,
+        stored as a sigstore bundle in the OCI 1.1 referrers list. We use
+        its presence as proof the image is signed -- avoiding a separate
+        ``cosign verify`` round trip which on Harbor enumerates the
+        Referrers API a second time (linear in referrer count and the
+        primary cause of long-tail timeouts on heavily-attested images).
+        """
+        return self.COSIGN_SIGNATURE_PREDICATE in self.attestations
 
 
 class AttestationExtractor:
@@ -139,10 +160,20 @@ class AttestationExtractor:
 
         logger.debug(f"Listing attestations for: {image} ({digest})")
 
-        referrers = self._discover_referrers(image, digest)
-        if not referrers:
+        # Use the tristate variant so a discovery failure (timeout, network
+        # blip, registry without referrers support) is distinguishable from
+        # a definitive "no referrers". The legacy ``_discover_referrers``
+        # alias collapses both into ``[]`` and would silently misclassify a
+        # signed image as ``UNSIGNED`` if the registry was momentarily slow.
+        referrers = self.discover_referrers(image, digest)
+        if referrers is None:
             if is_verbose():
-                logger.error(f"Failed to discover referrers for {image}")
+                logger.error(
+                    f"Referrers discovery failed for {image} — cannot enumerate"
+                    " attestations"
+                )
+            return AttestationList()
+        if not referrers:
             return AttestationList()
 
         bundle_type = "application/vnd.dev.sigstore.bundle.v0.3+json"
@@ -354,7 +385,17 @@ class AttestationExtractor:
               definitive "no attestations / no signatures" signal.
             * a non-empty list of referrer manifests otherwise.
         """
-        fast_timeout = min(self.timeout, 15)
+        # The oras discover request hits the registry's OCI 1.1 Referrers
+        # API. On Harbor this is O(N) in referrer count -- empirically
+        # ~8 s for 36 refs, ~95 s for 403 refs. The previous 15 s cap
+        # turned every heavily-attested image into a false ``None``
+        # (timeout) result, which downstream callers interpret as either
+        # "fall back to cosign verify" (also slow) or "discovery failed,
+        # treat as empty" (a silent miss). 120 s comfortably covers our
+        # heaviest known images (pharia-os-app at ~95 s) while still
+        # bounding worker latency. Capped at ``self.timeout`` so callers
+        # that supply a tighter budget (e.g. unit tests) keep control.
+        fast_timeout = min(self.timeout, 120)
 
         if image_digest:
             image_with_digest = f"{image}@{image_digest}"
