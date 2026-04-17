@@ -334,15 +334,25 @@ class AttestationExtractor:
         result = run_with_timeout(args, self.timeout)
         return result.success
 
-    def _discover_referrers(self, image: str, image_digest: Optional[str] = None) -> List[dict]:
+    def discover_referrers(
+        self, image: str, image_digest: Optional[str] = None
+    ) -> Optional[List[dict]]:
         """
         Discover OCI referrers for an image.
 
         Tries image@digest first for precision, falls back to image with tag
         if the registry doesn't support digest-based referrer discovery (e.g. JFrog).
 
-        Returns an empty list if the registry doesn't support the Referrers API
-        (timeout or error). Callers should use extract_triage_tag_based() as fallback.
+        Returns:
+            * ``None`` if the discovery itself failed (timeout, network
+              error, JSON parse error, registry without Referrers API
+              support). Callers can use this to fall back to slower
+              alternatives such as ``cosign verify`` or
+              ``extract_triage_tag_based()``.
+            * ``[]`` if discovery succeeded and the image legitimately has
+              no referrers attached. Callers can rely on this as a
+              definitive "no attestations / no signatures" signal.
+            * a non-empty list of referrer manifests otherwise.
         """
         fast_timeout = min(self.timeout, 15)
 
@@ -358,13 +368,20 @@ class AttestationExtractor:
                     refs = data.get("referrers", data.get("manifests", []))
                     return refs if refs is not None else []
                 except json.JSONDecodeError:
-                    pass
+                    logger.debug(
+                        f"oras discover for {image} returned non-JSON output"
+                    )
+                    return None
 
             if result.timed_out:
-                logger.debug(f"Referrers API timed out for {image} — registry may not support it")
-                return []
+                logger.debug(
+                    f"Referrers API timed out for {image} — registry may not support it"
+                )
+                return None
 
-            logger.debug(f"Digest-based oras discover failed, falling back to tag: {result.stderr}")
+            logger.debug(
+                f"Digest-based oras discover failed, falling back to tag: {result.stderr}"
+            )
 
         result = run_command(
             ["oras", "discover", image, "--format", "json"],
@@ -372,15 +389,31 @@ class AttestationExtractor:
         )
         if not result.success:
             if result.timed_out:
-                logger.debug(f"Referrers API timed out for {image} — registry may not support it")
-            return []
+                logger.debug(
+                    f"Referrers API timed out for {image} — registry may not support it"
+                )
+            return None
 
         try:
             data = json.loads(result.stdout)
             refs = data.get("referrers", data.get("manifests", []))
             return refs if refs is not None else []
         except json.JSONDecodeError:
-            return []
+            logger.debug(
+                f"oras discover for {image} returned non-JSON output"
+            )
+            return None
+
+    # Backwards-compatible alias kept as the previously private API. Existing
+    # call-sites that treat ``[]`` and ``None`` interchangeably can keep
+    # using this; new call-sites that need to distinguish between
+    # "discovery failed" and "no referrers" should call
+    # :meth:`discover_referrers` directly.
+    def _discover_referrers(
+        self, image: str, image_digest: Optional[str] = None
+    ) -> List[dict]:
+        refs = self.discover_referrers(image, image_digest)
+        return refs if refs is not None else []
 
     @staticmethod
     def _strip_tag(image: str) -> str:
