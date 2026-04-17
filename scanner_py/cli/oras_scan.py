@@ -14,10 +14,14 @@ Key differences from cosign-scan:
 """
 
 import argparse
+import atexit
 import json
+import os
 import re
 import shutil
 import sys
+import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -29,6 +33,93 @@ from ..utils.logging import setup_logging, LogLevel, get_logger
 from ..utils.progress import ProgressBar, ProgressStyle, Spinner
 
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Per-worker Trivy cache pool.
+#
+# Trivy's default `fs` cache backend uses BoltDB and holds an exclusive lock
+# on `<cache-dir>/fanal/cache.db` for the duration of every scan. Pointing all
+# parallel workers at the same cache dir therefore serialises them - the
+# unlucky ones time out with:
+#
+#     unable to initialize fs cache: cache may be in use by another process
+#
+# We avoid the contention by giving every worker thread its own cache dir,
+# pre-populated by copying the immutable vuln-DB files (`db/trivy.db`,
+# `db/metadata.json`, optional `java-db/`) that `prepare_trivy_db()` has
+# already downloaded into the shared default cache. Combined with
+# `--skip-db-update`, this means: no DB redownloads, no lock contention.
+#
+# The pool is bounded by `args.parallel` workers (typically 5-15), so peak
+# disk usage is ~N x DB-size (~30-50 MB per copy) which is comfortable on a
+# CI runner.
+# ---------------------------------------------------------------------------
+
+_TRIVY_DB_SRC: Optional[Path] = None
+_THREAD_CACHE = threading.local()
+_CACHE_DIRS_LOCK = threading.Lock()
+_CACHE_DIRS: List[Path] = []
+
+
+def _trivy_default_cache_dir() -> Path:
+    """
+    Return the cache directory Trivy would use by default.
+
+    Honors $TRIVY_CACHE_DIR, then $XDG_CACHE_HOME/trivy, then ~/.cache/trivy
+    (matches Trivy's own resolution order).
+    """
+    env_dir = os.environ.get("TRIVY_CACHE_DIR")
+    if env_dir:
+        return Path(env_dir)
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "trivy"
+    return Path.home() / ".cache" / "trivy"
+
+
+def _get_worker_cache_dir() -> Path:
+    """
+    Return a per-thread Trivy cache dir, populated lazily on first call.
+
+    Each worker thread gets its own writable cache directory containing a
+    copy of the vuln DB so that Trivy's fanal/cache.db lock cannot collide
+    across workers.
+    """
+    if _TRIVY_DB_SRC is None:
+        raise RuntimeError(
+            "prepare_trivy_db() must be called before run_trivy_scan()"
+        )
+
+    cache_dir: Optional[Path] = getattr(_THREAD_CACHE, "cache_dir", None)
+    if cache_dir is not None:
+        return cache_dir
+
+    cache_dir = Path(tempfile.mkdtemp(prefix="trivy-cache-"))
+
+    src_db = _TRIVY_DB_SRC / "db"
+    if src_db.is_dir():
+        shutil.copytree(src_db, cache_dir / "db")
+
+    src_java = _TRIVY_DB_SRC / "java-db"
+    if src_java.is_dir():
+        shutil.copytree(src_java, cache_dir / "java-db")
+
+    with _CACHE_DIRS_LOCK:
+        _CACHE_DIRS.append(cache_dir)
+    _THREAD_CACHE.cache_dir = cache_dir
+    return cache_dir
+
+
+def _cleanup_trivy_cache_dirs() -> None:
+    """Remove every per-worker Trivy cache dir at process exit."""
+    with _CACHE_DIRS_LOCK:
+        for cache_dir in _CACHE_DIRS:
+            shutil.rmtree(cache_dir, ignore_errors=True)
+        _CACHE_DIRS.clear()
+
+
+atexit.register(_cleanup_trivy_cache_dirs)
 
 
 @dataclass
@@ -287,19 +378,23 @@ def sanitize_filename(image: str) -> str:
 
 def prepare_trivy_db(verbose: bool = False) -> bool:
     """
-    Prepare Trivy database by cleaning and downloading fresh DB.
+    Prepare Trivy database by cleaning and downloading a fresh DB into
+    Trivy's default cache directory.
 
-    This should be run once before parallel scans to avoid race conditions
-    and ensure all scans use the same database version.
+    The fresh DB is later copied into per-worker cache directories by
+    `_get_worker_cache_dir()`, so all parallel workers reuse the same
+    DB version without redownloading and without sharing a lock.
 
     Steps:
     1. trivy clean --all (clean existing db)
     2. trivy image --download-db-only (download fresh db)
+    3. record the cache location so workers can copy from it
 
     Returns:
         True if successful
     """
-    # Step 1: Clean existing database
+    global _TRIVY_DB_SRC
+
     if verbose:
         logger.info("Cleaning existing Trivy database...")
 
@@ -313,7 +408,6 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
             logger.warning(f"Failed to clean Trivy cache (may not exist): {clean_result.stderr}")
         # Continue anyway - might be first run
 
-    # Step 2: Download fresh database
     if verbose:
         logger.info("Downloading Trivy vulnerability database...")
 
@@ -330,8 +424,17 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
         logger.error(f"Failed to download Trivy database: {download_result.stderr}")
         return False
 
+    src = _trivy_default_cache_dir()
+    if not (src / "db" / "trivy.db").is_file():
+        logger.error(
+            f"Trivy DB download succeeded but trivy.db not found under {src}/db; "
+            "per-worker cache pool cannot be primed."
+        )
+        return False
+    _TRIVY_DB_SRC = src
+
     if verbose:
-        logger.info("Trivy database ready")
+        logger.info(f"Trivy database ready (source cache: {src})")
 
     return True
 
@@ -347,14 +450,26 @@ def run_trivy_scan(
 
     Equivalent to: trivy image --scanners vuln --format json "$image"
 
-    Note: Uses --skip-db-update since DB is pre-downloaded by prepare_trivy_db()
+    Uses a per-worker `--cache-dir` (lazy-initialized via
+    `_get_worker_cache_dir()`) that has been pre-populated by copying the
+    vuln DB downloaded once by `prepare_trivy_db()`. Combined with
+    `--skip-db-update`, this gives us:
+
+      * No DB redownloads (the previous per-image `--cache-dir` without any
+        seeding made every worker redownload the entire vuln DB - the
+        dominant wall-clock cost on larger image sets).
+      * No BoltDB lock contention (sharing the default cache across workers
+        made Trivy fail with "fs cache may be in use by another process").
 
     Returns:
         Tuple of (success, error_message)
     """
+    cache_dir = _get_worker_cache_dir()
+
     args = [
         "trivy", "image",
-        "--cache-dir", f"/tmp/trivy-cache-{image.replace('/', '_').replace(':', '_')}",
+        "--cache-dir", str(cache_dir),
+        "--skip-db-update",
         "--scanners", "vuln",
         "--format", "json",
         "--output", output_file,
