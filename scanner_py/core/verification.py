@@ -45,6 +45,7 @@ class CosignVerifier:
         key_file: Optional[str] = None,
         rekor_url: str = DEFAULT_REKOR_URL,
         timeout: int = 600,
+        verify_timeout: Optional[int] = None,
     ):
         """
         Initialize the verifier.
@@ -55,7 +56,15 @@ class CosignVerifier:
             certificate_identity: Exact identity for keyless verification
             key_file: Path to public key file for key-based verification
             rekor_url: Rekor transparency log URL
-            timeout: Timeout for verification operations
+            timeout: Default timeout for verification operations.
+            verify_timeout: Optional hard ceiling for a single cosign verify
+                call. Useful when a verifier is shared with a long ``timeout``
+                budgeted for downstream scans (e.g. ``ImageScanner`` runs
+                trivy with a 10-minute timeout, but cosign verify itself
+                should never need more than ~60 s and otherwise risks
+                blocking the worker on slow / unsigned images). Defaults to
+                ``timeout`` when omitted to preserve existing behavior for
+                standalone callers.
         """
         self.certificate_oidc_issuer = certificate_oidc_issuer
         self.certificate_identity_regexp = certificate_identity_regexp
@@ -63,6 +72,11 @@ class CosignVerifier:
         self.key_file = key_file
         self.rekor_url = rekor_url
         self.timeout = timeout
+        # Cap to whichever is smaller so callers can shrink (but not grow) the
+        # ceiling by passing a small ``timeout``.
+        self.verify_timeout = (
+            min(timeout, verify_timeout) if verify_timeout is not None else timeout
+        )
         self.keyless = key_file is None
 
     def resolve_image_digest(self, image: str) -> Optional[str]:
@@ -109,8 +123,10 @@ class CosignVerifier:
 
         logger.debug(f"Verifying image signature for: {image_ref}")
 
-        # Build cosign arguments
-        args = ["cosign", "verify", f"--timeout={self.timeout // 60}m"]
+        # Build cosign arguments. Use the (capped) verify_timeout so a hung
+        # call against an unsigned / slow registry does not eat minutes per
+        # image. We still pass it as seconds (cosign accepts ``Ns``).
+        args = ["cosign", "verify", f"--timeout={self.verify_timeout}s"]
 
         if self.keyless:
             logger.debug(f"Mode: Keyless verification")
@@ -140,8 +156,10 @@ class CosignVerifier:
 
         args.append(image_ref)
 
-        # Execute verification
-        result = run_with_timeout(args, self.timeout)
+        # Execute verification. The wall-clock ceiling matches the cosign
+        # ``--timeout`` so we don't keep waiting on a subprocess that has
+        # already given up.
+        result = run_with_timeout(args, self.verify_timeout)
 
         if result.success:
             logger.debug("Image signature verification successful!")
