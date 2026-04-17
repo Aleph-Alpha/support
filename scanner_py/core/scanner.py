@@ -5,6 +5,7 @@ Equivalent to cosign-scan-image.sh and the Trivy scanning parts of k8s-image-sca
 
 import json
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -365,10 +366,10 @@ class ImageScanner:
         attestations = self.extractor.list_attestations(image)
 
         if not attestations.has_signature():
-            # Log predicate map at INFO level so CI diagnostics capture
-            # *why* an image was classified unsigned without needing to
-            # enable --verbose globally. Seeing the predicate map here
-            # distinguishes the main failure modes:
+            # Diagnostic print to stderr (bypasses ``suppress_logging``,
+            # which is applied around parallel-scan workers and would
+            # otherwise hide this with --verbose off). Seeing the
+            # predicate map here distinguishes the main failure modes:
             #   * empty dict, discovery_failed=True  -> Referrers API
             #                                           timed out (rerun
             #                                           may succeed).
@@ -379,10 +380,12 @@ class ImageScanner:
             #                                           suppressed the
             #                                           signature bundle
             #                                           under high load.
-            logger.info(
-                f"Classifying {image} as UNSIGNED; "
-                f"predicates={dict(attestations.attestations)} "
-                f"discovery_failed={attestations.discovery_failed}"
+            print(
+                f"[cosign-scan] Classifying {image} as UNSIGNED;"
+                f" predicates={dict(attestations.attestations)}"
+                f" discovery_failed={attestations.discovery_failed}",
+                file=sys.stderr,
+                flush=True,
             )
             return AttestationType.UNSIGNED
 

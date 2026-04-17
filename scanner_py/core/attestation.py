@@ -10,6 +10,7 @@ Supports both:
 import json
 import base64
 import re
+import sys
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -188,13 +189,15 @@ class AttestationExtractor:
         referrers = self.discover_referrers(image, digest)
         if referrers is None:
             # Discovery itself failed (timeout, network blip, registry
-            # without Referrers API). Flag the result and log at INFO
-            # so the downstream UNSIGNED classification is distinguishable
-            # in CI logs from a genuinely unsigned image, without
-            # needing --verbose everywhere.
-            logger.info(
-                f"Referrers discovery failed for {image} — marking"
-                " discovery_failed=True"
+            # without Referrers API). Flag the result. Print directly to
+            # stderr so the diagnostic survives the ``suppress_logging``
+            # call that parallel-scan ProgressBar wraps around every
+            # worker (which would swallow any logger.info/error output).
+            print(
+                f"[cosign-scan] Referrers discovery failed for {image}"
+                f" — marking discovery_failed=True",
+                file=sys.stderr,
+                flush=True,
             )
             return AttestationList(discovery_failed=True)
         if not referrers:
@@ -319,9 +322,14 @@ class AttestationExtractor:
 
         total_attempted = decoded_ok + decoded_err + decoded_empty
         if total_attempted and decoded_err + decoded_empty > 0:
-            logger.info(
-                f"Bundle decode for {image}: ok={decoded_ok} err={decoded_err}"
-                f" empty={decoded_empty} (of {len(bundle_refs)} refs)"
+            # stderr print: bypasses the logging suppression that wraps
+            # parallel scan workers.
+            print(
+                f"[cosign-scan] Bundle decode for {image}: ok={decoded_ok}"
+                f" err={decoded_err} empty={decoded_empty}"
+                f" (of {len(bundle_refs)} refs)",
+                file=sys.stderr,
+                flush=True,
             )
 
         # Flag the result as unreliable when we enumerated sigstore
