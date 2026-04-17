@@ -185,20 +185,53 @@ class AttestationExtractor:
         if not bundle_refs:
             return AttestationList()
 
-        # NOTE: cosign/Harbor emits ``dev.sigstore.bundle.predicateType =
-        # https://sigstore.dev/cosign/sign/v1`` on the *manifest annotation*
-        # of every sigstore bundle, regardless of whether the bundle wraps
-        # an image signature, an SBOM, a triage statement, or anything
-        # else. The real in-toto predicateType lives inside the DSSE
-        # payload (the bundle's blob), so we still have to pull each
-        # bundle's manifest + blob to classify it. To keep this affordable
-        # for heavily-attested images (pharia-os-app has 400+ bundles, so
-        # 800+ serialised HTTP round-trips at one-per-bundle) we run the
-        # decode in a 20-worker pool -- empirically this brings classify
-        # latency for the heaviest image from ~4 min down to ~30 s while
-        # still being polite to Harbor.
+        # NOTE: cosign / Harbor emits the same
+        # ``dev.sigstore.bundle.predicateType =
+        # https://sigstore.dev/cosign/sign/v1`` annotation on every
+        # sigstore bundle manifest regardless of payload, so we still
+        # have to pull each bundle's manifest + blob to read the real
+        # in-toto predicate type from the DSSE envelope.
+        #
+        # That's 2 HTTP round-trips per bundle. Heavily-attested images
+        # (pharia-os-app has 400+ bundles) make a naive enumeration
+        # prohibitively slow even with parallelism. Two mitigations:
+        #
+        # 1. Run the decode in a 20-worker pool to absorb the per-call
+        #    latency.
+        # 2. Early-terminate as soon as we have collected the predicate
+        #    types ``ImageScanner.detect_attestation_type`` cares about
+        #    (signature + SBOM + triage). Once all three are present,
+        #    further bundles can only inflate counts, not change the
+        #    classification, so we cancel pending futures and return.
+        #
+        # Empirically this brings classify latency for the heaviest known
+        # image from "doesn't finish in 20 minutes" down to ~5-15 s.
         predicate_types: Dict[str, int] = {}
         image_name = self._strip_tag(image)
+
+        # Predicates that change the cosign-scan classification. As soon
+        # as we have observed at least one bundle of each of these we can
+        # stop. SLSA / vuln / license bundles are not part of the
+        # classification path so they do not need to be fully enumerated.
+        decision_predicates = {
+            AttestationList.COSIGN_SIGNATURE_PREDICATE,
+            PREDICATE_TYPE_MAP[AttestationTypeEnum.CYCLONEDX],
+            PREDICATE_TYPE_MAP[AttestationTypeEnum.SPDX],
+            PREDICATE_TYPE_MAP[AttestationTypeEnum.TRIAGE],
+        }
+
+        def have_decisive_set() -> bool:
+            seen = set(predicate_types)
+            has_sig = AttestationList.COSIGN_SIGNATURE_PREDICATE in seen
+            has_sbom = bool(
+                seen
+                & {
+                    PREDICATE_TYPE_MAP[AttestationTypeEnum.CYCLONEDX],
+                    PREDICATE_TYPE_MAP[AttestationTypeEnum.SPDX],
+                }
+            )
+            has_triage = PREDICATE_TYPE_MAP[AttestationTypeEnum.TRIAGE] in seen
+            return has_sig and has_sbom and has_triage
 
         def fetch_predicate_type(ref: dict) -> Optional[str]:
             ref_digest = ref.get("digest")
@@ -213,13 +246,28 @@ class AttestationExtractor:
                 for ref in bundle_refs
             }
 
-            for future in as_completed(futures):
-                try:
-                    pred_type = future.result()
-                    if pred_type:
-                        predicate_types[pred_type] = predicate_types.get(pred_type, 0) + 1
-                except Exception:
-                    pass
+            try:
+                for future in as_completed(futures):
+                    try:
+                        pred_type = future.result()
+                    except Exception:
+                        continue
+                    if not pred_type:
+                        continue
+                    predicate_types[pred_type] = (
+                        predicate_types.get(pred_type, 0) + 1
+                    )
+                    # Once we have at least one of every decision
+                    # predicate, classifications are stable. Stop early.
+                    if pred_type in decision_predicates and have_decisive_set():
+                        for pending in futures:
+                            pending.cancel()
+                        break
+            finally:
+                # Best-effort cancellation; ThreadPoolExecutor will join
+                # already-running workers on context exit.
+                for pending in futures:
+                    pending.cancel()
 
         return AttestationList(attestations=predicate_types)
 
