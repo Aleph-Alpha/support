@@ -60,6 +60,16 @@ class AttestationList:
     """List of available attestations."""
     attestations: Dict[str, int] = field(default_factory=dict)
 
+    # ``True`` when ``list_attestations`` could not enumerate referrers
+    # conclusively: either the OCI 1.1 Referrers API timed out, or
+    # bundle decode failed for enough entries that the signature
+    # predicate might have been suppressed under high parallel load.
+    # Exposed for diagnostics (``detect_attestation_type`` logs it
+    # alongside UNSIGNED classifications) so CI runs where a signed
+    # image is misclassified can be distinguished from truly unsigned
+    # images without toggling --verbose globally.
+    discovery_failed: bool = False
+
     # Predicate type emitted by ``cosign sign`` (the image-signature DSSE
     # statement), used to detect that an image is signed without invoking
     # ``cosign verify`` against the registry. This is the same payload that
@@ -177,13 +187,20 @@ class AttestationExtractor:
         # signed image as ``UNSIGNED`` if the registry was momentarily slow.
         referrers = self.discover_referrers(image, digest)
         if referrers is None:
-            if is_verbose():
-                logger.error(
-                    f"Referrers discovery failed for {image} — cannot enumerate"
-                    " attestations"
-                )
-            return AttestationList()
+            # Discovery itself failed (timeout, network blip, registry
+            # without Referrers API). Flag the result and log at INFO
+            # so the downstream UNSIGNED classification is distinguishable
+            # in CI logs from a genuinely unsigned image, without
+            # needing --verbose everywhere.
+            logger.info(
+                f"Referrers discovery failed for {image} — marking"
+                " discovery_failed=True"
+            )
+            return AttestationList(discovery_failed=True)
         if not referrers:
+            # Definitive empty referrers list: image has no OCI 1.1
+            # referrers attached. This is the fast-path for truly
+            # unsigned images.
             return AttestationList()
 
         bundle_type = "application/vnd.dev.sigstore.bundle.v0.3+json"
@@ -258,6 +275,13 @@ class AttestationExtractor:
             )
 
         max_workers = min(len(bundle_refs), 20)
+        # Track decode outcomes so we can surface a diagnostic at INFO
+        # level when a high failure rate silently suppresses the
+        # signature bundle (the main reason classification randomly flips
+        # to UNSIGNED under 15x parallel scan load against Harbor).
+        decoded_ok = 0
+        decoded_err = 0
+        decoded_empty = 0
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
                 executor.submit(fetch_predicate_type, ref): ref
@@ -269,9 +293,12 @@ class AttestationExtractor:
                     try:
                         ref_digest, pred_type = future.result()
                     except Exception:
+                        decoded_err += 1
                         continue
                     if not pred_type or not ref_digest:
+                        decoded_empty += 1
                         continue
+                    decoded_ok += 1
                     predicate_types[pred_type] = (
                         predicate_types.get(pred_type, 0) + 1
                     )
@@ -290,6 +317,26 @@ class AttestationExtractor:
                 for pending in futures:
                     pending.cancel()
 
+        total_attempted = decoded_ok + decoded_err + decoded_empty
+        if total_attempted and decoded_err + decoded_empty > 0:
+            logger.info(
+                f"Bundle decode for {image}: ok={decoded_ok} err={decoded_err}"
+                f" empty={decoded_empty} (of {len(bundle_refs)} refs)"
+            )
+
+        # Flag the result as unreliable when we enumerated sigstore
+        # bundles but never saw the signature predicate. This is
+        # specifically the CI failure mode where Harbor returns the
+        # referrers list but individual bundle fetches time out under
+        # 15x parallel scan load, so the signature bundle can be
+        # silently suppressed from the decoded map. Surfaced via the
+        # INFO log in ``detect_attestation_type`` so each instance
+        # becomes greppable in CI logs.
+        discovery_failed = (
+            bool(bundle_refs)
+            and AttestationList.COSIGN_SIGNATURE_PREDICATE not in predicate_types
+        )
+
         # Cache so downstream extract_sbom / extract_triage can reuse the
         # bundle digests we already paid to decode. Key on
         # ``(image_name, digest)`` to be tag-stable across the same
@@ -301,7 +348,9 @@ class AttestationExtractor:
             predicate_digests
         )
 
-        return AttestationList(attestations=predicate_types)
+        return AttestationList(
+            attestations=predicate_types, discovery_failed=discovery_failed
+        )
 
     def _get_predicate_type_from_bundle(
         self, image_name: str, ref_digest: str
