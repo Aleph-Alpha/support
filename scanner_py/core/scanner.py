@@ -269,10 +269,16 @@ class ImageScanner:
         #
         # ``timeout`` is the per-image budget for downstream trivy scans
         # (default 10 min). Cosign verify itself only needs a couple of HTTP
-        # round-trips; cap it at 60 s so a slow / unsigned image cannot block
-        # a worker for the full scan timeout. Combined with the cheap
-        # ``oras discover`` pre-check in ``detect_attestation_type`` this
-        # collapses the long tail of skipped images.
+        # round-trips for lightly-attested images, but with ``--new-bundle-format``
+        # cosign enumerates every OCI 1.1 referrer via the registry's Referrers
+        # API -- which in Harbor scales linearly with referrer count (observed
+        # ~8 s for 36 refs, ~95 s for 403 refs). Cap at 180 s so heavily-
+        # attested signed images (e.g. pharia-os-app with 400+ SBOM / triage /
+        # vuln / SLSA referrers) still verify successfully, while a truly
+        # unsigned / broken image still cannot block a worker for the full
+        # 10-minute trivy budget. Combined with the cheap ``oras discover``
+        # pre-check in ``detect_attestation_type`` this keeps the long-tail of
+        # unsigned images fast.
         self.verifier = CosignVerifier(
             certificate_oidc_issuer=(
                 certificate_oidc_issuer or CosignVerifier.DEFAULT_OIDC_ISSUER
@@ -281,7 +287,7 @@ class ImageScanner:
                 certificate_identity_regexp or CosignVerifier.DEFAULT_IDENTITY_REGEXP
             ),
             timeout=timeout,
-            verify_timeout=60,
+            verify_timeout=180,
         )
         self.extractor = AttestationExtractor(
             certificate_oidc_issuer=(
