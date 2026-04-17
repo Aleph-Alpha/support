@@ -185,29 +185,53 @@ class AttestationExtractor:
         if not bundle_refs:
             return AttestationList()
 
+        # ``oras discover`` returns the bundle's manifest annotations
+        # alongside each referrer, including the cosign-emitted
+        # ``dev.sigstore.bundle.predicateType``. Reading that annotation
+        # is free (we already paid for the discover call); it spares us
+        # ``2 * len(bundle_refs)`` extra HTTP calls (manifest + blob)
+        # which on Harbor for an image with 400+ referrers translates
+        # into 800+ requests serialized through a 5-worker pool. We only
+        # fall back to the slow blob-decode path for the small subset of
+        # bundles that omit the annotation (older signing tooling, hand-
+        # crafted artifacts, etc.).
+        annotation_key = "dev.sigstore.bundle.predicateType"
         predicate_types: Dict[str, int] = {}
-        image_name = self._strip_tag(image)
+        missing_annotation: List[dict] = []
 
-        def fetch_predicate_type(ref: dict) -> Optional[str]:
-            ref_digest = ref.get("digest")
-            if not ref_digest:
-                return None
-            return self._get_predicate_type_from_bundle(image_name, ref_digest)
+        for ref in bundle_refs:
+            annotations = ref.get("annotations") or {}
+            pred_type = annotations.get(annotation_key)
+            if pred_type:
+                predicate_types[pred_type] = predicate_types.get(pred_type, 0) + 1
+            else:
+                missing_annotation.append(ref)
 
-        max_workers = min(len(bundle_refs), 5)
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(fetch_predicate_type, ref): ref
-                for ref in bundle_refs
-            }
+        if missing_annotation:
+            image_name = self._strip_tag(image)
 
-            for future in as_completed(futures):
-                try:
-                    pred_type = future.result()
-                    if pred_type:
-                        predicate_types[pred_type] = predicate_types.get(pred_type, 0) + 1
-                except Exception:
-                    pass
+            def fetch_predicate_type(ref: dict) -> Optional[str]:
+                ref_digest = ref.get("digest")
+                if not ref_digest:
+                    return None
+                return self._get_predicate_type_from_bundle(image_name, ref_digest)
+
+            max_workers = min(len(missing_annotation), 5)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(fetch_predicate_type, ref): ref
+                    for ref in missing_annotation
+                }
+
+                for future in as_completed(futures):
+                    try:
+                        pred_type = future.result()
+                        if pred_type:
+                            predicate_types[pred_type] = (
+                                predicate_types.get(pred_type, 0) + 1
+                            )
+                    except Exception:
+                        pass
 
         return AttestationList(attestations=predicate_types)
 
