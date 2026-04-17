@@ -265,7 +265,14 @@ class ImageScanner:
         self.timeout = timeout
         self.verbose = verbose
 
-        # Initialize components
+        # Initialize components.
+        #
+        # ``timeout`` is the per-image budget for downstream trivy scans
+        # (default 10 min). Cosign verify itself only needs a couple of HTTP
+        # round-trips; cap it at 60 s so a slow / unsigned image cannot block
+        # a worker for the full scan timeout. Combined with the cheap
+        # ``oras discover`` pre-check in ``detect_attestation_type`` this
+        # collapses the long tail of skipped images.
         self.verifier = CosignVerifier(
             certificate_oidc_issuer=(
                 certificate_oidc_issuer or CosignVerifier.DEFAULT_OIDC_ISSUER
@@ -274,6 +281,7 @@ class ImageScanner:
                 certificate_identity_regexp or CosignVerifier.DEFAULT_IDENTITY_REGEXP
             ),
             timeout=timeout,
+            verify_timeout=60,
         )
         self.extractor = AttestationExtractor(
             certificate_oidc_issuer=(
@@ -301,7 +309,17 @@ class ImageScanner:
         """
         Detect what attestations are available for an image.
 
-        Optimized to cache attestation info and avoid redundant network calls.
+        Order matters here: ``cosign verify`` is the most expensive call in
+        the discovery path -- on an unsigned image against a slow registry
+        it can sit for minutes before returning "no matching signatures".
+        ``oras discover`` is a single Referrers API GET capped at 15 s.
+
+        Aleph-Alpha images attach all signature, SBOM and triage bundles via
+        OCI 1.1 referrers, so ``list_attestations`` already tells us whether
+        the image has anything to verify. If the referrers list is empty we
+        can mark the image UNSIGNED immediately and skip the slow cosign
+        round-trip entirely. We only run ``cosign verify`` once we know
+        there is actually a sigstore bundle to validate.
 
         Args:
             image: Image reference
@@ -315,14 +333,22 @@ class ImageScanner:
             logger.debug(f"Failed to resolve digest for {image}")
             return AttestationType.UNSIGNED
 
-        # First verify the image is signed
+        # Fast path: a single oras-discover call (~1 RTT, ~15 s timeout).
+        # If there are no referrers at all, the image cannot be signed by
+        # cosign with OCI 1.1 referrers mode either -- skip the expensive
+        # cosign verify step.
+        attestations = self.extractor.list_attestations(image)
+        if not attestations.attestations:
+            logger.debug(
+                f"No referrers / attestations for {image}; skipping cosign verify"
+            )
+            return AttestationType.UNSIGNED
+
+        # We have referrers; now confirm the signature chain.
         verification = self.verifier.verify(image)
         if not verification.success:
             logger.debug(f"Image is not signed: {image}")
             return AttestationType.UNSIGNED
-
-        # List available attestations (already uses cached digest)
-        attestations = self.extractor.list_attestations(image)
 
         has_sbom = attestations.has_sbom()
         has_triage = attestations.has_triage()
