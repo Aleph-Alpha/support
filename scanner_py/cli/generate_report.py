@@ -316,7 +316,10 @@ def generate_markdown_report(
         images_with_chainguard = 0
         displayed_count = 0
 
-        for analysis in sorted(cve_analysis, key=lambda a: a.get("image", "").lower()):
+        for analysis in sorted(
+            cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
             # Get CVE counts
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
@@ -540,7 +543,10 @@ def print_cli_summary(
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in sorted(cve_analysis, key=lambda a: a.get("image", "").lower()):
+        for analysis in sorted(
+            cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
             medium = analysis.get("medium", 0)

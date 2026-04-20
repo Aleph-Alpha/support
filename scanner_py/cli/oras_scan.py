@@ -763,9 +763,10 @@ def generate_markdown_report(
     Equivalent to 3-gen-report.sh but with enhanced formatting.
     """
     lines = []
-    # Sort alphabetically by image so the rendered table is stable regardless
-    # of scan-completion order (parallel workers finish in arbitrary order).
-    results = sorted(results, key=lambda r: r.image.lower())
+    # Sort alphabetically by image basename so the rendered order matches the
+    # displayed `<image>:<tag>` cells (the project prefix is stripped at render
+    # time). Sorting is stable across runs regardless of scan-completion order.
+    results = sorted(results, key=lambda r: r.image.rsplit("/", 1)[-1].lower())
     successful = [r for r in results if r.success]
     failed = [r for r in results if not r.success]
 
@@ -932,7 +933,7 @@ def print_cli_summary(
     min_cve_level: str = "MEDIUM",
 ) -> None:
     """Print beautiful summary to CLI matching the markdown report format."""
-    results = sorted(results, key=lambda r: r.image.lower())
+    results = sorted(results, key=lambda r: r.image.rsplit("/", 1)[-1].lower())
     successful = [r for r in results if r.success]
     failed = [r for r in results if not r.success]
 
