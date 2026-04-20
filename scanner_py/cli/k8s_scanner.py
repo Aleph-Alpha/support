@@ -759,13 +759,15 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         images_with_chainguard = 0
 
         for analysis in sorted(summary.cve_analysis, key=lambda a: a.get("image", "").lower()):
-            # Keep the Harbor project segment (e.g. `pharia-ai-images/pharia-os-app:1.30.4`)
-            # so duplicate basenames across projects remain distinguishable. Only
-            # truncate very long refs (> 60 chars) by clipping the tag end.
-            image_parts = analysis["image"].split("/")
-            image_short = "/".join(image_parts[-2:]) if len(image_parts) >= 2 else image_parts[-1]
-            if len(image_short) > 60:
-                image_short = image_short[:57] + "..."
+            # Show only the image basename (`<image>:<tag>`); strip the registry
+            # host and project segments. Reports list 30-40 images at a time and
+            # the project prefix is the same for almost all of them, so it adds
+            # noise without adding signal. Truncate very long refs (> 50 chars)
+            # by clipping the tag end. Caller is responsible for ensuring
+            # basenames are unique across the input image set.
+            image_short = analysis["image"].rsplit("/", 1)[-1]
+            if len(image_short) > 50:
+                image_short = image_short[:47] + "..."
 
             # Get CVE counts
             critical = analysis.get("critical", 0)
@@ -960,9 +962,7 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
         images_with_chainguard = 0
 
         for analysis in sorted(summary.cve_analysis, key=lambda a: a.get("image", "").lower()):
-            image_parts = analysis["image"].split("/")
-            image_ref = "/".join(image_parts[-2:]) if len(image_parts) >= 2 else image_parts[-1]
-            image_short = image_ref[:33]
+            image_short = analysis["image"].rsplit("/", 1)[-1][:33]
 
             # Get CVE counts
             critical = analysis.get("critical", 0)
