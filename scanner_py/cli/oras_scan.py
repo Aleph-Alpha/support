@@ -854,8 +854,11 @@ def generate_markdown_report(
 
         displayed_count += 1
 
-        # Format image name (truncate if too long)
-        image_name = result.image_ref
+        # Show only the image basename (`<image>:<tag>`); strip the project
+        # segment from result.image_ref. Reports list 30-40 images at a time
+        # and the project prefix is the same for almost all of them, so it
+        # adds noise without signal. Truncate very long refs (> 45 chars).
+        image_name = result.image_ref.rsplit("/", 1)[-1]
         if len(image_name) > 45:
             image_name = image_name[:42] + "..."
 
@@ -1020,8 +1023,8 @@ def print_cli_summary(
 
         displayed += 1
 
-        # Truncate image name
-        image_name = result.image_ref
+        # Show only the basename (`<image>:<tag>`); strip project segment.
+        image_name = result.image_ref.rsplit("/", 1)[-1]
         if len(image_name) > 43:
             image_name = image_name[:40] + "..."
 

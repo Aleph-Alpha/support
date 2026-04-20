@@ -356,14 +356,14 @@ def generate_markdown_report(
 
             displayed_count += 1
 
-            # Format image name: keep the Harbor project segment (e.g.
-            # `pharia-ai-images/pharia-os-app:1.30.4`) so duplicate basenames
-            # across projects remain distinguishable. Only truncate very long
-            # refs (> 60 chars) by clipping the tag.
-            image_parts = analysis["image"].split("/")
-            image_short = "/".join(image_parts[-2:]) if len(image_parts) >= 2 else image_parts[-1]
-            if len(image_short) > 60:
-                image_short = image_short[:57] + "..."
+            # Show only the image basename (`<image>:<tag>`); strip registry
+            # host and project segments. The project prefix is identical for
+            # most rows in a typical chart-wide scan and adds noise without
+            # signal. Truncate very long refs (> 50 chars) by clipping the
+            # tag end. Caller is responsible for unique basenames.
+            image_short = analysis["image"].rsplit("/", 1)[-1]
+            if len(image_short) > 50:
+                image_short = image_short[:47] + "..."
 
             # Format cells
             unaddr_str = f"✅ {unaddressed}" if unaddressed == 0 else f"🔴 **{unaddressed}**"
