@@ -758,7 +758,10 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in sorted(summary.cve_analysis, key=lambda a: a.get("image", "").lower()):
+        for analysis in sorted(
+            summary.cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
             # Show only the image basename (`<image>:<tag>`); strip the registry
             # host and project segments. Reports list 30-40 images at a time and
             # the project prefix is the same for almost all of them, so it adds
@@ -961,7 +964,10 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in sorted(summary.cve_analysis, key=lambda a: a.get("image", "").lower()):
+        for analysis in sorted(
+            summary.cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
             image_short = analysis["image"].rsplit("/", 1)[-1][:33]
 
             # Get CVE counts
