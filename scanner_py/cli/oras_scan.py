@@ -34,6 +34,8 @@ from ..utils.progress import ProgressBar, ProgressStyle, Spinner
 
 logger = get_logger(__name__)
 
+TRIVY_DB_REPOSITORY = "ghcr.io/aquasecurity/trivy-db:2"
+
 
 # ---------------------------------------------------------------------------
 # Per-worker Trivy cache pool.
@@ -387,7 +389,7 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
 
     Steps:
     1. trivy clean --all (clean existing db)
-    2. trivy image --download-db-only (download fresh db)
+    2. trivy image --download-db-only --db-repository ... (download fresh db)
     3. record the cache location so workers can copy from it
 
     Returns:
@@ -409,9 +411,17 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
         # Continue anyway - might be first run
 
     if verbose:
-        logger.info("Downloading Trivy vulnerability database...")
+        logger.info(
+            f"Downloading Trivy vulnerability database from {TRIVY_DB_REPOSITORY}..."
+        )
 
-    download_args = ["trivy", "image", "--download-db-only"]
+    download_args = [
+        "trivy",
+        "image",
+        "--download-db-only",
+        "--db-repository",
+        TRIVY_DB_REPOSITORY,
+    ]
     if not verbose:
         download_args.append("--quiet")
 
