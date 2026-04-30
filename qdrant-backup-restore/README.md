@@ -63,6 +63,19 @@ Create a `.env` file based on `.env.sample` with the following variables:
 | `QDRANT_RESTORE_HOSTS` | Comma-separated list of destination Qdrant hosts set as `""` | `""` |
 | `GET_PEERS_FROM_CLUSTER_INFO` | Auto-discover peers from Qdrant cluster info endpoint (only for Kubernetes) | `false` |
 
+if `BACKUP_COLLECTION_ALIASES_ON_S3` is `true` include the S3 credentials. When `true` ensure S3 credentials are set i.e. `QDRANT_S3_SECRET_ACCESS_KEY`, `QDRANT_S3_SECRET_ACCESS_KEY`, `QDRANT_S3_ENDPOINT_URL`, `QDRANT_S3_BUCKET_NAME` (use same bucket name on qdrant configuration).
+
+#### Required Variables For Optional Collection Aliases Backup
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `QDRANT_SOURCE_HOSTS` | Comma-separated list of source Qdrant hosts | `http://localhost:6333` |
+| `QDRANT_RESTORE_HOSTS` | Comma-separated list of destination Qdrant hosts set as `""` | `""` |
+| `QDRANT_S3_ENDPOINT_URL` | S3-compatible storage endpoint URL | `http://minio:9000` |
+| `QDRANT_S3_ACCESS_KEY_ID` | S3 access key ID | `your-access-key` |
+| `QDRANT_S3_SECRET_ACCESS_KEY` | S3 secret access key | `your-secret-key` |
+| `QDRANT_S3_BUCKET_NAME` | S3 bucket name where snapshots are stored | `bucket-name` |
+| `BACKUP_COLLECTION_ALIASES_ON_S3` | set `true` to toggle backing up collection aliases on S3 | `false` |
+
 #### Required Variables For Restore
 
 | Variable | Description | Default |
@@ -308,10 +321,10 @@ source .env.dest
       - `QDRANT_API_KEY` - set your Qdrant api key if it exists otherwise leave as is.
       - `QDRANT_SOURCE_HOSTS` - set your Qdrant source host. if you are connecting to your a qdrant cluster deployed on kubernetes use port forwarding. Ensure **all** the pods/containers can be reached locally. Add these comma seperated hosts in this config .e.g `"http://qdrant-source-1:6333,http://qdrant-source-1:6334"`. This is required only for the backup process. In Kubernetes, service/peer discovery is done automatically by enabling `GET_PEERS_FROM_CLUSTER_INFO`.
       - `QDRANT_RESTORE_HOSTS` - set your Qdrant target restore host **(for restore only)** set as `""` when backing up.
-      - `QDRANT_S3_ENDPOINT_URL` - set it to your s3 endpoint url **(for restore only)**.
-      - `QDRANT_S3_ACCESS_KEY_ID` - set it to your s3 access key id credentials **(for restore only)**.
-      - `QDRANT_S3_SECRET_ACCESS_KEY`- set it to your s3 secret access key credentials **(for restore only)**.
-      - `QDRANT_S3_BUCKET_NAME`- set it to your s3 bucket name **(for restore only)**.
+      - `QDRANT_S3_ENDPOINT_URL` - set it to your s3 endpoint url.
+      - `QDRANT_S3_ACCESS_KEY_ID` - set it to your s3 access key id credentials.
+      - `QDRANT_S3_SECRET_ACCESS_KEY`- set it to your s3 secret access key credentials.
+      - `QDRANT_S3_BUCKET_NAME`- set it to your s3 bucket name.
       - `GET_PEERS_FROM_CLUSTER_INFO`- leave as is (`false`) for non-cluster usecases.
   - Run below to make the environment variables available.
 
