@@ -179,6 +179,16 @@ clusterPharia:
         login: true
         superuser: false
         replication: false
+      - name: "stateful_responses"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
+        # `password` and `username` key should exist in secret. username key should be the same as the name of the user (stateful_responses)
+        passwordSecret:
+          name: "qs-postgresql-cluster-access-stateful-responses"
+        login: true
+        superuser: false
+        replication: false
       - name: "pharia_catch"
         connectionLimit: -1
         ensure: present
