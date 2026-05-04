@@ -381,6 +381,18 @@ databases:
       - pg_trgm
       - btree_gin
 
+  - name: "stateful-responses"
+    enabled: true
+    cluster: "qs-postgresql-cluster-pharia"
+    owner: "stateful_responses"
+    connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
+
   - name: "mlflow"
     enabled: true
     cluster: "qs-postgresql-cluster-pharia"
