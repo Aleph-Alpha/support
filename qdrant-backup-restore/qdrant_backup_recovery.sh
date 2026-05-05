@@ -259,8 +259,6 @@ fetch_collection_snapshot() {
       return
   fi
 
-  item=$(jq -c '.result[0] // empty' <<< "$result")
-
   _result=$(jq -c '.result // [] | .[]' <<< "$result")
   while read -r item; do
     local snapshot_name=""
@@ -402,10 +400,12 @@ get_s3_url() {
   local status=""
   status=$(jq -r '.status?' <<< "$result")
   if [ "$status" != "success" ]; then
-      _printf "[%s] failed to fetch snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
+      _printf "failed to fetch snapshots for collections %s, got this instead %s\n" "$collection_name" "${result//[[:space:]]/}"
+      return 1
   fi
 
   s3_presigned_url=$(jq -r '.share' <<< "$result")
+  return 0
 }
 
 # restores an collection snapshot from an s3 url updates the $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE and $QDRANT_FAILED_RECOVERY_FILE
@@ -418,7 +418,12 @@ recover_collection_snapshot() {
 
     _printf "[%s] started to recover %s snapshot of %s collection...\n" "$host" "$snapshot_name" "$collection_name"
 
-    get_s3_url "$collection_name" "$snapshot_name"
+    if ! get_s3_url "$collection_name" "$snapshot_name"; then
+      ((fail_recovered_count=fail_recovered_count+1))
+      _printf "[%s] failed to presign S3 URL for %s snapshot of %s collection, skipping recover request\n" "$host" "$snapshot_name" "$collection_name"
+      printf '%s,%s,%s\n' "$host" "$snapshot_name" "presign_failed" >> $QDRANT_FAILED_RECOVERY_FILE
+      return
+    fi
 
     result=$(_curl PUT \
                "$host/collections/$collection_name/snapshots/recover?wait=$QDRANT_WAIT_ON_TASK" \
@@ -599,12 +604,8 @@ recover_collection_aliases() {
   fi
 
   if [[ ! -s "$QDRANT_COLLECTION_ALIASES" ]]; then
-      get_collection_aliases
-  fi
-
-  if [ ! -f "$QDRANT_COLLECTION_ALIASES" ]; then
-      _printf "[%s] collection aliases do not exist on source!\n" "$host"
-      return
+      _printf "collection aliases file does not exist or is empty, run 'get_colla' task to fetch collection aliases from source hosts or enable BACKUP_COLLECTION_ALIASES_ON_S3 to fetch collection aliases from S3 bucket\n"
+      exit 1
   fi
 
   colla_count=$(wc -l < $QDRANT_COLLECTION_ALIASES)
@@ -669,7 +670,7 @@ get_peers_from_cluster_info() {
   done <<< "$peer_uri_entries"
 
   if [ ${#peer_uri_map[@]} -eq 0 ]; then
-    _printf "no registered host peers in %s... exiting" "$host"
+    _printf "no registered host peers in %s... exiting\n" "$host"
     exit 1
   fi
 }

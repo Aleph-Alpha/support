@@ -123,25 +123,25 @@ Update the following environment varibles in your copy of `backup-cronjob.yaml` 
 8. `BACKUP_COLLECTION_ALIASES_ON_S3` is set as `false`. This configuration is used to toggle backup of collection aliases to S3. The collection_aliases are versioned by the timestamp. When `true` ensure S3 credentials are set;
       ````yaml
       env:
-        - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ACCESS_KEY
+        - name: QDRANT_S3_ACCESS_KEY_ID
             valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_ACCESS_KEY_ID
-        - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__SECRET_KEY
+        - name: QDRANT_S3_SECRET_ACCESS_KEY
             valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_SECRET_ACCESS_KEY
-        - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__BUCKET
+        - name: QDRANT_S3_BUCKET_NAME
             valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_BUCKET_NAME
-        - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL
+        - name: QDRANT_S3_ENDPOINT_URL
             value: "<your-s3-endpoint-url>"
-        - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE
-            value: "s3"
+        - name: BACKUP_COLLECTION_ALIASES_ON_S3
+            value: "true"
       ````
 
 Deploy the job!
