@@ -603,9 +603,9 @@ recover_collection_aliases() {
     fi
   fi
 
-  if [[ ! -s "$QDRANT_COLLECTION_ALIASES" ]]; then
-      _printf "collection aliases file does not exist or is empty, run 'get_colla' task to fetch collection aliases from source hosts or enable BACKUP_COLLECTION_ALIASES_ON_S3 to fetch collection aliases from S3 bucket\n"
-      exit 1
+  if [ ! -f "$QDRANT_COLLECTION_ALIASES" ]; then
+      _printf "collection aliases file does not exist, run 'get_colla' task to fetch collection aliases from source hosts or enable BACKUP_COLLECTION_ALIASES_ON_S3 to fetch collection aliases from S3 bucket\n"
+      return
   fi
 
   colla_count=$(wc -l < $QDRANT_COLLECTION_ALIASES)
