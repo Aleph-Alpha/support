@@ -7,11 +7,14 @@ QDRANT_FAILED_RECOVERY_FILE="failed_snapshot_recovery"
 QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE="snapshot_recovery_history"
 QDRANT_ALIAS_RECOVERY_HISTORY_FILE="alias_recovery_history"
 QDRANT_COLLECTION_ALIASES="collection_aliases"
+BACKUP_COLLECTION_ALIASES_ON_S3=${BACKUP_COLLECTION_ALIASES_ON_S3:-false}
+QDRANT_COLLECTION_ALIASES_BACKUP_FOLDER="collection_aliases_store"
 QDRANT_WAIT_ON_TASK=${QDRANT_WAIT_ON_TASK:-true}
 CURL_TIMEOUT="${CURL_TIMEOUT:-1800}"
 QDRANT_S3_ALIAS="qdrant_s3_snaphost"
 QDRANT_S3_LINK_EXPIRY_DURATION="${QDRANT_S3_LINK_EXPIRY_DURATION:-3600s}"
 QDRANT_HTTP_PORT="${QDRANT_HTTP_PORT:-6333}"
+QDRANT_COLLECTION_ALIASES_STABLE_FILE="${QDRANT_COLLECTION_ALIASES_STABLE_FILE:-collection_aliases}"
 
 declare -a peer_uri_map;
 # printf wrapper helper
@@ -256,8 +259,6 @@ fetch_collection_snapshot() {
       return
   fi
 
-  item=$(jq -c '.result[0] // empty' <<< "$result")
-
   _result=$(jq -c '.result // [] | .[]' <<< "$result")
   while read -r item; do
     local snapshot_name=""
@@ -399,10 +400,12 @@ get_s3_url() {
   local status=""
   status=$(jq -r '.status?' <<< "$result")
   if [ "$status" != "success" ]; then
-      _printf "[%s] failed to fetch snapshots for collections %s, got this instead %s\n" "$host" "$collection_name" "${result//[[:space:]]/}"
+      _printf "failed to fetch snapshots for collections %s, got this instead %s\n" "$collection_name" "${result//[[:space:]]/}"
+      return 1
   fi
 
   s3_presigned_url=$(jq -r '.share' <<< "$result")
+  return 0
 }
 
 # restores an collection snapshot from an s3 url updates the $QDRANT_SNAPSHOT_RECOVERY_HISTORY_FILE and $QDRANT_FAILED_RECOVERY_FILE
@@ -415,7 +418,12 @@ recover_collection_snapshot() {
 
     _printf "[%s] started to recover %s snapshot of %s collection...\n" "$host" "$snapshot_name" "$collection_name"
 
-    get_s3_url "$collection_name" "$snapshot_name"
+    if ! get_s3_url "$collection_name" "$snapshot_name"; then
+      ((fail_recovered_count=fail_recovered_count+1))
+      _printf "[%s] failed to presign S3 URL for %s snapshot of %s collection, skipping recover request\n" "$host" "$snapshot_name" "$collection_name"
+      printf '%s,%s,%s\n' "$host" "$snapshot_name" "presign_failed" >> $QDRANT_FAILED_RECOVERY_FILE
+      return
+    fi
 
     result=$(_curl PUT \
                "$host/collections/$collection_name/snapshots/recover?wait=$QDRANT_WAIT_ON_TASK" \
@@ -496,6 +504,8 @@ get_collection_aliases() {
       exit 1
   fi
 
+  : > "$QDRANT_COLLECTION_ALIASES"
+
   local colla_length=0
   colla_length=$(jq -c '(.result.aliases // []) | length' <<< "$result")
 
@@ -510,14 +520,41 @@ get_collection_aliases() {
     done <<< "$_result"
   fi
 
+if [ "$BACKUP_COLLECTION_ALIASES_ON_S3" = "true" ]; then
+
+    setup_s3_storage
+
+    local ts
+    ts=$(date '+%Y-%m-%d_%H-%M-%S')
+
+    local base_path="$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$QDRANT_COLLECTION_ALIASES_BACKUP_FOLDER"
+
+    local versioned_dest="$base_path/${QDRANT_COLLECTION_ALIASES}-$ts"
+    local stable_dest="$base_path/${QDRANT_COLLECTION_ALIASES}"
+
+    _printf "backing up collection aliases to s3 bucket %s\n" "$QDRANT_S3_BUCKET_NAME"
+
+    if ! mc cp "$QDRANT_COLLECTION_ALIASES" "$versioned_dest"; then
+      _printf "failed to upload versioned collection aliases backup to %s\n" "$QDRANT_S3_BUCKET_NAME"
+      exit 1
+    fi
+
+    if ! mc cp "$versioned_dest" "$stable_dest"; then
+      _printf "failed to update collection aliases stable backup pointer in %s\n" "$QDRANT_S3_BUCKET_NAME"
+      exit 1
+    fi
+
+    _printf "successfully backed up collection aliases to s3 bucket %s\n" "$QDRANT_S3_BUCKET_NAME"
+  fi
+
   _printf "%s file updated,found %d collection alias(es)!\n" "$QDRANT_COLLECTION_ALIASES" "$colla_length"
 }
 
 # restores collection alias to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 recover_collection_alias() {
-  local host="${source_hosts[0]}"
   local collection_name="$1"
   local alias_name="$2"
+  local host="$3"
   local status=""
   local result=""
 
@@ -540,7 +577,7 @@ recover_collection_alias() {
 
   if [ "$status" != "ok" ]; then
     ((failed_recovered_colla_count=failed_recovered_colla_count+1))
-    _printf "[%s] failed to fetch collection alias %s:%s, got this instead %s\n" "$host" "$collection_name" "$alias_name" "${result//[[:space:]]/}"
+    _printf "[%s] failed to restore collection alias %s:%s, got this instead %s\n" "$host" "$collection_name" "$alias_name" "${result//[[:space:]]/}"
     return
   fi
 
@@ -550,20 +587,31 @@ recover_collection_alias() {
 
 # restores collection aliases to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 recover_collection_aliases() {
-  if [[ ! -s "$QDRANT_COLLECTION_ALIASES" ]]; then
-      get_collection_aliases
+
+  local host="${restore_hosts[0]}"
+
+
+  if [ "$BACKUP_COLLECTION_ALIASES_ON_S3" = "true" ]; then
+
+    setup_s3_storage
+
+    if mc cp "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$QDRANT_COLLECTION_ALIASES_BACKUP_FOLDER/$QDRANT_COLLECTION_ALIASES_STABLE_FILE" "$QDRANT_COLLECTION_ALIASES"; then
+      _printf "collection aliases restored from s3 bucket %s\n" "$QDRANT_S3_BUCKET_NAME"
+    else
+      _printf "failed to restore collection aliases file (%s) from s3 bucket %s\n" "$QDRANT_COLLECTION_ALIASES_STABLE_FILE" "$QDRANT_S3_BUCKET_NAME"
+      exit 1
+    fi
   fi
 
   if [ ! -f "$QDRANT_COLLECTION_ALIASES" ]; then
-      _printf "[%s] collection aliases do not exist on source!\n" "$host"
+      _printf "collection aliases file does not exist, run 'get_colla' task to fetch collection aliases from source hosts or enable BACKUP_COLLECTION_ALIASES_ON_S3 to fetch collection aliases from S3 bucket\n"
       return
   fi
 
   colla_count=$(wc -l < $QDRANT_COLLECTION_ALIASES)
   recovered_colla_count=0
   failed_recovered_colla_count=0
-
-  local host="${restore_hosts[0]}"
+  colla_skipped_count=0
 
   touch $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 
@@ -577,12 +625,13 @@ recover_collection_aliases() {
 
     if [ "$history_count" -gt 0 ]; then
       _printf "[%s] collection alias %s:%s already recovered, skipping!\n" "$host" "$collection_name" "$alias_name"
+      ((colla_skipped_count=colla_skipped_count+1))
       continue
     fi
-    recover_collection_alias "$collection_name" "$alias_name"
+    recover_collection_alias "$collection_name" "$alias_name" "$host"
   done < $QDRANT_COLLECTION_ALIASES
 
-  _printf "recovery summary: %d/%d collection aliases recovered, %d failed.\n" "$recovered_colla_count" "$colla_count" "$failed_recovered_colla_count"
+  _printf "recovery summary: %d/%d collection aliases recovered, %d failed, %d skipped.\n" "$recovered_colla_count" "$colla_count" "$failed_recovered_colla_count" "$colla_skipped_count"
 
   colla_count=0
   recovered_colla_count=0
@@ -621,7 +670,7 @@ get_peers_from_cluster_info() {
   done <<< "$peer_uri_entries"
 
   if [ ${#peer_uri_map[@]} -eq 0 ]; then
-    _printf "no registered host peers in %s... exiting" "$host"
+    _printf "no registered host peers in %s... exiting\n" "$host"
     exit 1
   fi
 }
@@ -686,9 +735,9 @@ Environment variables:
   QDRANT_S3_SECRET_ACCESS_KEY     - S3 secret access key (for S3 operations)
   QDRANT_S3_BUCKET_NAME           - S3 bucket name (for S3 operations)
   GET_PEERS_FROM_CLUSTER_INFO     - Set to "true" to auto-discover peers
-  CURL_TIMEOUT                    - Curl timeout in seconds (default: 300)
+  CURL_TIMEOUT                    - Curl timeout in seconds (default: 1800)
   QDRANT_WAIT_ON_TASK             - Waits for async tasks to finish
-  QDRANT_SNAPSHOT_DATETIME_FILTER - Specify the datea and time filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!!
+  QDRANT_SNAPSHOT_DATETIME_FILTER - Specify the date and time filter for snapshots to be fetched and/or restored, format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot!!
 Examples:
   $0 get_snap
   $0 recover_snap
@@ -738,11 +787,20 @@ run() {
     local DATETIME="${QDRANT_SNAPSHOT_DATETIME_FILTER:-}"
     generate_snapshot_file_from_s3 "$DATETIME"
   elif [ "$command" = "create_snap" ] || [ "$command" = "create_snapshot" ]; then
+    # create collection snapshots
     create_collection_snapshot
+
+    # backup collection aliases to s3 bucket
+    get_collection_aliases
+
   elif [ "$command" = "recover_snap" ]; then
     setup_s3_storage
     local DATETIME="${QDRANT_SNAPSHOT_DATETIME_FILTER:-}"
     recover_collection_snapshots "$DATETIME"
+
+    # restore collection aliases from s3 bucket
+    recover_collection_aliases
+
   elif [ "$command" = "get_colla" ] || [ "$command" = "get_collection_alias" ]; then
     get_collection_aliases
   elif [ "$command" = "recover_colla" ] || [ "$command" = "recover_collection_alias" ]; then
