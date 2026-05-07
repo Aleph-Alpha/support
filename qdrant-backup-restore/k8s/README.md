@@ -37,24 +37,24 @@ Important steps to note:
       ````yaml
       env:
         - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ACCESS_KEY
-            valueFrom:
+          valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_ACCESS_KEY_ID
         - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__SECRET_KEY
-            valueFrom:
+          valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_SECRET_ACCESS_KEY
         - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__BUCKET
-            valueFrom:
+          valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_BUCKET_NAME
         - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__S3_CONFIG__ENDPOINT_URL
-            value: "<your-s3-endpoint-url>"
+          value: "<your-s3-endpoint-url>"
         - name: QDRANT__STORAGE__SNAPSHOTS_CONFIG__SNAPSHOTS_STORAGE
-            value: "s3"
+          value: "s3"
       ````
 
 (Re)Deploy the Qdrant cluster!
@@ -124,24 +124,24 @@ Update the following environment varibles in your copy of `backup-cronjob.yaml` 
       ````yaml
       env:
         - name: QDRANT_S3_ACCESS_KEY_ID
-            valueFrom:
+          valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_ACCESS_KEY_ID
         - name: QDRANT_S3_SECRET_ACCESS_KEY
-            valueFrom:
+          valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_SECRET_ACCESS_KEY
         - name: QDRANT_S3_BUCKET_NAME
-            valueFrom:
+          valueFrom:
             secretKeyRef:
                 name: <your-qdrant-kubernetes-secret-name>
                 key: QDRANT_S3_BUCKET_NAME
         - name: QDRANT_S3_ENDPOINT_URL
-            value: "<your-s3-endpoint-url>"
+          value: "<your-s3-endpoint-url>"
         - name: BACKUP_COLLECTION_ALIASES_ON_S3
-            value: "true"
+          value: "true"
       ````
 
 Deploy the job!
@@ -171,7 +171,29 @@ Update the following environment varibles accordingly;
 7. `QDRANT_WAIT_ON_TASK` is set as `true`. This configuation make restoration process synchronous meaning 'wait for snapshot process to finish successfully before moving on'. Its used during backup and recovery.
 8. `QDRANT_SNAPSHOT_DATETIME_FILTER` is empty. Setting this filters out snapshot/backups belonging to a certain date and time using glob pattern matching. e.g `"2026-01-29"` = all snapshots in 29th January 2026, `2026-01` = all backups in January 2026.
 9. `MC_CONFIG_DIR` is `mc`. This overrides the default storage location ($HOME) for mc s3 client configurations. Essential in set ups that use stricter securityContext configuration like `readOnlyRootFilesystem: true`.
-10. `BACKUP_COLLECTION_ALIASES_ON_S3` is `false`. When this is set to `true` during restoration it will fetch the lastest `collection_alias` from S3.
+10. `BACKUP_COLLECTION_ALIASES_ON_S3` is `false`. When this is set to `true` during restoration it will fetch the lastest `collection_alias` from S3. When `true` ensure the following S3 credentials are included.
+      ````yaml
+      env:
+        - name: QDRANT_S3_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+                name: <your-qdrant-kubernetes-secret-name>
+                key: QDRANT_S3_ACCESS_KEY_ID
+        - name: QDRANT_S3_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+                name: <your-qdrant-kubernetes-secret-name>
+                key: QDRANT_S3_SECRET_ACCESS_KEY
+        - name: QDRANT_S3_BUCKET_NAME
+          valueFrom:
+            secretKeyRef:
+                name: <your-qdrant-kubernetes-secret-name>
+                key: QDRANT_S3_BUCKET_NAME
+        - name: QDRANT_S3_ENDPOINT_URL
+          value: "<your-s3-endpoint-url>"
+        - name: BACKUP_COLLECTION_ALIASES_ON_S3
+          value: "true"
+      ````
 11. `QDRANT_COLLECTION_ALIASES_STABLE_FILE` is `collection_aliases`. This configuration is used to override the stable version of collection_aliases file to restore. e.g. `collection_aliases-2026-04-30_18-31-04`. The file has to exist on s3.
 
 Deploy the job!
