@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/Aleph-Alpha/support/compare/v1.5.0...v1.6.0) (2026-05-07)
+
+
+### Features
+
+* backup qdrant collection aliases to s3 ([#106](https://github.com/Aleph-Alpha/support/issues/106)) ([33897d7](https://github.com/Aleph-Alpha/support/commit/33897d787e204d8f955c43c71ce6e8985eb17b81))
+
 ## [1.4.0](https://github.com/Aleph-Alpha/support/compare/v1.3.0...v1.4.0) (2026-02-18)
 
 
