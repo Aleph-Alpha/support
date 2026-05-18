@@ -333,11 +333,61 @@ fetch_collection_snapshot_from_s3() {
   fi
 }
 
+# discovers collection names from the S3 snapshots prefix and stores them in $QDRANT_COLLECTIONS_FILE
+fetch_collections_from_s3() {
+  local prefix="snapshots"
+  local result=""
+
+  _printf "fetching collections from s3 bucket %s under %s/\n" "$QDRANT_S3_BUCKET_NAME" "$prefix"
+
+  result=$(mc ls --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$prefix/")
+
+  if [ "$result" = "" ]; then
+    _printf "no collections found in s3 path: %s/%s/ ...skipping!\n" "$QDRANT_S3_BUCKET_NAME" "$prefix"
+    return
+  fi
+
+  collections_count=0
+  _result=$(jq -c '.' <<< "$result")
+
+  while read -r item; do
+    local status=""
+    local object_key=""
+    local collection_name=""
+
+    status=$(jq -r '.status?' <<< "$item")
+    if [ "$status" != "success" ]; then
+      _printf "failed to list collections from s3, got this instead %s\n" "${item//[[:space:]]/}"
+      continue
+    fi
+
+    object_key=$(jq -r '.key' <<< "$item")       # e.g. "my_collection/" from mc ls on snapshots/
+    object_key="${object_key%/}"                 # strip trailing slash (folder marker)
+    collection_name="${object_key##*/}"          # use last path segment as collection name
+
+    if [[ -z "$collection_name" || "$collection_name" == "$prefix" ]]; then
+      continue
+    fi
+
+    ((collections_count=collections_count+1))
+    printf ',%s\n' "$collection_name" >> $QDRANT_COLLECTIONS_FILE
+  done <<< "$_result"
+
+  _printf "%s file updated, found %d collection(s) from s3!\n" "$QDRANT_COLLECTIONS_FILE" "$collections_count"
+  collections_count=0
+}
+
 # generates a list of collection snapshots from a s3 and appends it to $QDRANT_SNAPSHOTS_FILE
 generate_snapshot_file_from_s3() {
   local datetime="${1:-}"
+
   if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
-      get_collections
+    fetch_collections_from_s3
+  fi
+
+  if [ ! -f "$QDRANT_COLLECTIONS_FILE" ]; then
+    _printf "non error exit since file does not %s exist.\n" "$QDRANT_COLLECTIONS_FILE"
+    exit 0
   fi
 
   snapshot_count=0
