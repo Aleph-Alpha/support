@@ -6,6 +6,12 @@ metadata:
     app: qdrant-snapshots-file
     component: script
 data:
+  # this is used to provide a list of snapshots to restore (comma separated list of collection names and snapshot names, host is optional (first column is host))
   snapshots: |
     ,_default_256,_default_256-5528114518172461-2026-01-29-11-44-26.snapshot
     ,midlib,midlib-567156434043892-2026-01-29-11-44-27.snapshot
+
+  # this is used to provide a list of collections to restore (comma separated list of collection names, host is optional (first column is host))
+  collections: |
+    ,_default_256
+    ,_default_128

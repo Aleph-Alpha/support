@@ -74,7 +74,11 @@ get_collections() {
   fi
   _printf "fetching collections!\n"
 
-  local host="${source_hosts[0]}"
+  local host="${source_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "source host is not available for fetching collections. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables.\n"
+    exit 1
+  fi
 
   collections_count=0
 
@@ -98,6 +102,13 @@ track_collection(){
   local host="$1"
   local result="$2"
   _result=$(jq -c '.result.collections // [] | .[]' <<< "$result")
+
+  # Guard against the bash `<<<` quirk: a here-string of an empty value still
+  # produces a single newline, so the loop below would iterate once with an
+  # empty item and write a bogus `host,` line to $QDRANT_COLLECTIONS_FILE.
+  if [[ -z "$_result" ]]; then
+    return
+  fi
 
   while read -r item; do
     local collection_name=""
@@ -132,7 +143,11 @@ create_snapshot_from_peer() {
 
 # creates and appends created collection snapshot from a qdrant node to $QDRANT_SNAPSHOTS_FILE
 track_created_collection_snapshot() {
-    local host="${source_hosts[0]}"
+    local host="${source_hosts[0]:-}"
+    if [[ -z "$host" ]]; then
+      _printf "source host is not available for fetching collection snapshots. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables.\n"
+      exit 1
+    fi
     local collection_name="$1"
     local result=""
     local status=""
@@ -333,11 +348,61 @@ fetch_collection_snapshot_from_s3() {
   fi
 }
 
+# discovers collection names from the S3 snapshots prefix and stores them in $QDRANT_COLLECTIONS_FILE
+fetch_collections_from_s3() {
+  local prefix="snapshots"
+  local result=""
+
+  _printf "fetching collections from s3 bucket %s under %s/\n" "$QDRANT_S3_BUCKET_NAME" "$prefix"
+
+  result=$(mc ls --json "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$prefix/")
+
+  if [ "$result" = "" ]; then
+    _printf "no collections found in s3 path: %s/%s/ ...skipping!\n" "$QDRANT_S3_BUCKET_NAME" "$prefix"
+    return
+  fi
+
+  collections_count=0
+  _result=$(jq -c '.' <<< "$result")
+
+  while read -r item; do
+    local status=""
+    local object_key=""
+    local collection_name=""
+
+    status=$(jq -r '.status?' <<< "$item")
+    if [ "$status" != "success" ]; then
+      _printf "failed to list collections from s3, got this instead %s\n" "${item//[[:space:]]/}"
+      continue
+    fi
+
+    object_key=$(jq -r '.key' <<< "$item")       # e.g. "my_collection/" from mc ls on snapshots/
+    object_key="${object_key%/}"                 # strip trailing slash (folder marker)
+    collection_name="${object_key##*/}"          # use last path segment as collection name
+
+    if [[ -z "$collection_name" || "$collection_name" == "$prefix" ]]; then
+      continue
+    fi
+
+    ((collections_count=collections_count+1))
+    printf ',%s\n' "$collection_name" >> $QDRANT_COLLECTIONS_FILE
+  done <<< "$_result"
+
+  _printf "%s file updated, found %d collection(s) from s3!\n" "$QDRANT_COLLECTIONS_FILE" "$collections_count"
+  collections_count=0
+}
+
 # generates a list of collection snapshots from a s3 and appends it to $QDRANT_SNAPSHOTS_FILE
 generate_snapshot_file_from_s3() {
   local datetime="${1:-}"
+
   if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
-      get_collections
+    fetch_collections_from_s3
+  fi
+
+  if [ ! -f "$QDRANT_COLLECTIONS_FILE" ]; then
+    _printf "non error exit since file %s does not exist.\n" "$QDRANT_COLLECTIONS_FILE"
+    exit 0
   fi
 
   snapshot_count=0
@@ -487,7 +552,11 @@ recover_collection_snapshots(){
 
 # gets the collection aliases from a qdrant node and appends it to $QDRANT_COLLECTION_ALIASES file
 get_collection_aliases() {
-  local host="${source_hosts[0]}"
+  local host="${source_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "source host is not available for fetching collection aliases. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables.\n"
+    exit 1
+  fi
   local result=""
   local status=""
 
@@ -588,7 +657,11 @@ recover_collection_alias() {
 # restores collection aliases to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 recover_collection_aliases() {
 
-  local host="${restore_hosts[0]}"
+  local host="${restore_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "restore host is not available for recovering collection aliases. Please ensure QDRANT_RESTORE_HOSTS is set correctly in your environment variables.\n"
+    exit 1
+  fi
 
 
   if [ "$BACKUP_COLLECTION_ALIASES_ON_S3" = "true" ]; then
@@ -658,7 +731,12 @@ delete_files() {
 
 # gets qdrant peer host url using cluster info endpoint. Sets the port to $QDRANT_HTTP_PORT the http port.
 get_peers_from_cluster_info() {
-  local host="${source_hosts[0]}"
+  local host="${source_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "source host is not available. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables. If restoring snapshots set QDRANT_SOURCE_HOSTS and GET_PEERS_FROM_CLUSTER_INFO to empty string.\n"
+    exit 1
+  fi
+
   result=$(_curl GET "$host/cluster" --header "api-key: $QDRANT_API_KEY")
   entries=$(jq -r '.result.peers // {}' <<< "$result")
   peer_uri_entries=$(jq -r 'to_entries[] | "\(.key) \(.value.uri)"' <<< "$entries")

@@ -163,9 +163,9 @@ kubectl -n <namespace> logs -lapp=qdrant-backup -f
 Update the following environment varibles accordingly;
 
 1. Update the `secretKeyRef.name` on all `env:` entries under `env.[*].valueFrom` to the name of the kubernetes secrets deployed when configuring Qdrant.
-2. Update the `QDRANT_SOURCE_HOSTS` to the kubernetes service domain of the source Qdrant deployment.
+2. Update the `QDRANT_SOURCE_HOSTS` to empty `""`.
 3. Update the `QDRANT_RESTORE_HOSTS` to the target qdrant cluster service domain.
-4. `GET_PEERS_FROM_CLUSTER_INFO` should be `true` to discover qdrant cluster peers when backing up collections.
+4. `GET_PEERS_FROM_CLUSTER_INFO` should be `false` during restore.
 5. `CURL_TIMEOUT` is set at `3000` seconds. This is the max time curl will wait for request to complete. Its increased in scenarios where restoration takes a while.
 6. `QDRANT_S3_LINK_EXPIRY_DURATION` is set at `3600`. This is the duration that an s3 presigned url will be active. The url is used during the recovery process.
 7. `QDRANT_WAIT_ON_TASK` is set as `true`. This configuation make restoration process synchronous meaning 'wait for snapshot process to finish successfully before moving on'. Its used during backup and recovery.
