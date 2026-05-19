@@ -750,8 +750,8 @@ export QDRANT_S3_ACCESS_KEY_ID="your-access-key"
 export QDRANT_S3_SECRET_ACCESS_KEY="your-secret-key"
 export QDRANT_S3_BUCKET_NAME="qdrant-snapshots"
 
-# Auto-discover peers
-export GET_PEERS_FROM_CLUSTER_INFO="true"
+# Disable Auto-discover of peers
+export GET_PEERS_FROM_CLUSTER_INFO="false"
 
 # Timeout settings
 export CURL_TIMEOUT="1800"

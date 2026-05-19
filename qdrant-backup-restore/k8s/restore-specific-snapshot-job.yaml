@@ -47,19 +47,21 @@ spec:
                   name: qdrant-credentials-minio
                   key: QDRANT_API_KEY
             - name: QDRANT_SOURCE_HOSTS
-              value: "http://qdrant-headless:6333" # change this to your source qdrant kubernetes headless service name
+              value: "" # leave empty if source host is not available
             - name: QDRANT_S3_ENDPOINT_URL
               value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
             - name: QDRANT_RESTORE_HOSTS
-              value: "http://qdrantr2-headless:6333" # change this to your target qdrant kubernetes headless service name
+              value: "http://qdrant-headless:6333" # change this to your target qdrant kubernetes headless service name
             - name: GET_PEERS_FROM_CLUSTER_INFO
-              value: "true"
+              value: "false"
             - name: CURL_TIMEOUT
               value: "3000" # increase if more time is needed for a single restore
             - name: QDRANT_SNAPSHOT_DATETIME_FILTER
               value: "" # change tis to filter snapshts based on date (glob matching is used)
             - name: MC_CONFIG_DIR
               value: "mc" # sets the configuration location for mc S3 client
+            - name: BACKUP_COLLECTION_ALIASES_ON_S3
+              value: "true"
           resources:
             requests:
               cpu: "100m"
@@ -71,9 +73,14 @@ spec:
           - name: qdrant-backup-restore-script
             mountPath: /scripts/qdrant_backup_recovery.sh
             subPath: qdrant_backup_recovery.sh
+          # this is used to restore specific collections
           - name: qdrant-snapshots-file
-            mountPath: /scripts/snapshots
-            subPath: snapshots
+            mountPath: /scripts/collections
+            subPath: collections
+          # this is used to restore specific snapshots
+          # - name: qdrant-snapshots-file
+          #   mountPath: /scripts/snapshots
+          #   subPath: snapshots
           - name: scripts
             mountPath: /scripts
       volumes:

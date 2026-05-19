@@ -74,7 +74,11 @@ get_collections() {
   fi
   _printf "fetching collections!\n"
 
-  local host="${source_hosts[0]}"
+  local host="${source_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "source host is not available for fetching collections. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables.\n"
+    exit 1
+  fi
 
   collections_count=0
 
@@ -132,7 +136,11 @@ create_snapshot_from_peer() {
 
 # creates and appends created collection snapshot from a qdrant node to $QDRANT_SNAPSHOTS_FILE
 track_created_collection_snapshot() {
-    local host="${source_hosts[0]}"
+    local host="${source_hosts[0]:-}"
+    if [[ -z "$host" ]]; then
+      _printf "source host is not available for fetching collection snapshots. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables.\n"
+      exit 1
+    fi
     local collection_name="$1"
     local result=""
     local status=""
@@ -537,7 +545,11 @@ recover_collection_snapshots(){
 
 # gets the collection aliases from a qdrant node and appends it to $QDRANT_COLLECTION_ALIASES file
 get_collection_aliases() {
-  local host="${source_hosts[0]}"
+  local host="${source_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "source host is not available for fetching collection aliases. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables.\n"
+    exit 1
+  fi
   local result=""
   local status=""
 
@@ -638,7 +650,11 @@ recover_collection_alias() {
 # restores collection aliases to a qdrant node and appends progress to $QDRANT_ALIAS_RECOVERY_HISTORY_FILE
 recover_collection_aliases() {
 
-  local host="${restore_hosts[0]}"
+  local host="${restore_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "restore host is not available for recovering collection aliases. Please ensure QDRANT_RESTORE_HOSTS is set correctly in your environment variables.\n"
+    exit 1
+  fi
 
 
   if [ "$BACKUP_COLLECTION_ALIASES_ON_S3" = "true" ]; then
@@ -708,7 +724,12 @@ delete_files() {
 
 # gets qdrant peer host url using cluster info endpoint. Sets the port to $QDRANT_HTTP_PORT the http port.
 get_peers_from_cluster_info() {
-  local host="${source_hosts[0]}"
+  local host="${source_hosts[0]:-}"
+  if [[ -z "$host" ]]; then
+    _printf "source host is not available. Please ensure QDRANT_SOURCE_HOSTS is set correctly in your environment variables. If restoring snapshots set QDRANT_SOURCE_HOSTS and GET_PEERS_FROM_CLUSTER_INFO to empty string.\n"
+    exit 1
+  fi
+
   result=$(_curl GET "$host/cluster" --header "api-key: $QDRANT_API_KEY")
   entries=$(jq -r '.result.peers // {}' <<< "$result")
   peer_uri_entries=$(jq -r 'to_entries[] | "\(.key) \(.value.uri)"' <<< "$entries")
