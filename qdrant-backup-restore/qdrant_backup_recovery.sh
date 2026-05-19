@@ -103,6 +103,13 @@ track_collection(){
   local result="$2"
   _result=$(jq -c '.result.collections // [] | .[]' <<< "$result")
 
+  # Guard against the bash `<<<` quirk: a here-string of an empty value still
+  # produces a single newline, so the loop below would iterate once with an
+  # empty item and write a bogus `host,` line to $QDRANT_COLLECTIONS_FILE.
+  if [[ -z "$_result" ]]; then
+    return
+  fi
+
   while read -r item; do
     local collection_name=""
     collection_name=$(jq -r '.name' <<< "$item")
@@ -394,7 +401,7 @@ generate_snapshot_file_from_s3() {
   fi
 
   if [ ! -f "$QDRANT_COLLECTIONS_FILE" ]; then
-    _printf "non error exit since file does not %s exist.\n" "$QDRANT_COLLECTIONS_FILE"
+    _printf "non error exit since file %s does not exist.\n" "$QDRANT_COLLECTIONS_FILE"
     exit 0
   fi
 

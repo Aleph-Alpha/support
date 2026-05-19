@@ -737,11 +737,11 @@ nano .env
 # Qdrant API key
 export QDRANT_API_KEY="your-api-key-here"
 
-# Source hosts (where snapshots are stored)
-# Port forward qdrant service to local
-export QDRANT_SOURCE_HOSTS="http://localhost:6333"
+# Source hosts (leave empty for restore - collections are discovered from S3)
+export QDRANT_SOURCE_HOSTS=""
 
 # Restore hosts (target Qdrant instances)
+# Port forward qdrant service to local
 export QDRANT_RESTORE_HOSTS="http://localhost:6334"
 
 # S3 configuration (for fetching snapshots)
