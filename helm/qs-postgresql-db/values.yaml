@@ -393,6 +393,18 @@ databases:
       - pg_trgm
       - btree_gin
 
+  - name: "sherlock"
+    enabled: true
+    cluster: "qs-postgresql-cluster-pharia"
+    owner: "sherlock"
+    connectionLimit: 50
+    extensions:
+      - uuid-ossp
+      - pgcrypto
+      - pg_stat_statements
+      - pg_trgm
+      - btree_gin
+
   - name: "mlflow"
     enabled: true
     cluster: "qs-postgresql-cluster-pharia"
