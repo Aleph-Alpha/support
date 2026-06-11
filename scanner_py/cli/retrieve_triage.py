@@ -55,6 +55,7 @@ def fetch_triage_for_image(
     Returns True if triage was fetched and saved.
     """
     from .oras_scan import find_triage_reference, fetch_triage_toml
+    from ..core.cache import get_registry_capability_cache
 
     dir_name = sanitize_image_dir(image)
     image_dir = output_dir / dir_name
@@ -72,15 +73,23 @@ def fetch_triage_for_image(
         logger.debug(f"Fetched triage via tag-based attestation for {image}")
         return True
 
-    # 3) Legacy ORAS triage.toml — skip if referrers API already timed out,
-    #    since this also uses oras discover.
-    triage_ref = find_triage_reference(image, timeout=timeout, verbose=verbose)
-    if triage_ref:
-        triage_toml = image_dir / "triage.toml"
-        manifest_file = image_dir / "manifest.json"
-        if fetch_triage_toml(image, triage_ref, str(triage_toml), str(manifest_file), timeout=timeout):
-            logger.debug(f"Fetched triage via ORAS triage.toml for {image}")
-            return True
+    # 3) Legacy ORAS triage.toml — also uses `oras discover`, so skip it entirely
+    #    if the registry already proved it has no Referrers API (e.g. JFrog).
+    #    Otherwise oras discover would hang for the full timeout (twice, counting
+    #    the --plain-http retry) for every image with no tag-based attestation.
+    if get_registry_capability_cache().referrers_unsupported(image):
+        logger.debug(
+            f"Skipping legacy ORAS triage.toml for {image} — "
+            f"registry has no Referrers API (oras discover would time out)"
+        )
+    else:
+        triage_ref = find_triage_reference(image, timeout=timeout, verbose=verbose)
+        if triage_ref:
+            triage_toml = image_dir / "triage.toml"
+            manifest_file = image_dir / "manifest.json"
+            if fetch_triage_toml(image, triage_ref, str(triage_toml), str(manifest_file), timeout=timeout):
+                logger.debug(f"Fetched triage via ORAS triage.toml for {image}")
+                return True
 
     logger.debug(
         f"No triage found for {image}: tried Referrers API, tag-based attestation, "

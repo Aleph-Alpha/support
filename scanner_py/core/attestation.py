@@ -19,7 +19,7 @@ from enum import Enum
 
 from ..utils.subprocess import run_command, run_with_timeout
 from ..utils.logging import get_logger, is_verbose
-from .cache import get_digest_cache
+from .cache import get_digest_cache, get_registry_capability_cache
 
 logger = get_logger(__name__)
 
@@ -343,7 +343,18 @@ class AttestationExtractor:
 
         Returns an empty list if the registry doesn't support the Referrers API
         (timeout or error). Callers should use extract_triage_tag_based() as fallback.
+
+        Registries that time out once are remembered (per host) so every other
+        image on the same registry skips the slow probe instead of re-paying the
+        timeout. This is the common case for JFrog, which has no Referrers API.
         """
+        capabilities = get_registry_capability_cache()
+        if capabilities.referrers_unsupported(image):
+            logger.debug(
+                f"Skipping Referrers API for {image} — registry already known to not support it"
+            )
+            return []
+
         fast_timeout = min(self.timeout, 15)
 
         if image_digest:
@@ -361,6 +372,7 @@ class AttestationExtractor:
                     pass
 
             if result.timed_out:
+                capabilities.mark_referrers_unsupported(image)
                 logger.debug(f"Referrers API timed out for {image} — registry may not support it")
                 return []
 
@@ -372,6 +384,7 @@ class AttestationExtractor:
         )
         if not result.success:
             if result.timed_out:
+                capabilities.mark_referrers_unsupported(image)
                 logger.debug(f"Referrers API timed out for {image} — registry may not support it")
             return []
 
