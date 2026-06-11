@@ -102,6 +102,62 @@ def reset_digest_cache() -> None:
         _digest_cache = None
 
 
+class RegistryCapabilityCache:
+    """
+    Thread-safe in-memory cache of per-registry capabilities.
+
+    Some registries (notably JFrog Artifactory remote/virtual repos) do not
+    implement the OCI Referrers API. `oras discover` against them does not fail
+    fast — it hangs until the timeout — so probing every image on such a registry
+    wastes the full timeout per image. Once we observe a timeout for a registry
+    host we remember it and skip referrer discovery for the rest of the run,
+    falling straight through to tag-based cosign attestation.
+    """
+
+    def __init__(self):
+        self._referrers_unsupported: set = set()
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def _host(image: str) -> str:
+        """Registry hostname for an image reference."""
+        from ..utils.registry import RegistryChecker
+        return RegistryChecker.extract_registry(image)
+
+    def referrers_unsupported(self, image: str) -> bool:
+        """True if the image's registry is known to not support the Referrers API."""
+        host = self._host(image)
+        with self._lock:
+            return host in self._referrers_unsupported
+
+    def mark_referrers_unsupported(self, image: str) -> None:
+        """Record that the image's registry does not support the Referrers API."""
+        host = self._host(image)
+        with self._lock:
+            self._referrers_unsupported.add(host)
+
+
+# Global registry capability cache instance for use across modules
+_registry_capability_cache: Optional[RegistryCapabilityCache] = None
+_registry_capability_cache_lock = threading.Lock()
+
+
+def get_registry_capability_cache() -> RegistryCapabilityCache:
+    """Get the global registry capability cache instance."""
+    global _registry_capability_cache
+    with _registry_capability_cache_lock:
+        if _registry_capability_cache is None:
+            _registry_capability_cache = RegistryCapabilityCache()
+        return _registry_capability_cache
+
+
+def reset_registry_capability_cache() -> None:
+    """Reset the global registry capability cache (useful for testing)."""
+    global _registry_capability_cache
+    with _registry_capability_cache_lock:
+        _registry_capability_cache = None
+
+
 @dataclass
 class CacheStats:
     """Cache statistics."""
