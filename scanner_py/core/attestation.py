@@ -545,6 +545,15 @@ class AttestationExtractor:
         (e.g. JFrog remote/virtual repos). Tag-based attestations are stored as
         regular OCI tags that any registry can proxy.
 
+        Tries two ways, in order:
+          1. Fetch the `sha256-<digest>.att` manifest directly via oras and decode
+             its DSSE layers. This is independent of the local cosign version.
+             Newer cosign releases resolve `download attestation` through the OCI
+             Referrers API, which JFrog does not implement, so cosign can return
+             zero attestations even when the .att tag exists — making the result
+             depend on whatever cosign happens to be installed.
+          2. `cosign download attestation` as a fallback.
+
         Args:
             image: Image reference
             output_file: Path to save triage file
@@ -552,6 +561,11 @@ class AttestationExtractor:
         Returns:
             True if successful
         """
+        # 1) Direct .att tag fetch via oras — cosign-version-independent.
+        if self._extract_triage_from_att_tag(image, output_file):
+            return True
+
+        # 2) Fall back to cosign's own attestation download.
         triage_pred_type = PREDICATE_TYPE_MAP[AttestationTypeEnum.TRIAGE]
 
         result = run_command(
@@ -568,16 +582,102 @@ class AttestationExtractor:
                 continue
             try:
                 envelope = json.loads(line)
-                payload = json.loads(base64.b64decode(envelope.get("payload", "")))
+                # cosign < 3 prints a bare DSSE envelope: {"payload": <b64>, ...}.
+                # cosign >= 3 prints a sigstore bundle:
+                #   {"mediaType": ".../bundle.v0.3+json", "dsseEnvelope": {"payload": <b64>, ...}}.
+                # Support both so the result doesn't depend on the cosign version.
+                payload_b64 = envelope.get("payload") or \
+                    (envelope.get("dsseEnvelope") or {}).get("payload", "")
+                if not payload_b64:
+                    continue
+                payload = json.loads(base64.b64decode(payload_b64))
                 if payload.get("predicateType") == triage_pred_type:
                     with open(output_file, "w") as f:
                         json.dump(payload, f, indent=2)
                     logger.debug(f"Tag-based triage attestation written to {output_file}")
                     return True
-            except (json.JSONDecodeError, KeyError, ValueError):
+            except (json.JSONDecodeError, KeyError, ValueError, AttributeError):
                 continue
 
         logger.debug(f"No triage predicate in tag-based attestations for {image}")
+        return False
+
+    def _extract_triage_from_att_tag(
+        self, image: str, output_file: str
+    ) -> bool:
+        """
+        Fetch a tag-based attestation by pulling the `sha256-<digest>.att` OCI
+        image directly with oras and decoding its DSSE layers — no cosign.
+
+        Cosign stores tag-based attestations as an image tagged
+        `sha256-<image-digest>.att` whose layers are
+        `application/vnd.dsse.envelope.v1+json` blobs. We resolve the image
+        digest, fetch that manifest, and scan its layers for a triage predicate.
+        If the image was re-attested multiple times there are several layers;
+        the most recent matching one wins.
+
+        Unlike `cosign download attestation`, this only uses oras/crane registry
+        reads, so it works against registries without the Referrers API (JFrog)
+        regardless of the installed cosign version.
+
+        Returns True if a triage attestation was found and written.
+        """
+        triage_pred_type = PREDICATE_TYPE_MAP[AttestationTypeEnum.TRIAGE]
+
+        digest = self.resolve_digest(image)
+        if not digest:
+            return False
+
+        image_name = self._strip_tag(image)
+        att_tag = f"{image_name}:{digest.replace('sha256:', 'sha256-')}.att"
+
+        result = run_command(
+            ["oras", "manifest", "fetch", att_tag],
+            timeout=self.timeout,
+        )
+        if not result.success:
+            logger.debug(f"No .att attestation tag for {image} ({att_tag})")
+            return False
+
+        try:
+            layers = json.loads(result.stdout).get("layers", [])
+        except json.JSONDecodeError:
+            return False
+
+        # Scan newest-first and stop at the first triage match. cosign appends
+        # each re-attestation as a new layer, so the most recent triage is the
+        # highest-index matching layer; iterating in reverse lets a heavily
+        # re-attested image resolve in one blob fetch instead of one per layer.
+        for layer in reversed(layers):
+            layer_digest = layer.get("digest")
+            if not layer_digest:
+                continue
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as f:
+                blob_file = f.name
+            try:
+                blob_result = run_command(
+                    ["oras", "blob", "fetch", f"{image_name}@{layer_digest}",
+                     "--output", blob_file],
+                    timeout=self.timeout,
+                )
+                if not blob_result.success:
+                    continue
+                with open(blob_file) as bf:
+                    envelope = json.load(bf)
+                payload = json.loads(base64.b64decode(envelope.get("payload", "")))
+                if payload.get("predicateType") == triage_pred_type:
+                    with open(output_file, "w") as f:
+                        json.dump(payload, f, indent=2)
+                    logger.debug(
+                        f"Tag-based triage attestation (oras .att) written to {output_file}"
+                    )
+                    return True
+            except (json.JSONDecodeError, KeyError, ValueError, OSError):
+                continue
+            finally:
+                Path(blob_file).unlink(missing_ok=True)
+
+        logger.debug(f"No triage predicate in .att tag for {image}")
         return False
 
 
