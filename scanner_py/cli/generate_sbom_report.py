@@ -51,6 +51,14 @@ Examples:
         help="Output file path (default: sbom-detailed-report.md)",
     )
     parser.add_argument(
+        "--source-label",
+        help=(
+            "Logical label for the scan source shown in the report header "
+            "(overrides the value read from scan-summary.json). Use this when "
+            "scanning a static image list that is not backed by a K8s namespace."
+        ),
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Enable verbose logging",
@@ -161,6 +169,9 @@ def generate_report(
     namespace: str = "pharia-ai",
 ) -> bool:
     """Generate detailed SBOM report."""
+    # Sort alphabetically so the per-image sections render in a stable order
+    # regardless of scan-completion order.
+    successful_scans = sorted(successful_scans, key=lambda s: s.lower())
     total_images = len(successful_scans)
 
     # Calculate overall statistics
@@ -196,7 +207,7 @@ def generate_report(
         # Header
         f.write("# Detailed SBOM Analysis Report\n\n")
         f.write(f"**Generated:** {datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}\n")
-        f.write(f"**Source:** Successful SBOM scans from {namespace} namespace\n")
+        f.write(f"**Image source:** `{namespace}`\n")
         f.write(f"**Total Images Analyzed:** {total_images}\n\n")
         f.write("---\n\n")
         f.write("## Executive Summary\n\n")
@@ -403,8 +414,11 @@ def run_generate_sbom_report(args: argparse.Namespace) -> int:
         logger.error("No successful scans found in scan summary")
         return 1
 
-    # Get namespace
-    namespace = summary.get("scan_summary", {}).get("namespace", "pharia-ai")
+    # Resolve label: explicit --source-label wins over scan-summary.json.
+    namespace = (
+        getattr(args, "source_label", None)
+        or summary.get("scan_summary", {}).get("namespace", "pharia-ai")
+    )
 
     # Generate report
     if generate_report(scan_results_dir, output_file, successful_scans, namespace):

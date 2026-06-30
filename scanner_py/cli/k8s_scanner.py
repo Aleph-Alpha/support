@@ -21,6 +21,8 @@ from ..utils.progress import ProgressBar, ProgressStyle, Spinner
 
 logger = get_logger(__name__)
 
+TRIVY_DB_REPOSITORY = "ghcr.io/aquasecurity/trivy-db:2"
+
 
 def prepare_trivy_db(verbose: bool = False) -> bool:
     """
@@ -31,7 +33,7 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
 
     Steps:
     1. trivy clean --all (clean existing db)
-    2. trivy image --download-db-only (download fresh db)
+    2. trivy image --download-db-only --db-repository ... (download fresh db)
 
     Returns:
         True if successful
@@ -52,9 +54,17 @@ def prepare_trivy_db(verbose: bool = False) -> bool:
 
     # Step 2: Download fresh database
     if verbose:
-        logger.info("Downloading Trivy vulnerability database...")
+        logger.info(
+            f"Downloading Trivy vulnerability database from {TRIVY_DB_REPOSITORY}..."
+        )
 
-    download_args = ["trivy", "image", "--download-db-only"]
+    download_args = [
+        "trivy",
+        "image",
+        "--download-db-only",
+        "--db-repository",
+        TRIVY_DB_REPOSITORY,
+    ]
     if not verbose:
         download_args.append("--quiet")
 
@@ -119,6 +129,14 @@ Examples:
         "--namespace",
         default="pharia-ai",
         help="Kubernetes namespace to scan (default: pharia-ai)",
+    )
+    parser.add_argument(
+        "--source-label",
+        help=(
+            "Logical label for the scan source shown in the report header "
+            "(overrides --namespace / --image-file basename). Use this when "
+            "scanning a static image list that is not backed by a K8s namespace."
+        ),
     )
     parser.add_argument(
         "--kubeconfig",
@@ -613,7 +631,15 @@ def generate_summary(
     failed = [r for r in results if not r.success and not r.skipped]
     skipped = [r for r in results if r.skipped]
 
-    namespace_label = args.image_file if args.image_file else args.namespace
+    # Prefer explicit --source-label, else the basename of --image-file, else --namespace.
+    # Using the full --image-file path as a label produced unreadable "Namespace"
+    # values like "/home/runner/work/.../images-harbor.txt" in the step summary.
+    if getattr(args, "source_label", None):
+        namespace_label = args.source_label
+    elif args.image_file:
+        namespace_label = Path(args.image_file).name
+    else:
+        namespace_label = args.namespace
     summary = ScanSummary(
         namespace=namespace_label,
         total_images_found=extraction_result.total_found,
@@ -702,7 +728,7 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
     lines.append("")
     lines.append(f"| Metric | Value |")
     lines.append("|--------|-------|")
-    lines.append(f"| **Namespace** | `{summary.namespace}` |")
+    lines.append(f"| **Image source** | `{summary.namespace}` |")
     lines.append(f"| **Images Found** | {summary.total_images_found} |")
     lines.append(f"| **Images Processed** | {summary.images_processed} |")
     lines.append(f"| **Successful Scans** | ✅ {summary.successful_scans} |")
@@ -742,11 +768,19 @@ def generate_markdown_summary(summary: ScanSummary, min_cve_level: str) -> str:
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in summary.cve_analysis:
-            image_short = analysis["image"].split("/")[-1]
-            # Truncate if too long
-            if len(image_short) > 40:
-                image_short = image_short[:37] + "..."
+        for analysis in sorted(
+            summary.cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
+            # Show only the image basename (`<image>:<tag>`); strip the registry
+            # host and project segments. Reports list 30-40 images at a time and
+            # the project prefix is the same for almost all of them, so it adds
+            # noise without adding signal. Truncate very long refs (> 50 chars)
+            # by clipping the tag end. Caller is responsible for ensuring
+            # basenames are unique across the input image set.
+            image_short = analysis["image"].rsplit("/", 1)[-1]
+            if len(image_short) > 50:
+                image_short = image_short[:47] + "..."
 
             # Get CVE counts
             critical = analysis.get("critical", 0)
@@ -940,8 +974,11 @@ def print_summary(summary: ScanSummary, min_cve_level: str, verbose: bool = Fals
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in summary.cve_analysis:
-            image_short = analysis["image"].split("/")[-1][:33]
+        for analysis in sorted(
+            summary.cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
+            image_short = analysis["image"].rsplit("/", 1)[-1][:33]
 
             # Get CVE counts
             critical = analysis.get("critical", 0)

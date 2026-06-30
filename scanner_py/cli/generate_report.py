@@ -316,7 +316,10 @@ def generate_markdown_report(
         images_with_chainguard = 0
         displayed_count = 0
 
-        for analysis in cve_analysis:
+        for analysis in sorted(
+            cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
             # Get CVE counts
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
@@ -356,10 +359,14 @@ def generate_markdown_report(
 
             displayed_count += 1
 
-            # Format image name
-            image_short = analysis["image"].split("/")[-1]
-            if len(image_short) > 40:
-                image_short = image_short[:37] + "..."
+            # Show only the image basename (`<image>:<tag>`); strip registry
+            # host and project segments. The project prefix is identical for
+            # most rows in a typical chart-wide scan and adds noise without
+            # signal. Truncate very long refs (> 50 chars) by clipping the
+            # tag end. Caller is responsible for unique basenames.
+            image_short = analysis["image"].rsplit("/", 1)[-1]
+            if len(image_short) > 50:
+                image_short = image_short[:47] + "..."
 
             # Format cells
             unaddr_str = f"✅ {unaddressed}" if unaddressed == 0 else f"🔴 **{unaddressed}**"
@@ -536,7 +543,10 @@ def print_cli_summary(
         images_with_triage = 0
         images_with_chainguard = 0
 
-        for analysis in cve_analysis:
+        for analysis in sorted(
+            cve_analysis,
+            key=lambda a: a.get("image", "").rsplit("/", 1)[-1].lower(),
+        ):
             critical = analysis.get("critical", 0)
             high = analysis.get("high", 0)
             medium = analysis.get("medium", 0)
