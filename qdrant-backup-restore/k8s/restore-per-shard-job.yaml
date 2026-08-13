@@ -1,12 +1,13 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: qdrant-restore
+  name: qdrant-restore-per-shard
   labels:
     app: qdrant-restore
 spec:
-  backoffLimit: 0              # Number of retries before marking failed
-  activeDeadlineSeconds: 7200  # Timeout after 2 hours
+  # one attempt, ever — a failed restore is resumed by a deliberate re-run (RUNBOOK)
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200  # hard ceiling on one attempt; raise for very large collections
   ttlSecondsAfterFinished: 300 # Auto-cleanup after completion (optional)
   template:
     metadata:
@@ -15,7 +16,7 @@ spec:
     spec:
       restartPolicy: Never
       containers:
-        - name: qdrant-restore
+        - name: qdrant-restore-per-shard
           image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
           imagePullPolicy: IfNotPresent
           securityContext:
@@ -24,8 +25,10 @@ spec:
             - /bin/bash
           args:
             - -c
-            - "cd scripts && ./qdrant_backup_recovery.sh recover_snap"
+            - "cd scripts && ./qdrant_backup_recovery.sh recover_snap_shards"
           env:
+            # The three S3 vars and the API key are REQUIRED (the task gates
+            # them by name at entry) — no optional: here on purpose.
             - name: QDRANT_S3_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -47,23 +50,29 @@ spec:
                   name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_API_KEY
             - name: QDRANT_SOURCE_HOSTS
-              value: "" # leave empty if source host is not available
+              value: "" # stays empty for restores
             - name: QDRANT_S3_ENDPOINT_URL
               value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
+            # ONE target cluster per run (first entry only); every discovered
+            # peer URI must be directly reachable — no static-hosts mode (RUNBOOK)
             - name: QDRANT_RESTORE_HOSTS
-              value: "http://qdrant-headless:6333" # change this to your target qdrant kubernetes headless service name
-            # false is correct here: this manifest restores explicitly-listed
-            # LEGACY snapshots (no peer discovery; not part of the per-shard cutover)
+              value: "http://qdrant-headless:6333"  # change this to your target qdrant kubernetes headless service name
+            # ignored by recover_snap_shards (always discovers); kept true so an
+            # accidental edit back to legacy args fails loudly at dispatch
+            # instead of running with wrong hosts
             - name: GET_PEERS_FROM_CLUSTER_INFO
+              value: "true"
+            # PREFIX match against set ids; a full id pins one set; zero matches abort
+            - name: QDRANT_SNAPSHOT_DATETIME_FILTER
+              value: ""
+            # true = DELETE and recreate a non-empty/incompatible target
+            # collection (resume wins when it applies — see RUNBOOK).
+            - name: QDRANT_RESTORE_FORCE
               value: "false"
             - name: CURL_TIMEOUT
-              value: "3000" # increase if more time is needed for a single restore
-            - name: QDRANT_SNAPSHOT_DATETIME_FILTER
-              value: "" # change tis to filter snapshts based on date (glob matching is used)
+              value: "3000" # increase if more time is needed for a single shard recover
             - name: MC_CONFIG_DIR
               value: "mc" # sets the configuration location for mc S3 client
-            - name: BACKUP_COLLECTION_ALIASES_ON_S3
-              value: "true"
           resources:
             requests:
               cpu: "100m"
@@ -75,14 +84,6 @@ spec:
           - name: qdrant-backup-restore-script
             mountPath: /scripts/qdrant_backup_recovery.sh
             subPath: qdrant_backup_recovery.sh
-          # this is used to restore specific collections
-          - name: qdrant-snapshots-file
-            mountPath: /scripts/collections
-            subPath: collections
-          # this is used to restore specific snapshots
-          # - name: qdrant-snapshots-file
-          #   mountPath: /scripts/snapshots
-          #   subPath: snapshots
           - name: scripts
             mountPath: /scripts
           # under readOnlyRootFilesystem, tools writing bare /tmp need this mount
@@ -93,10 +94,6 @@ spec:
         configMap:
           name: qdrant-backup-restore-script
           defaultMode: 0755
-      - name: qdrant-snapshots-file
-        configMap:
-          name: qdrant-snapshots-file
-          defaultMode: 0666
       - name: scripts
         emptyDir:
           sizeLimit: 100Mi

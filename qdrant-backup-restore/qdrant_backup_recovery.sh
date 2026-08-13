@@ -946,11 +946,8 @@ run() {
 }
 
 # ============================================================================
-# Per-shard backup/restore
-# (§ shorthand in comments refers to the "Qdrant per-shard backup design"
-# document, 2026-08-10 — maintained outside this repo.)
-# New code only below this line — legacy functions above are frozen: the ConfigMap injector ships every
-# merge straight to the production CronJob, so legacy behavior must never change.
+# Per-shard backup/restore. New code only below this line — legacy functions
+# above are frozen (CI ships every merge straight to the production CronJob).
 # ============================================================================
 
 # The shipped Job/CronJob manifests run readOnlyRootFilesystem with only the
@@ -970,9 +967,7 @@ QDRANT_SWEEP_DELETE_CAP_PCT="${QDRANT_SWEEP_DELETE_CAP_PCT:-50}"
 QDRANT_SWEEP_GRACE_SECONDS="${QDRANT_SWEEP_GRACE_SECONDS:-172800}"
 QDRANT_SHARD_RECOVERY_HISTORY_FILE="shard_recovery_history"
 
-# Shared jq: normalize a GET /collections/{c}/cluster response into a flat
-# replica array [{shard_id, peer_id, state}]. Used by select_shard_peers,
-# check_replica_sets, and later per-shard peer lookups.
+# Shared jq: normalize a cluster response into [{shard_id, peer_id, state}].
 readonly JQ_NORMALIZE_REPLICAS='
   .result as $r |
   ([ $r.local_shards[]? | {shard_id, peer_id: $r.peer_id, state} ] +
@@ -989,26 +984,17 @@ qdrant_status_ok() {
   return 1
 }
 
-# Legacy discovery must never see per-shard keys. Keys from `mc ls -r` on
-# snapshots/{c} are collection-relative, so per-shard segments can be LEADING.
-# Patterns are path-segment-anchored: a collection named e.g. restore_state_v1
-# keeps its legacy snapshots.
+# Legacy discovery must never see per-shard keys; patterns are path-segment-
+# anchored (a collection named e.g. restore_state_v1 keeps its snapshots).
 filter_legacy_snapshot_keys() {
   grep -v -e '^shards/' -e '/shards/' \
           -e '^backup_manifests/' -e '/backup_manifests/' \
           -e '^restore_state/' -e '/restore_state/' || true
 }
 
-# Sibling guard for the legacy API-listing path (`GET /collections/{c}/
-# snapshots`, used by fetch_collection_snapshot): unlike `mc ls -r` keys,
-# these are bare snapshot NAMES with no path separators, so
-# filter_legacy_snapshot_keys' path-segment patterns don't apply — verified
-# empirically against a live cluster (spike (e2), 2026-08-11 addendum):
-# legacy collection-level names are "{collection}-{peer_id}-{timestamp}.snapshot";
-# per-shard (shard-level) names are "{collection}-shard-{shard_id}-{timestamp}.snapshot".
-# stdin: snapshot names (one per line). $1: collection name (used LITERALLY).
-# Emits names that are NOT per-shard snapshots ({c}-shard-{N}-...). Metachar-proof:
-# the collection prefix is stripped by parameter expansion, never used as a regex.
+# Sibling guard for the legacy API-listing path (bare names, no separators).
+# stdin: snapshot names (one per line). $1: collection name (used LITERALLY,
+# never as a regex). Emits names that are NOT per-shard ({c}-shard-{N}-...).
 filter_legacy_snapshot_names() {
   local collection="$1" name rest
   while IFS= read -r name; do
@@ -1104,12 +1090,8 @@ map_config_get_to_put() {
   } | walk(if type == "object" then with_entries(select(.value != null)) else . end)'
 }
 
-# stdin: one `mc stat --json` response. stdout: "<etag>\t<size>" on rc 0.
-# rc 1 (reason on stderr) when the etag is missing/empty or the size is not a
-# positive number — a shard object whose at-rest identity cannot be read must
-# fail that collection's backup (fail-closed), never yield a schema-2 manifest
-# with hollow integrity fields. The etag is recorded and later compared as an
-# OPAQUE string only (multipart ETags are not MD5 — never treat it as one).
+# stdin: one `mc stat --json` response. stdout: "<etag>\t<size>" on rc 0;
+# rc 1 when etag/size are unreadable (fail-closed). ETags are OPAQUE strings.
 parse_stat_etag_size() {
   local input etag size
   input=$(cat)
@@ -1127,15 +1109,9 @@ parse_stat_etag_size() {
 }
 
 # stdin: {set_id, collection, qdrant_version, git_ref, collection_info, aliases, shards, pc?}
-# `pc` (optional) is a fresher points_count read after the shard loop; falls back
-# to the collection_info snapshot taken before it when absent.
-# schema 2 (integrity wave): each shard entry carries the S3 object's `etag`
-# and `size` as observed by the backup-side `mc stat` — this lets the restore
-# pre-flight prove the object is UNCHANGED SINCE BACKUP (at-rest tamper/rot/
-# truncation detection). It does NOT prove validity: if Qdrant wrote a corrupt
-# object at backup time, its recorded ETag is the corrupt object's. The deep
-# payload smoke scroll at restore verification is the end-to-end served-data
-# counterpart — the two are a pair, not alternatives.
+# `pc` (optional) is a fresher post-loop points_count; falls back to the
+# pre-loop collection_info. Schema 2: shard entries carry stat-observed
+# etag+size — proves unchanged-since-backup at restore, never validity.
 build_manifest() {
   jq '{
     schema_version: 2,
@@ -1153,10 +1129,7 @@ build_manifest() {
 }
 
 # stdin: manifest JSON. rc 0 valid / 1 invalid (failed checks named on stderr).
-# Schema acceptance: 1 ACCEPTED (pre-integrity-fields manifests exist only in
-# lab buckets; the restore pre-flight flags them loudly), 2 ENFORCED (every
-# shard entry must carry a non-empty etag and a numeric size), anything else
-# REJECTED.
+# Schema 1 ACCEPTED (flagged at restore), 2 ENFORCED (etag+size), else REJECTED.
 validate_manifest() {
   local input failures
   input=$(cat)
@@ -1315,8 +1288,7 @@ check_count_tolerance() {
 
 # $1 keep_n. stdin: legacy basenames ({collection}-{peer_id}-{Y-m-d-H-M-S}.snapshot).
 # stdout: names to DELETE (newest keep_n per (collection,peer) retained).
-# Unparseable names (incl. those containing `/`) are NEVER deleted; logged to stderr.
-# rc 0 | 1 non-numeric keep_n.
+# Unparseable names are NEVER deleted (logged). rc 0 | 1 non-numeric keep_n.
 group_legacy_snapshots() {
   local keep="$1" line all=""
   if ! [[ "$keep" =~ ^[0-9]+$ ]]; then
@@ -1364,9 +1336,7 @@ check_sweep_safety() {
 
 # stdin: JSON array of {set_id}. $1 keep_n. stdout: doomed set ids (oldest first),
 # one per line. Empty output when count <= keep_n. rc 1 on unparseable input or a
-# non-numeric/zero keep_n — the caller (prune_one_collection) clamps a valid-but-low
-# keep_n to the never-delete-the-last-set floor BEFORE calling; this function never guesses on the
-# caller's behalf.
+# non-numeric/zero keep_n (the caller clamps to the never-delete-the-last-set floor).
 select_doomed_sets() {
   local keep="$1" input out
   if ! [[ "$keep" =~ ^[0-9]+$ ]]; then
@@ -1385,7 +1355,7 @@ select_doomed_sets() {
     _printf "select_doomed_sets: input is not a JSON array\n" >&2
     return 1
   fi
-  if ! out=$(jq -r --argjson keep "$keep" 'map(.set_id) | sort | .[0:(length - $keep)] | .[]' <<<"$input" 2>&1); then
+  if ! out=$(jq -r --argjson keep "$keep" 'map(.set_id) | sort | .[0:([length - $keep, 0] | max)] | .[]' <<<"$input" 2>&1); then
     _printf "select_doomed_sets: unparseable set list: %s\n" "$out" >&2
     return 1
   fi
@@ -1406,11 +1376,8 @@ sweep_age_ok() {
   return 1
 }
 
-# $1 candidate keep_n. rc 0 iff numeric AND >= 1. Gates BOTH QDRANT_LEGACY_KEEP_RUNS
-# checks (prune_snap_task's --legacy pre-flight and prune_legacy_one's own defense-
-# in-depth check) — 0 is never a legacy-prune default; escalating to exactly 1 is
-# an explicit, deliberate operator act, never silently coerced from a
-# garbage or zero config value (0 would delete every legacy snapshot in one pass).
+# $1 candidate keep_n. rc 0 iff numeric AND >= 1 — 0 would delete every
+# legacy snapshot in one pass, so it is rejected, never clamped.
 legacy_keep_runs_ok() {
   local v="$1"
   if ! [[ "$v" =~ ^[0-9]+$ ]]; then return 1; fi
@@ -1453,11 +1420,8 @@ check_replica_sets() {
   return 7
 }
 
-# Like legacy _curl but: no -f (error bodies captured), transport errors are
-# rc 2 instead of killing the run, callers ALWAYS use `out=$(_curl_rc …) || rc=$?`.
-# New code paths only — legacy _curl stays untouched (frozen legacy behavior).
-# rc 2 covers both never-reached and timed-out; a timed-out request may still have
-# completed server-side — idempotency-sensitive callers must not blindly retry.
+# Like legacy _curl but error bodies are captured and transport errors are
+# rc 2 (may have completed server-side — never blindly retry). New paths only.
 _curl_rc() {
   local method="$1"; shift
   local url="$1"; shift
@@ -1488,9 +1452,8 @@ mc_output_has_error() {
   return 1
 }
 
-# mc with --json that distinguishes ERROR (rc 1, message on stderr) from
-# legitimately EMPTY output (rc 0). Never reuse the legacy "empty means
-# nothing found, continue" pattern for delete decisions.
+# mc --json that distinguishes ERROR (rc 1) from legitimately EMPTY (rc 0)
+# — never treat an error as "nothing found" for delete decisions.
 mc_json_safe() {
   local out rc=0 errfile
   errfile=$(mktemp -p "${TMPDIR:-.}")
@@ -1525,10 +1488,8 @@ get_s3_url_for_key() {
   return 0
 }
 
-# $1 peer uri (supported shapes: http://host:6335, http://host, host:6335, host)
-# $2 target port. stdout: uri with its port replaced/appended.
-# Pure function for unit testing; handles scheme-prefixed and bare-host formats.
-# Note: bracketed IPv6 hosts (e.g., [::1]:6335) are NOT supported.
+# $1 peer uri (scheme-prefixed or bare host, port optional)  $2 target port.
+# stdout: uri with its port replaced/appended. Bracketed IPv6 NOT supported.
 rewrite_peer_uri() {
   local uri="$1" port="$2" base scheme=""
   base="${uri#*://}"
@@ -1581,11 +1542,8 @@ peer_url() {
   printf '%s' "${peer_url_by_id[$1]}"
 }
 
-# Snapshot one shard on one peer with wait=true. rc 0 confirmed; rc 1 otherwise.
-# Response fields land in globals shard_snap_name/_checksum (the response's
-# own size field is no longer recorded — schema 2 takes the object size from
-# the post-upload mc stat instead). Timeout or "accepted" is
-# NOT success and is never recorded as done.
+# Snapshot one shard on one peer with wait=true. rc 0 confirmed; rc 1 else.
+# Sets globals shard_snap_name/_checksum. Timeout/"accepted" is NEVER success.
 snapshot_one_shard() {
   local peer="$1" collection="$2" sid="$3" result status rc=0
   shard_snap_name=""; shard_snap_checksum=""
@@ -1674,11 +1632,8 @@ backup_one_collection() {
       ok=false; break
     fi
     key="snapshots/$collection/shards/$sid/$shard_snap_name"
-    # mc stat the OBSERVED key — layout self-verification every run.
-    # Schema 2 reuses this SAME stat to record the object's at-rest identity
-    # (etag + size) for the restore pre-flight; an unreadable
-    # etag/size fails the shard — a schema-2 manifest must never promise
-    # integrity fields it cannot back.
+    # mc stat the OBSERVED key (layout self-verification); the same stat
+    # records etag+size for the restore pre-flight — unreadable fails the shard.
     local stat_json etag_size obj_etag obj_size
     if ! stat_json=$(mc_json_safe stat "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key"); then
       _printf "SKIP %s: shard %s snapshot %s not found at expected key %s\n" \
@@ -1691,9 +1646,8 @@ backup_one_collection() {
       ok=false; break
     fi
     IFS=$'\t' read -r obj_etag obj_size <<<"$etag_size"
-    # `size` is the S3 object size from the stat above (schema 2) — the
-    # snapshot-create response's own size field is not the measurement the
-    # restore-side stat comparison will make, so it is no longer recorded.
+    # `size` is the stat-observed S3 object size — the measurement the
+    # restore-side comparison repeats.
     if ! shards_json=$(jq --argjson sid "$sid" --argjson pid "$pid" \
         --arg name "$shard_snap_name" --arg key "$key" \
         --argjson size "$obj_size" --arg etag "$obj_etag" --arg sum "$shard_snap_checksum" \
@@ -1713,17 +1667,21 @@ backup_one_collection() {
   if [ -z "$qdrant_version" ] || [ "$qdrant_version" = "unknown" ]; then
     _printf "WARNING: %s: cannot read Qdrant version — manifest records 'unknown' and the restore version gate will BLOCK this set\n" "$collection"
   fi
+  # Fail-closed: an aliases:[] manifest from a fetch blip would become the
+  # newest set and a later VERIFIED restore would silently drop the aliases.
   if ! aliases=$(_curl_rc GET "$host/collections/$collection/aliases" \
       --header "api-key: $QDRANT_API_KEY" | jq -c '[.result.aliases[]?.alias_name]'); then
-    _printf "WARNING: %s: alias fetch failed — manifest will carry aliases:[] and restore will NOT recreate aliases\n" "$collection"
-    aliases="[]"
+    _printf "SKIP %s: alias fetch failed — refusing to write a manifest without alias truth\n" "$collection"
+    return 1
   fi
-  if ! jq -e 'type == "array"' <<<"$aliases" >/dev/null; then aliases="[]"; fi
-  # points_count freshness: re-read after the shard loop so the manifest reflects
-  # a count closer to when the snapshots were actually taken (collection_config
-  # below still carries the PRE-loop collection info — only points_count refreshes).
+  if ! jq -e 'type == "array"' <<<"$aliases" >/dev/null; then
+    _printf "SKIP %s: alias response unparseable — refusing to write a manifest without alias truth\n" "$collection"
+    return 1
+  fi
+  # points_count re-read post-loop (fresher). `// empty`, never `// 0`: a
+  # baked 0 would permanently fail every restore's count verification.
   pc=$(_curl_rc GET "$host/collections/$collection" --header "api-key: $QDRANT_API_KEY" \
-      | jq -r '.result.points_count // 0') || pc=""
+      | jq -r '.result.points_count // empty') || pc=""
   pc_json="${pc:-null}"
   if ! manifest=$(jq -n --arg set "$BACKUP_SET_ID" --arg coll "$collection" \
       --arg ver "$qdrant_version" --arg ref "${GIT_REF:-unknown}" --argjson pc "$pc_json" \
@@ -1751,10 +1709,8 @@ backup_one_collection() {
   return 0
 }
 
-# Backup orchestration task (dispatched by run() as `create_snap_shards`).
-# Per-collection failures are contained and counted; only discovery/S3-setup
-# failures — or a failure of the initial collection listing — abort the whole
-# run (one collection's failure never aborts the run).
+# Backup orchestration (`create_snap_shards`). Per-collection failures are
+# contained; only discovery/S3-setup/listing failures abort the whole run.
 create_snap_shards_task() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -1765,6 +1721,15 @@ create_snap_shards_task() {
   if ! [[ "$QDRANT_BACKUP_RETENTION_SETS" =~ ^[0-9]+$ ]]; then
     _printf "create_snap_shards: QDRANT_BACKUP_RETENTION_SETS must be a non-negative integer, got '%s'\n" \
       "$QDRANT_BACKUP_RETENTION_SETS"
+    exit 1
+  fi
+  check_pershard_entry_gates "create_snap_shards"
+  if ! [[ "$QDRANT_SWEEP_GRACE_SECONDS" =~ ^[0-9]+$ ]] || [ "$QDRANT_SWEEP_GRACE_SECONDS" -lt 1 ]; then
+    _printf "%s: QDRANT_SWEEP_GRACE_SECONDS must be an integer >= 1, got '%s'\n" "create_snap_shards" "$QDRANT_SWEEP_GRACE_SECONDS" >&2
+    exit 1
+  fi
+  if ! [[ "$QDRANT_SWEEP_DELETE_CAP_PCT" =~ ^[0-9]+$ ]]; then
+    _printf "%s: QDRANT_SWEEP_DELETE_CAP_PCT must be a non-negative integer, got '%s'\n" "create_snap_shards" "$QDRANT_SWEEP_DELETE_CAP_PCT" >&2
     exit 1
   fi
   warn_ignored_legacy_env "backup"
@@ -1830,11 +1795,8 @@ list_manifest_sets() {
               | select(endswith(".json")) | {set_id: sub("\\.json$"; "")} ]' <<<"$out"
 }
 
-# Delete one whole set: manifest FIRST, then objects (restore can never
-# select a set mid-deletion). Shard keys are
-# extracted from the manifest BEFORE the manifest is deleted — an unparseable
-# manifest aborts with ZERO deletions instead of deleting the manifest and
-# stranding its objects with no record of what to look up.
+# Delete one whole set: manifest FIRST (restore can never select a set
+# mid-deletion); an unparseable manifest aborts with ZERO deletions.
 delete_backup_set() {
   local collection="$1" set_id="$2" manifest keys key
   manifest=$(mc_json_safe cat \
@@ -1851,11 +1813,8 @@ delete_backup_set() {
   fi
   while IFS= read -r key; do
     if [ -z "$key" ]; then continue; fi
-    # SECURITY: never trust a manifest-recorded key blindly — a corrupted or
-    # malicious manifest must not be able to delete anything outside this
-    # collection's own shard prefix. Refusal is per-key containment, not
-    # a whole-set abort: the manifest is already gone, so refusing just skips
-    # this one dangerous line and continues with the set's other (valid) keys.
+    # SECURITY: a manifest key must never delete outside this collection's
+    # own shard prefix; refusal is per-key containment, not a whole-set abort.
     case "$key" in
       "snapshots/$collection/shards/"*) : ;;
       *)
@@ -1864,30 +1823,16 @@ delete_backup_set() {
         ;;
     esac
     _printf "deleting %s\n" "$key"
-    # API delete would need collection+shard+name and the collection may be gone;
-    # mc rm of the manifest-recorded key is authoritative: equivalent to the
-    # shard-snapshot DELETE API on native S3 storage, and it also covers sets
-    # whose collection no longer exists.
+    # mc rm of the manifest-recorded key is authoritative: equals the DELETE
+    # API on native S3 storage and covers collections that no longer exist.
     if ! mc --quiet rm "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key"; then
       _printf "warning: failed to delete %s (sweep will retry)\n" "$key" >&2
     fi
-    # Qdrant may write a .checksum companion alongside a shard snapshot; best-
-    # effort cleanup only — absence is normal (exact format verified at the
-    # Task 11 spike), never treated as a failure.
+    # Best-effort .checksum companion cleanup — absence is normal.
     mc --quiet rm "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key.checksum" 2>/dev/null || true
   done <<<"$keys"
-  # Restore-state lifecycle: a pruned set's mirrored resume
-  # history must not outlive the set it belongs to. Best-effort only — the
-  # manifest and shard objects are already gone by this point regardless, so
-  # a failure or absence here (the common case: most sets are never restore-
-  # attempted) must never fail the prune.
-  # Known, accepted, bounded gap: a restore
-  # of THIS set running concurrently with this prune can re-create this exact
-  # key via mirror_restore_state() immediately after this rm — its next
-  # shard-recovery success re-mirrors unconditionally, with no knowledge the
-  # set was just pruned. Nothing then reclaims it: the orphan sweep above only
-  # lists snapshots/{c}/shards/, never restore_state/. Harmless in volume
-  # (a few bytes, per occurrence) — deferred, not fixed here.
+  # A pruned set's mirrored resume history must not outlive it; best-effort
+  # (a concurrent restore may re-create the key — accepted, bytes-sized gap).
   _printf "cleaning up restore_state for pruned set %s/%s (best-effort; absence is normal)\n" \
     "$collection" "$set_id"
   mc --quiet rm "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/$set_id.csv" \
@@ -1907,19 +1852,9 @@ prune_one_collection() {
     _printf "prune: no manifests for %s — skipping (never sweep without manifests)\n" "$collection"
     return 0
   fi
-  # QDRANT_BACKUP_RETENTION_SETS=0 clamps to 1 (hard floor: never delete
-  # the last remaining set) — deliberately asymmetric with the legacy KEEP_RUNS gate
-  # in prune_legacy_one, which REJECTS 0 outright instead of clamping it. Retention
-  # 0 is an ordinary "minimum footprint" request; legacy KEEP_RUNS=0 would delete
-  # every unverified legacy snapshot in one pass and is treated as operator error.
-  # A non-numeric value is left UNCLAMPED here and is rejected by select_doomed_sets
-  # below — never coerce a garbage config value into looking like a deliberate "1".
-  # Operator note: create_snap_shards_task's automatic retention hook SKIPS calling
-  # prune_retention_all entirely when QDRANT_BACKUP_RETENTION_SETS=0 (its own
-  # `-gt 0` guard) — 0 there means "leave existing sets alone". A manual prune_snap
-  # with the SAME value 0, by contrast, DOES run and clamps to 1 HERE — it keeps
-  # only the newest 1 set and DELETES every other set. Same env var, different
-  # task, different effect, by design — worth operator awareness.
+  # Retention 0 clamps to 1 (never delete the last remaining set); garbage
+  # values stay unclamped and are rejected below. See the README row for the
+  # auto-hook-vs-manual-prune asymmetry at 0.
   if [[ "$keep" =~ ^[0-9]+$ ]] && [ "$keep" -lt 1 ]; then keep=1; fi
   local doomed
   doomed=$(select_doomed_sets "$keep" <<<"$sets") || {
@@ -1981,14 +1916,9 @@ prune_one_collection() {
   fi
   now=$(date -u +%s)
 
-  # Candidates: unreferenced objects with their raw lastModified pre-converted to
-  # epoch via a per-object try/catch — one object with an unparseable/missing date
-  # must never abort (or corrupt) the whole collection's sweep computation.
-  # The actual age DECISION always runs through the real
-  # sweep_age_ok function below, never an inline jq comparison. A key whose
-  # `.checksum`-stripped form IS referenced counts as referenced too — a shard
-  # snapshot's checksum companion is never independently listed in a manifest,
-  # so without this it would look orphaned even while its parent is kept.
+  # Per-object try/catch epoch conversion (one bad date never aborts the
+  # sweep); age decisions go through sweep_age_ok only; a kept snapshot's
+  # .checksum companion counts as referenced.
   local candidates
   candidates=$(jq -r -s --argjson refs "$refs" --arg coll "$collection" '
     [ .[] | select(.status == "success")
@@ -1997,7 +1927,7 @@ prune_one_collection() {
       | select((.key | IN($refs[])) | not)
       | select(((.key | sub("\\.checksum$"; "")) | IN($refs[])) | not)
       | . + {epoch: (if .raw == "" then "" else
-               (try ((.raw | sub("\\.[0-9]+"; "") | sub("\\+.*$"; "Z")
+               (try ((.raw | sub("\\.[0-9]+"; "") | sub("[+-][0-9]{2}:?[0-9]{2}$"; "Z")
                  | strptime("%Y-%m-%dT%H:%M:%SZ") | mktime) | tostring) catch "")
              end)} ]
     | .[] | [.key, .epoch] | @tsv' <<<"$objects") || {
@@ -2038,11 +1968,8 @@ prune_one_collection() {
   return 0
 }
 
-# $1 optional collections-list file (bare "collection" lines OR "host,collection"
-# lines — the ok_list Task 7's create_snap_shards_task writes uses bare names;
-# $QDRANT_COLLECTIONS_FILE always has a comma). Defaults to $QDRANT_COLLECTIONS_FILE.
-# Runs retention (never legacy) for every listed collection. rc 1 if ANY collection's
-# prune_one_collection call fails — never masks a per-collection failure as success.
+# $1 optional collections-list file (bare or "host,collection" lines;
+# default $QDRANT_COLLECTIONS_FILE). Retention only. rc 1 if ANY collection fails.
 prune_retention_all() {
   local list_file="${1:-$QDRANT_COLLECTIONS_FILE}" line collection rc=0
   if [ ! -r "$list_file" ]; then
@@ -2080,10 +2007,8 @@ prune_legacy_one() {
     _printf "legacy prune aborted for %s: listing parse failed: %s\n" "$collection" "$names" >&2
     return 1
   fi
-  # blank lines dropped; .checksum companions dropped too — grouping them
-  # alongside their .snapshot parent would just be noisy "SKIP unparseable"
-  # spam (they never match group_legacy_snapshots' filename regex); each
-  # doomed name's own companion is best-effort deleted below instead.
+  # blank lines and .checksum companions dropped from grouping; each doomed
+  # name's companion is best-effort deleted below.
   names=$(printf '%s\n' "$names" | grep -vE '^$|\.checksum$' || true)
   if [ -z "$names" ]; then
     _printf "legacy prune: nothing under snapshots/%s/\n" "$collection"
@@ -2114,9 +2039,7 @@ prune_snap_task() {
       *) _printf "unknown prune_snap option: %s\n" "$1" >&2; exit 1 ;;
     esac
   done
-  # Hoisted pre-flight (both branches): a garbage retention-sets value would
-  # otherwise only surface deep inside prune_one_collection, after S3 setup
-  # and a manifest listing already ran for the first collection.
+  # Hoisted pre-flight: garbage knobs die here, not mid-prune.
   if ! [[ "$QDRANT_BACKUP_RETENTION_SETS" =~ ^[0-9]+$ ]]; then
     _printf "prune_snap: QDRANT_BACKUP_RETENTION_SETS must be a non-negative integer, got '%s'\n" \
       "$QDRANT_BACKUP_RETENTION_SETS" >&2
@@ -2128,6 +2051,15 @@ prune_snap_task() {
         "$QDRANT_LEGACY_KEEP_RUNS" >&2
       exit 1
     fi
+  fi
+  check_pershard_entry_gates "prune_snap"
+  if ! [[ "$QDRANT_SWEEP_GRACE_SECONDS" =~ ^[0-9]+$ ]] || [ "$QDRANT_SWEEP_GRACE_SECONDS" -lt 1 ]; then
+    _printf "%s: QDRANT_SWEEP_GRACE_SECONDS must be an integer >= 1, got '%s'\n" "prune_snap" "$QDRANT_SWEEP_GRACE_SECONDS" >&2
+    exit 1
+  fi
+  if ! [[ "$QDRANT_SWEEP_DELETE_CAP_PCT" =~ ^[0-9]+$ ]]; then
+    _printf "%s: QDRANT_SWEEP_DELETE_CAP_PCT must be a non-negative integer, got '%s'\n" "prune_snap" "$QDRANT_SWEEP_DELETE_CAP_PCT" >&2
+    exit 1
   fi
   warn_ignored_legacy_env "prune"
   setup_s3_storage
@@ -2168,12 +2100,37 @@ prune_snap_task() {
   exit "$rc"
 }
 
-# Legacy env knobs the per-shard tasks deliberately do NOT consume — a knob
-# an operator set that silently does nothing violates the fail-loud bar, so
-# each one is NAMED at per-shard task entry. Never changes behavior; rc 0
-# always. $1 is the task family: "restore" adds the extra-hosts warning
-# (backup legitimately reads multiple source hosts; restore is single-target
-# by design — only the FIRST QDRANT_RESTORE_HOSTS entry is used).
+# $1: `jq --version` output. rc 0 iff jq >= 1.7 (1.6 rounds u64 peer ids
+# above 2^53 and every peer lookup fails).
+jq_version_ok() {
+  local ver="${1#jq-}" maj min
+  maj="${ver%%.*}"
+  min="${ver#*.}"; min="${min%%[!0-9]*}"
+  if ! [[ "$maj" =~ ^[0-9]+$ && "$min" =~ ^[0-9]+$ ]]; then return 1; fi
+  if [ "$maj" -gt 1 ]; then return 0; fi
+  if [ "$maj" -eq 1 ] && [ "$min" -ge 7 ]; then return 0; fi
+  return 1
+}
+
+# Task-entry gates: jq floor + the three secret-fed S3 vars (a partial
+# secret must die with a named message). $1: task name for the prefix.
+check_pershard_entry_gates() {
+  local task="$1" v
+  if ! jq_version_ok "$(jq --version 2>/dev/null)"; then
+    _printf "%s: requires jq >= 1.7 (found '%s') — jq 1.6 rounds 64-bit peer ids above 2^53 and every peer lookup fails\n" \
+      "$task" "$(jq --version 2>/dev/null)" >&2
+    exit 1
+  fi
+  for v in QDRANT_S3_ACCESS_KEY_ID QDRANT_S3_SECRET_ACCESS_KEY QDRANT_S3_BUCKET_NAME; do
+    if [ -z "${!v:-}" ]; then
+      _printf "%s: %s must be set (S3 access is required)\n" "$task" "$v" >&2
+      exit 1
+    fi
+  done
+}
+
+# Names every legacy env knob the per-shard tasks ignore (a set knob must
+# never silently no-op). rc 0 always. $1 "restore" adds the extra-hosts line.
 warn_ignored_legacy_env() {
   if [ "${QDRANT_WAIT_ON_TASK:-true}" != "true" ]; then
     _printf "WARNING: QDRANT_WAIT_ON_TASK=%s is ignored by per-shard tasks (they always wait for task completion — 'accepted' is never success)\n" \
@@ -2200,17 +2157,9 @@ bool_env_ok() {
   esac
 }
 
-# stdin: a Qdrant response JSON that might echo a presigned S3 URL back in a
-# `.location` field. A presigned URL is a bearer credential —
-# NEVER log a raw response that could carry one. stdout: the same JSON with
-# `.location` replaced by a placeholder, or a safe fallback for unparseable
-# (incl. empty) input. Never fails: always prints something safe to log.
-# This is defense layer 1 (by FIELD NAME). It is NOT sufficient alone: a
-# server could echo the URL back inside some OTHER field (e.g. error prose),
-# which this cannot see since it only ever looks at `.location`. Callers that
-# hold the raw URL value MUST also scrub by VALUE afterward (layer 2) —
-# renamed from redact_location to redact_response because of this: it no
-# longer only redacts one named field's worth of risk.
+# stdin: response JSON that may echo a presigned URL (bearer credential) in
+# `.location`; stdout: safe-to-log JSON, never fails. By-FIELD redaction only
+# — callers holding the raw URL MUST also scrub by VALUE.
 redact_response() {
   local out
   if out=$(jq -c 'if .location? then .location = "<redacted>" else . end' 2>/dev/null); then
@@ -2221,12 +2170,7 @@ redact_response() {
 }
 
 # Pull the S3-mirrored resume history for (collection,set) if it exists.
-# Attempts the fetch directly — no separate stat-then-cp probe, which
-# had a silent-failure gap: if the object existed but the follow-up cp failed
-# for any transient reason, the old code returned 0 with zero output, so
-# resume being disabled was invisible. Now: on cp failure, probe the parent
-# prefix to say WHICH case this is; never aborts (a missing/unfetchable
-# resume state is never fatal to the restore, only to the resume optimization).
+# Never aborts; a disabled resume must be visible, so cp failures are probed.
 fetch_restore_state() {
   local collection="$1" set_id="$2"
   if mc cp "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/$set_id.csv" \
@@ -2238,10 +2182,7 @@ fetch_restore_state() {
     return 0
   fi
   rm -f "$QDRANT_SHARD_RECOVERY_HISTORY_FILE.remote"
-  # cp failed: distinguish "genuinely nothing there yet" (fresh start, info)
-  # from "cannot tell" (listing itself fails, OR the key IS listed yet cp
-  # still failed — an anomaly) — both of the latter get a loud WARNING, never
-  # silence (resume being disabled must always be visible).
+  # Distinguish fresh-start (info) from cannot-tell (loud WARNING).
   local probe found=""
   if probe=$(mc_json_safe ls "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/"); then
     found=$(jq -r --arg want "$set_id.csv" \
@@ -2259,21 +2200,10 @@ fetch_restore_state() {
   return 0
 }
 
-# Mirror the resume history for (collection,set), ANY target, to S3 — CSV
-# content, .csv extension (the file holds CSV lines
-# `target,collection,set_id,shard,ok`, and restore_state/{c}/{set_id}.csv is
-# the documented key shape).
-# $QDRANT_SHARD_RECOVERY_HISTORY_FILE is SHARED across every collection/set
-# this task processes in one run — scope the upload to just this
-# (collection,set_id)'s own lines, REGARDLESS OF TARGET: fetch_restore_state
-# merges OTHER targets' fetched lines for this same set into the shared local
-# file before this runs (e.g. a canary target's durable history while a prod
-# DR restore of the same set is running), and a target-scoped re-upload would
-# silently erase them — that set's next canary resume would then find a
-# non-empty target with no matching history and demand FORCE. Literal
-# `grep -F` (never a regex): $collection/$set_id are not guaranteed
-# metachar-free. The per-target resume CHECK stays scoped to
-# (target,collection,set_id) — this widening is upload-side only.
+# Mirror the resume history for (collection,set) to restore_state/{c}/{set}.csv
+# (lines: target,collection,set_id,shard,ok). Upload is scoped per
+# (collection,set_id) but NEVER per target — a target-scoped re-upload would
+# erase other targets' merged lines. grep -F only (names may carry metachars).
 mirror_restore_state() {
   local target="$1" collection="$2" set_id="$3" scoped=""
   trap 'rm -f ${scoped:+"$scoped"}' RETURN
@@ -2284,40 +2214,75 @@ mirror_restore_state() {
     || _printf "warning: could not mirror restore state to S3 for %s/%s\n" "$collection" "$set_id" >&2
 }
 
-# Purge the S3-mirrored durable resume state for a WHOLE collection, across
-# every set (not just the currently-selected one) — FORCE
-# and the absent-collection path both need this, because neither an
-# about-to-be-recreated nor a currently-absent collection can have any
-# actually-recovered shards; stale state for ANY prior set must not survive
-# to suppress recovery. Extracted from the original FORCE-only inline block
-# so both call sites share one implementation. `reason` is a short caller-supplied label (e.g. "FORCE",
-# "absent-collection") purely for the log line — behavior is identical
-# either way. Listing failure aborts (rc 1): a purge that cannot GUARANTEE a
-# clean slate must not let the caller proceed.
+# Purge THIS target's durable resume lines for a collection across every set
+# (FORCE and absent-collection callers: a collection about to be (re)created
+# has no recovered shards). Any failure is rc 1 — a purge that cannot
+# guarantee a clean slate must not let the caller proceed. $3 labels the log.
 purge_durable_restore_state() {
-  local collection="$1" reason="$2"
+  local target="$1" collection="$2" reason="$3"
   local state_list
   if ! state_list=$(mc_json_safe ls "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/"); then
     return 1
   fi
   local state_names sname
-  state_names=$(jq -r 'select(.status == "success" and .type == "file") | .key | split("/") | last' \
-    <<<"$state_list" 2>/dev/null) || state_names=""
+  # An unparseable listing fails the purge (never silently purge nothing).
+  if ! state_names=$(jq -r 'select(.status == "success" and .type == "file") | .key | split("/") | last' \
+      <<<"$state_list" 2>/dev/null); then
+    _printf "%s: cannot parse restore_state listing for %s\n" "$reason" "$collection" >&2
+    return 1
+  fi
+  # Target-scoped: other targets' lines survive; rewrite-and-reupload the
+  # remainder, delete only when empty; any rm/cp failure is rc 1.
+  local tmp="" remainder hline
+  trap 'rm -f ${tmp:+"$tmp"}' RETURN
   while IFS= read -r sname; do
     if [ -z "$sname" ]; then continue; fi
     _printf "%s: purging durable resume state %s\n" "$reason" "restore_state/$collection/$sname"
-    mc --quiet rm "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/$sname" \
-      || _printf "warning: failed to purge durable resume state restore_state/%s/%s (stale resume risk next run)\n" \
-        "$collection" "$sname" >&2
+    remainder=$(mc cat "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/$sname" 2>/dev/null) || {
+      _printf "%s: cannot read restore_state/%s/%s — aborting purge (stale resume risk)\n" \
+        "$reason" "$collection" "$sname" >&2
+      return 1
+    }
+    # A failed mktemp/append must abort: an empty $tmp would otherwise route
+    # a MIXED-target object into the delete branch below (contract: delete
+    # only when genuinely empty; any failure is rc 1).
+    tmp=$(mktemp -p "${TMPDIR:-.}") || {
+      _printf "%s: mktemp failed rewriting restore_state/%s/%s — aborting purge (stale resume risk)\n" \
+        "$reason" "$collection" "$sname" >&2
+      return 1
+    }
+    : > "$tmp" || return 1
+    while IFS= read -r hline; do
+      if [ -z "$hline" ]; then continue; fi
+      case "$hline" in
+        "$target,$collection,"*) : ;;
+        *) printf '%s\n' "$hline" >> "$tmp" || {
+             _printf "%s: rewrite append failed for restore_state/%s/%s — aborting purge (stale resume risk)\n" \
+               "$reason" "$collection" "$sname" >&2
+             return 1
+           } ;;
+      esac
+    done <<<"$remainder"
+    if [ -s "$tmp" ]; then
+      mc --quiet cp "$tmp" "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/$sname" || {
+        _printf "%s: failed to rewrite restore_state/%s/%s — aborting purge (stale resume risk)\n" \
+          "$reason" "$collection" "$sname" >&2
+        return 1
+      }
+    else
+      mc --quiet rm "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/$sname" || {
+        _printf "%s: failed to purge restore_state/%s/%s — aborting purge (stale resume risk)\n" \
+          "$reason" "$collection" "$sname" >&2
+        return 1
+      }
+    fi
+    rm -f "$tmp"; tmp=""
   done <<<"$state_names"
   return 0
 }
 
-# Purge LOCAL (target,collection) resume-history lines, across every set —
-# the local-file counterpart to purge_durable_restore_state above, needed
-# for the SAME two call sites for the SAME reason. Extracted from the
-# original FORCE-only inline block (unchanged behavior, just reusable).
-# Never fails: a missing history file is not an error (nothing to purge).
+# Local-file counterpart of purge_durable_restore_state (same two callers).
+# Never fails: a missing history file means nothing to purge.
 purge_local_resume_history() {
   local target="$1" collection="$2"
   if [ ! -f "$QDRANT_SHARD_RECOVERY_HISTORY_FILE" ]; then return 0; fi
@@ -2334,10 +2299,8 @@ purge_local_resume_history() {
   tmp=""
 }
 
-# Recreate payload indexes from manifest payload_schema. Warn-only:
-# caller treats a nonzero rc as non-fatal to the overall restore. Every Qdrant
-# response is checked via qdrant_status_ok (accepted/error is never treated as
-# a successfully-recreated index, same rule as everywhere else in this file).
+# Recreate payload indexes from manifest payload_schema. Warn-only for the
+# caller; per-index responses still go through qdrant_status_ok.
 recreate_payload_indexes() {
   local target="$1" collection="$2" manifest="$3" entry field schema rc=0 resp entries body
   entries=$(jq -c '(.collection_config.payload_schema // {}) | to_entries[]' <<<"$manifest" 2>/dev/null) || {
@@ -2354,10 +2317,8 @@ recreate_payload_indexes() {
       rc=1
       continue
     fi
-    # jq -n --arg/--argjson, never shell-interpolated into the JSON literal —
-    # $field is manifest-sourced and could in principle contain a quote or
-    # backslash; $schema is already-valid JSON (from the jq -c above), so it
-    # is embedded as a JSON value (--argjson), not re-stringified (--arg).
+    # jq -n --arg/--argjson, never shell-interpolated ($field is
+    # manifest-sourced; $schema is already-valid JSON).
     body=$(jq -n --arg field "$field" --argjson schema "$schema" \
       '{field_name: $field, field_schema: $schema}') || {
       _printf "warning: cannot build index request body for %s field %s\n" "$collection" "$field" >&2
@@ -2372,23 +2333,14 @@ recreate_payload_indexes() {
   return "$rc"
 }
 
-# Recover one shard onto one target peer from a presigned S3 location, with
-# wait=true. rc 0 only on a CONFIRMED "ok" status; "accepted", any non-2xx,
-# and transport failure are all rc 1 and NEVER treated as success by the
-# caller (same accepted-never-success rule as snapshot_one_shard).
-# Any failure log redacts by FIELD (`.location`) AND by VALUE
-# (the raw $location string, held here by the caller) — the by-field pass
-# alone misses a server echoing the URL back inside some OTHER field (e.g.
-# error prose in `.status.error`, which qdrant_status_ok would surface
-# verbatim into $status too — both $resp_log and $status get the by-value
-# scrub, since either can carry the raw URL into the log line).
+# Recover one shard on one target peer with wait=true. rc 0 only on a
+# CONFIRMED "ok"; "accepted"/non-2xx/transport are rc 1, never success.
+# Failure logs redact the presigned URL by FIELD and by VALUE.
 recover_one_shard() {
   local peer="$1" collection="$2" sid="$3" location="$4" checksum="$5"
   local resp rc=0 status resp_log body
-  # jq -n --arg, never shell-interpolated into the JSON literal (a presigned
-  # URL or checksum could in principle contain a character JSON needs escaped).
-  # v1.15.x never returns a checksum from snapshot-create (spike (a)); an
-  # empty checksum sent literally is rejected — omit the key instead.
+  # jq -n --arg, never shell-interpolated. An empty checksum is rejected by
+  # Qdrant if sent literally — omit the key instead (v1.15.x returns none).
   body=$(jq -n --arg loc "$location" --arg sum "$checksum" \
     '{location: $loc, priority: "snapshot"} + (if $sum != "" then {checksum: $sum} else {} end)') || {
     _printf "restore failed for %s shard %s: cannot build recover request body\n" "$collection" "$sid" >&2
@@ -2427,11 +2379,8 @@ recover_one_shard() {
 #   etag-mismatch   etags differ as OPAQUE strings (multipart ETags are not
 #                   MD5 — equality is the only claim this comparison makes)
 #   invalid-input   unknown schema or an uncomparable field — fail closed
-# This proves the object is UNCHANGED SINCE BACKUP (at-rest tamper/rot/
-# truncation). It does NOT prove validity: if Qdrant wrote a corrupt object
-# at backup time, its recorded ETag is the corrupt object's — the deep
-# payload smoke at verification is the served-data counterpart (a pair,
-# not alternatives).
+# Proves UNCHANGED SINCE BACKUP, never validity — the payload smoke at
+# verification is the served-data counterpart (a pair, not alternatives).
 check_object_integrity() {
   local schema="$1" want_etag="$2" want_size="$3" got_etag="$4" got_size="$5"
   if [ "$schema" = "1" ]; then
@@ -2469,13 +2418,9 @@ check_object_integrity() {
 # stdin: resume-history lines (target,collection,set_id,shard,ok).
 # $1 target  $2 collection  $3 set_id  $4 force ("true"/"false")  $5..: shard
 # ids. stdout: the ids still PENDING in this run, one per line, input order.
-# Resume scoping (integrity wave): only pending shards get the
-# object pre-flight — a shard already restored in a previous run must not
-# block today's resume if its bucket object later rotted; that data is
-# already in the cluster. Under force=true EVERY shard is pending: a FORCE
-# run exists to re-recover from the bucket and purges the very history that
-# would exempt, so nothing may dodge verification through it. Exact-line
-# grep -qxF (never regex): $target/$collection may carry metacharacters.
+# Only pending shards get the object pre-flight (rot on an already-restored
+# shard must not block resume); under force=true EVERY shard is pending.
+# Exact-line grep -qxF (names may carry metacharacters).
 select_pending_shards() {
   local target="$1" collection="$2" set_id="$3" force="$4"
   shift 4
@@ -2502,10 +2447,34 @@ select_pending_shards() {
 verify_shard_object() {
   local schema="$1" collection="$2" set_id="$3" sid="$4" key="$5" want_etag="$6" want_size="$7"
   local stat_json got_etag="" got_size="" verdict vrc=0
-  if stat_json=$(mc_json_safe stat "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key"); then
-    got_etag=$(jq -r '.etag // ""' <<<"$stat_json" 2>/dev/null) || got_etag=""
-    got_size=$(jq -r 'if (.size | type) == "number" then .size else "" end' <<<"$stat_json" 2>/dev/null) || got_size=""
-  fi
+  # Blip vs missing: NoSuchKey-class is missing immediately; anything else
+  # is retried — a blip must never trigger the older-set fallback.
+  local stat_attempt=1 stat_out stat_rc
+  while :; do
+    stat_rc=0
+    stat_out=$(mc --json stat "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$key" 2>&1) || stat_rc=$?
+    if [ "$stat_rc" -eq 0 ] && ! printf '%s\n' "$stat_out" | mc_output_has_error; then
+      got_etag=$(jq -r '.etag // ""' <<<"$stat_out" 2>/dev/null) || got_etag=""
+      got_size=$(jq -r 'if (.size | type) == "number" then .size else "" end' <<<"$stat_out" 2>/dev/null) || got_size=""
+      break
+    fi
+    # Transport signatures are classified FIRST: on an unreachable endpoint
+    # real mc emits TWO error docs and the second reads "Object does not
+    # exist" — matching that alone would misclassify the dominant blip class
+    # as missing with zero retries.
+    if printf '%s' "$stat_out" | grep -qiE "dial tcp|connection refused|no such host|i/o timeout"; then
+      : # transport-class — retry below
+    elif printf '%s' "$stat_out" | grep -qiE "does not exist|NoSuchKey"; then
+      break   # genuinely absent (no transport signature) — missing-object verdict
+    fi
+    if [ "$stat_attempt" -ge 3 ]; then
+      _printf "pre-flight: stat of %s still failing after %s attempts (transport-class): %s\n" \
+        "$key" "$stat_attempt" "$(printf '%s' "$stat_out" | tr -d '\n' | head -c 200)" >&2
+      break
+    fi
+    stat_attempt=$((stat_attempt + 1))
+    sleep 1
+  done
   verdict=$(check_object_integrity "$schema" "$want_etag" "$want_size" "$got_etag" "$got_size") || vrc=$?
   if [ "$vrc" -eq 0 ]; then
     return 0
@@ -2516,20 +2485,14 @@ verify_shard_object() {
   return 1
 }
 
-# Shard ids the last successful preflight_backup_set actually verified
-# (space-separated). Consumed by restore_one_collection's in-loop integrity
-# net — same globals-not-return-values convention as snapshot_one_shard.
+# Shard ids the last successful preflight_backup_set verified
+# (space-separated); consumed by the in-loop integrity net.
 PREFLIGHT_VERIFIED_SIDS=""
 
-# Object pre-flight for ONE candidate set — runs during set selection,
-# BEFORE the state gate and any destructive step (integrity wave).
-# $1 target  $2 collection  $3 set_id  $4 manifest JSON. rc 0 pass / 1 fail
-# (every failing object named). Fetches the candidate's durable resume state
-# first (the state gate reuses the same merged local history file).
-# Schema 1: existence + non-zero size for every shard object (correction H,
-# unchanged) plus a loud flag — at-rest identity is not verifiable.
-# Schema 2: verify_shard_object on the RESUME-SCOPED pending set only (see
-# select_pending_shards for the scoping and FORCE rules).
+# Object pre-flight for ONE candidate set, BEFORE the state gate and any
+# destructive step. $1 target $2 collection $3 set_id $4 manifest JSON;
+# rc 0/1, failing objects named. Schema 1: existence+size (flagged);
+# schema 2: verify_shard_object on the resume-scoped pending set.
 preflight_backup_set() {
   local target="$1" collection="$2" set_id="$3" manifest="$4"
   local schema
@@ -2617,15 +2580,10 @@ preflight_backup_set() {
   return 0
 }
 
-# Deep payload smoke scroll (integrity wave): bounded sampled
-# scrolling — up to 3 pages x 100 points chained via next_page_offset, with
-# with_payload: true on EVERY page. with_payload is load-bearing: R5b's
-# corruption lived in payload storage (gridstore) and only a payload READ
-# panics — a payload-less scroll can pass over broken storage. Goal:
-# storage-level breakage detection, not per-point validation; the manifest
-# etag/size pre-flight is the at-rest counterpart (a pair, not alternatives).
-# $1 target  $2 collection  $3 expected_points (caller-confirmed numeric).
-# rc 0 pass / rc 1 fail (the "verification failed" line printed here).
+# Deep payload smoke scroll: up to 3 pages x 100 points via next_page_offset,
+# with_payload: true on EVERY page (only a payload READ touches the storage
+# where corruption bites). Bounded detection, not per-point validation.
+# $1 target  $2 collection  $3 expected_points (numeric). rc 0/1, loud.
 smoke_scroll_deep() {
   local target="$1" collection="$2" expected_points="$3"
   local pages=3 page_limit=100 page=1 offset='null' body resp scroll_n
@@ -2665,28 +2623,14 @@ smoke_scroll_deep() {
   return 0
 }
 
-# Random-sample payload probes (round 2 — closes the T3 finding: the head
-# scroll alone missed served corruption whose blast radius started past the
-# sampled head, live-demonstrated on v1.15.1 with a re-stamped manifest). Up to
-# QDRANT_VERIFY_SAMPLE_POINTS random points (default 300), batches of ≤100,
-# via the Query API's `{"query": {"sample": "random"}}` — live-verified on
-# v1.15.1, and random sampling exists since Qdrant 1.11 while this tool's
-# floor is 1.15, so the probe is unconditional (no version fallback).
-# with_payload: true on EVERY batch — only a payload READ touches gridstore,
-# where R5b-class corruption lives. Honest register: a bounded random
-# sample, never per-point validation — it catches a corrupt region covering
-# fraction f of points with probability 1−(1−f)^N (≈95% at f=1% for N=300);
-# small regions can escape. Fail-closed per batch: non-2xx (the panic/500
-# path), unparseable response, or fewer points than min(limit,
-# restored_points). The floor is the RESTORED count — the count the
-# tolerance gate already certified — never the manifest count: a
-# tolerance-accepted short restore (e.g. manifest=100, restored=99 within
-# the default 1%) can only ever serve 99 sampled points, and flooring on
-# the manifest would fail a GOOD restore (round-2 re-review LOW).
-# A legitimately empty collection (expected 0) skips cleanly (loud).
-# $1 target  $2 collection  $3 expected_points  $4 restored_points
-# (both counts caller-confirmed numeric by the count gate).
-# rc 0 pass / rc 1 fail (the "verification failed" line printed here).
+# Random-sample payload probes: QDRANT_VERIFY_SAMPLE_POINTS points (default
+# 300) in batches of <=100 via `{"query":{"sample":"random"}}`, with_payload
+# on every batch. Catch probability 1-(1-f)^N for a region covering fraction
+# f — a bounded sample, never per-point validation. Fail-closed per batch:
+# non-2xx, unparseable, or fewer than min(limit, restored_points) — the floor
+# is the RESTORED count (flooring on the manifest fails tolerance-accepted
+# short restores). Empty collections skip loudly.
+# $1 target  $2 collection  $3 expected_points  $4 restored_points. rc 0/1.
 smoke_sample_probes() {
   local target="$1" collection="$2" expected_points="$3" restored_points="$4"
   local sample="$QDRANT_VERIFY_SAMPLE_POINTS"
@@ -2717,9 +2661,8 @@ smoke_sample_probes() {
     batch=$((batch + 1))
     limit="$remaining"
     if [ "$limit" -gt 100 ]; then limit=100; fi
-    # live-verified: sample:random with limit > points_count returns exactly
-    # every point, so min(limit, restored) is the fail-closed floor (restored,
-    # not manifest — see the header: the tolerance gate owns the counts claim)
+    # sample:random with limit > points_count returns every point, so
+    # min(limit, restored) is a safe fail-closed floor
     want="$limit"
     if [ "$restored_points" -lt "$want" ]; then want="$restored_points"; fi
     body=$(jq -n --argjson limit "$limit" \
@@ -2763,19 +2706,11 @@ restore_one_collection() {
   set_id=$(select_backup_set "$filter" <<<"$sets") || {
     _printf "restore aborted for %s: no matching backup set\n" "$collection" >&2; return 1; }
 
-  # Candidate-selection loop (integrity wave): fetch + validate the
-  # candidate's manifest, then object-pre-flight it (existence + non-zero
-  # size; schema 2 adds the etag/size identity comparison, resume-scoped —
-  # see preflight_backup_set) BEFORE committing to the set, the state gate,
-  # and any destructive step. On failure without a filter, fall back one set
-  # at a time with a loud warning naming BOTH sets — every fallback candidate
-  # gets the SAME pre-flight before being committed to. With a filter, abort — a filtered
-  # restore never silently substitutes another set ("the operator
-  # did not choose it"); pinning a known-good set stays the documented
-  # escape hatch (RUNBOOK "Set selection semantics").
-  # touch first: fetch_restore_state (inside preflight_backup_set) only
-  # creates the history file itself on the cp-success path; the resumable
-  # check and the per-shard skip check below need it to exist either way.
+  # Candidate loop: validate + object-pre-flight every candidate (fallback
+  # ones too) BEFORE committing, the state gate, and any destructive step.
+  # No filter: fall back one set at a time, loudly. Filtered: abort — never
+  # substitute a set the operator did not choose. touch first: the checks
+  # below need the history file to exist either way.
   touch "$QDRANT_SHARD_RECOVERY_HISTORY_FILE"
   local prev_bad manifest_schema
   while true; do
@@ -2807,31 +2742,18 @@ restore_one_collection() {
   done
   manifest_schema=$(jq -r '.schema_version' <<<"$manifest" 2>/dev/null) || manifest_schema=""
 
-  # Resume state was fetched per candidate inside preflight_backup_set,
-  # BEFORE the state gate — case 2 below needs to know
-  # whether this target already carries progress for the COMMITTED set
-  # before it can decide whether a non-empty target is resumable.
+  # Resume state was fetched pre-gate (per candidate); case 2 needs it to
+  # decide whether a non-empty target is resumable.
   local resumable=false
-  # $target-scoped (not just collection+set): deliberately MORE specific than
-  # mirror_restore_state's own upload filter, which is (collection,set_id)
-  # only, ANY target (widened so one target's mirror never erases another's durable history
-  # for the same set — e.g. quarterly canary vs. prod DR of the same set).
-  # Precisely BECAUSE the upload is no longer target-scoped,
-  # restore_state/{c}/{set}.csv can legitimately hold another target's lines
-  # too — an unscoped CHECK here would then let target A's mirrored history
-  # admit case 2 (skip-create) on target B's unrelated non-empty collection,
-  # recovering shards into data nobody verified belongs to this restore,
-  # without FORCE. Matches the $target-first idiom already used by the exact
-  # per-shard skip check below, which also stays target-scoped.
+  # $target-scoped on purpose: the durable csv can hold OTHER targets' lines
+  # (upload is target-agnostic), and an unscoped check would let target A's
+  # history admit case 2 on target B's unrelated non-empty collection.
   if grep -qF "$target,$collection,$set_id," "$QDRANT_SHARD_RECOVERY_HISTORY_FILE" 2>/dev/null; then
     resumable=true
   fi
 
-  # version gate — mirrors backup_one_collection's own version probe
-  # exactly: api-key header, "unknown" on any failure, NO numeric fallback
-  # (e.g. "0.0.0") that could accidentally satisfy or defeat the gate either
-  # way. check_version_gate fails closed on a non-numeric version by design;
-  # QDRANT_SKIP_VERSION_CHECK is the documented, explicit override.
+  # version gate — "unknown" on any probe failure (no numeric fallback);
+  # fails closed; QDRANT_SKIP_VERSION_CHECK is the explicit override.
   local target_ver manifest_ver
   target_ver=$(_curl_rc GET "$target/" --header "api-key: $QDRANT_API_KEY" \
       | jq -r '.version // "unknown"') || target_ver="unknown"
@@ -2847,11 +2769,8 @@ restore_one_collection() {
     return 1
   }
 
-  # capacity gate — deliberately BEFORE the state gate below: the state
-  # gate's FORCE branch DELETEs an existing collection. Capacity must be
-  # confirmed sufficient before any mutation, never discovered insufficient
-  # after one already happened (a bug in the original draft: the capacity
-  # check was placed textually after the FORCE delete — fixed here).
+  # capacity gate — BEFORE the state gate: capacity must be confirmed
+  # sufficient before any mutation (the FORCE branch deletes).
   local wcf rf
   wcf=$(jq -r '.collection_config.config.params.write_consistency_factor // 1' <<<"$manifest" 2>/dev/null) || wcf=""
   rf=$(jq -r '.collection_config.config.params.replication_factor // 1' <<<"$manifest" 2>/dev/null) || rf=""
@@ -2860,21 +2779,9 @@ restore_one_collection() {
     return 1
   }
 
-  # collection state gate (three cases exactly). _curl_rc
-  # rc 2 means "transport failure, state truly unknown" — never treated as
-  # absent; a connectivity blip must never be treated as "collection absent,
-  # safe to create". rc 1 means "reached the target, got a non-2xx" —
-  # usually a 404 (genuinely absent), but ANY non-2xx (403, 500, a
-  # misconfigured api-key...) collapses to the same branch below. That is a
-  # deliberate, disclosed simplification, not a claim that rc 1 proves
-  # absence: every non-2xx is treated the same ("proceed toward create"),
-  # and a real underlying problem (auth, server health) is not silently
-  # masked — it resurfaces one step later as a loud create-PUT failure. One
-  # added cost of the pre-gate resume fetch: the create path below now also purges
-  # durable/local resume state for this collection, so a transient rc 1 from
-  # an auth/server blip would purge resume state it didn't need to — a
-  # bounded, recoverable cost (idempotent re-recovery next run), never data
-  # loss.
+  # collection state gate (three cases). rc 2 = transport failure, never
+  # treated as absent; rc 1 = any non-2xx, treated as "proceed toward create"
+  # (a real auth/server problem resurfaces as a loud create-PUT failure).
   live_rc=0
   live=$(_curl_rc GET "$target/collections/$collection" --header "api-key: $QDRANT_API_KEY") || live_rc=$?
   if [ "$live_rc" -eq 2 ]; then
@@ -2883,21 +2790,13 @@ restore_one_collection() {
     return 1
   fi
   if [ "$live_rc" -eq 0 ]; then
-    # points_count fail-closed: absent/non-numeric becomes
-    # "unknown", which never equals "0" and is rejected by the numeric guard
-    # below either way — always falls to case 3 (abort/FORCE), never case 2,
-    # even if resumable happens to be true (resume history alone is not
-    # enough if we cannot even confirm the target's own reported state).
+    # points_count fail-closed: absent/non-numeric -> "unknown" -> always
+    # case 3 (abort/FORCE), never case 2.
     points=$(jq -r '.result.points_count // "unknown"' <<<"$live" 2>/dev/null) || points="unknown"
     if ! [[ "$points" =~ ^[0-9]+$ ]]; then points="unknown"; fi
     local compat_rc=0
-    # Not separately guarded: if $live/$manifest were somehow unparseable here
-    # (shouldn't happen — live came from a 2xx _curl_rc response, manifest
-    # already passed validate_manifest), the leading `jq -n --argjson` would
-    # fail and, under pipefail, so would this whole pipeline; compare_collection_config
-    # itself degrades an empty/unparseable stdin to rc 6 (verified: its own
-    # `ok` stays unset/not "true"), never a crash — so this is safe by
-    # construction either way, just belt-and-suspenders via the `|| compat_rc=$?`.
+    # Unparseable input degrades to rc 6 via pipefail/compare_collection_config
+    # — never a crash; the `|| compat_rc=$?` is belt-and-suspenders.
     jq -n --argjson l "$live" --argjson m "$manifest" '{live: $l, manifest: $m}' \
       | compare_collection_config || compat_rc=$?
     # Case 2: compatible AND (empty OR set-scoped resumable).
@@ -2916,16 +2815,10 @@ restore_one_collection() {
         _printf "restore aborted for %s: FORCE delete failed\n" "$collection" >&2
         return 1
       }
-      # FORCE never overwrites in place: purge (target,collection) resume
-      # state — local AND durable — so a fresh restore never inherits
-      # another point-in-time's progress. Extracted into
-      # shared helpers (purge_local_resume_history / purge_durable_restore_
-      # state) since the absent-collection path below needs the identical
-      # purge for the identical reason: neither a
-      # just-deleted-and-about-to-be-recreated nor a currently-absent
-      # collection can have any actually-recovered shards.
+      # FORCE never overwrites in place: purge local+durable resume state so
+      # a fresh restore never inherits another point-in-time's progress.
       purge_local_resume_history "$target" "$collection"
-      purge_durable_restore_state "$collection" "FORCE" || {
+      purge_durable_restore_state "$target" "$collection" "FORCE" || {
         _printf "restore aborted for %s: FORCE could not verify/purge durable resume state\n" "$collection" >&2
         return 1
       }
@@ -2938,18 +2831,11 @@ restore_one_collection() {
   fi
 
   if [ "$live_rc" -ne 0 ]; then
-    # M2: a collection about to be (re)created cannot have any actually-
-    # recovered shards — purge local+durable resume state here too,
-    # unconditionally. Idempotent/cheap when FORCE already purged moments
-    # ago (an empty listing, zero log lines) — and the ONLY place this runs
-    # at all when the collection was absent from the very start (case 1)
-    # rather than reached via FORCE. Without this, fetch_restore_state's
-    # earlier (pre-gate) import could carry stale "already recovered" lines
-    # into a brand-new collection's per-shard loop, silently skipping real
-    # recovery — the exact bug class the FORCE-path purge closed,
-    # now also closed for the natural-absence case.
+    # An absent/about-to-be-created collection has no recovered shards:
+    # purge local+durable resume state here too, or stale pre-gate imports
+    # would silently skip real recovery (idempotent after a FORCE purge).
     purge_local_resume_history "$target" "$collection"
-    purge_durable_restore_state "$collection" "absent-collection" || {
+    purge_durable_restore_state "$target" "$collection" "absent-collection" || {
       _printf "restore aborted for %s: could not verify/purge durable resume state for absent collection\n" \
         "$collection" >&2
       return 1
@@ -2978,13 +2864,8 @@ restore_one_collection() {
     _printf "restore aborted for %s: cannot read target cluster info\n" "$collection" >&2
     return 1
   }
-  # One shard->peer placement pass for the whole collection, not a
-  # per-shard live jq pick: the old inline pick always took `sort | .[0]`
-  # (the numerically LOWEST Active peer id) for every shard, so a 12-shard
-  # collection funneled every download through one peer instead of
-  # spreading across the replica set. select_shard_peers already existed
-  # (used by check_preconditions) and already round-robins per shard index
-  # — reusing it here fixes the funnel and removes the duplicated jq.
+  # One placement pass via select_shard_peers (round-robin) — a per-shard
+  # lowest-peer pick would funnel every download through one peer.
   local -A shard_peer=()
   local speer_out speer_sid speer_pid
   speer_out=$(select_shard_peers <<<"$target_cluster") || speer_out=""
@@ -3011,11 +2892,8 @@ restore_one_collection() {
       _printf "shard %s already recovered for set %s — skipping\n" "$sid" "$set_id"
       continue
     fi
-    # SECURITY: never presign a manifest-recorded key outside this collection's
-    # own shard prefix (same defense-in-depth as Task 8's delete-path M2) —
-    # BEFORE presigning. A restore needs every shard, so refusal fails the
-    # WHOLE collection (unlike Task 8's per-key delete containment, where the
-    # set's other valid keys could still be cleaned up independently).
+    # SECURITY: never presign a key outside this collection's own shard
+    # prefix; a restore needs every shard, so refusal fails the collection.
     case "$key" in
       "snapshots/$collection/shards/"*) : ;;
       *)
@@ -3023,12 +2901,8 @@ restore_one_collection() {
         return 1
         ;;
     esac
-    # Integrity net (integrity wave): the selection-time pre-flight
-    # exempts a shard only on its resume history, and the FORCE / absent-
-    # collection paths purge that history AFTER selection — so a shard can
-    # reach this loop with its exemption expired. Never hand Qdrant an
-    # object this run never verified; no-op for every shard the pre-flight
-    # already covered.
+    # Integrity net: history purges can expire a shard's pre-flight
+    # exemption mid-run — never hand Qdrant an object this run never verified.
     if [ "$manifest_schema" = "2" ]; then
       case " ${PREFLIGHT_VERIFIED_SIDS:-} " in
         *" $sid "*) : ;;
@@ -3057,22 +2931,14 @@ restore_one_collection() {
     mirror_restore_state "$target" "$collection" "$set_id"
   done <<<"$shard_entries"
 
-  # aliases from the MANIFEST, per-alias helper reuse.
-  # recovered_colla_count / failed_recovered_colla_count are legacy globals
-  # that recover_collection_alias (frozen legacy code) increments directly —
-  # it takes no counter arguments; left global to match that legacy contract.
+  # aliases from the MANIFEST; the *_colla_count globals match the frozen
+  # legacy helper's contract (it increments them directly).
   local alias aliases_list alias_owner_resp owner
   recovered_colla_count=0; failed_recovered_colla_count=0
   touch "$QDRANT_ALIAS_RECOVERY_HISTORY_FILE"
   aliases_list=$(jq -r '.aliases[]?' <<<"$manifest" 2>/dev/null) || aliases_list=""
-  # Alias theft guard: recover_collection_alias (legacy) would happily
-  # repoint a LIVE alias currently owned by some OTHER collection — that is
-  # only ever safe under an explicit FORCE, same authorization the state
-  # gate already requires for a destructive collection overwrite. One GET
-  # for the whole alias table (not per-alias — /aliases already lists all of
-  # them). A fetch failure fails toward restoring (warn, then attempt every
-  # alias anyway) rather than blocking the whole collection on a guard that
-  # itself couldn't run.
+  # Alias theft guard: repointing a LIVE alias owned by another collection
+  # needs explicit FORCE. A guard-fetch failure fails toward restoring.
   if ! alias_owner_resp=$(_curl_rc GET "$target/aliases" --header "api-key: $QDRANT_API_KEY"); then
     _printf "warning: cannot read existing aliases on %s — proceeding without the alias-theft guard (fail toward restoring)\n" \
       "$target" >&2
@@ -3094,12 +2960,8 @@ restore_one_collection() {
     fi
     recover_collection_alias "$collection" "$alias" "$target"
   done <<<"$aliases_list"
-  # Aliases are part of the restored contract, not a side effect of it
-  # ("exit code reflects verification" applies here too) — a
-  # collection whose data verifies but whose aliases didn't recover is not
-  # a fully successful restore. Checked here, enforced at the very end
-  # (after the rest of verification still runs, so its own pass/fail is
-  # never masked by an unrelated alias problem).
+  # Aliases are part of the restored contract: checked here, enforced at the
+  # end so data verification is never masked by an alias problem.
   local aliases_ok=true
   if [ "$failed_recovered_colla_count" -gt 0 ]; then
     _printf "WARNING: %d/%d collection alias(es) failed to recover for %s\n" \
@@ -3107,9 +2969,7 @@ restore_one_collection() {
     aliases_ok=false
   fi
 
-  # verification — the exit code reflects it. Poll budget is
-  # configurable (the old hardcoded 30 tries * 2s = 60s cap was too tight for
-  # a real green-status wait on larger shard transfers).
+  # verification — the exit code reflects it; poll budget is configurable.
   local green_timeout="$QDRANT_VERIFY_GREEN_TIMEOUT_SECONDS" \
     green_interval="$QDRANT_VERIFY_POLL_INTERVAL_SECONDS" max_tries
   max_tries=$((green_timeout / green_interval))
@@ -3129,9 +2989,8 @@ restore_one_collection() {
     return 1
   fi
   restored_points=$(jq -r '.result.points_count // 0' <<<"$live" 2>/dev/null) || restored_points=""
-  # green status precedes count convergence by a beat (observed live:
-  # recoveries and first green land in the same second); re-poll the count
-  # within the budget instead of failing on a racing first read.
+  # green can precede count convergence — re-poll within the budget instead
+  # of failing on a racing first read.
   local count_tries=0 count_max_tries=$((max_tries - tries)) count_ok=false
   while [ "$count_tries" -lt "$count_max_tries" ]; do
     if check_count_tolerance "$expected_points" "$restored_points" "$QDRANT_VERIFY_TOLERANCE_PCT"; then
@@ -3156,18 +3015,12 @@ restore_one_collection() {
   }
   local expected_rf peers_n
   expected_rf=$(jq -r '.collection_config.config.params.replication_factor // 1' <<<"$manifest" 2>/dev/null) || expected_rf=""
-  # Discovered peer count may include unhealthy/unreachable peers — discover_peers
-  # only confirms cluster membership, not liveness — so expected_rf can be
-  # optimistic and verification may then report under-replication for a peer
-  # that's actually down. That is correct, fail-toward-noticing behavior:
-  # an operator should see the shortfall, never have it silently hidden.
+  # Peer count may include down peers, so expected_rf can be optimistic —
+  # reporting the shortfall is correct fail-toward-noticing behavior.
   peers_n=${#peer_url_by_id[@]}
   if [[ "$expected_rf" =~ ^[0-9]+$ ]] && [ "$peers_n" -lt "$expected_rf" ]; then expected_rf="$peers_n"; fi
-  # Retried within the same poll budget as the green-status wait above:
-  # a surplus Partial replica or a slow empty-sibling fill is transient by
-  # nature (qdrant#7851) — re-fetch cluster info and
-  # re-check rather than hard-failing on the first snapshot of in-flight
-  # replication.
+  # Retried within the same poll budget: surplus Partial replicas and slow
+  # sibling fills are transient (qdrant#7851) — never fail on the first read.
   local replica_tries=0 replica_ok=false
   while [ "$replica_tries" -lt "$max_tries" ]; do
     if check_replica_sets "$expected_rf" <<<"$target_cluster"; then
@@ -3177,11 +3030,9 @@ restore_one_collection() {
     replica_tries=$((replica_tries + 1))
     if [ "$replica_tries" -lt "$max_tries" ]; then
       sleep "$green_interval"
+      # Degrade-and-repoll on a transport blip (matches the green/count polls).
       target_cluster=$(_curl_rc GET "$target/collections/$collection/cluster" \
-        --header "api-key: $QDRANT_API_KEY") || {
-        _printf "verification failed for %s: cannot read target cluster info\n" "$collection" >&2
-        return 1
-      }
+        --header "api-key: $QDRANT_API_KEY") || target_cluster="{}"
     fi
   done
   if [ "$replica_ok" != "true" ]; then
@@ -3189,25 +3040,14 @@ restore_one_collection() {
       "$collection" "$green_timeout" >&2
     return 1
   fi
-  # smoke: deep payload scroll (integrity wave) — replaces the limit-1 scroll
-  # R5b sailed past. expected_points is already confirmed numeric here —
-  # check_count_tolerance above would have returned 1 otherwise.
+  # smoke: deep payload scroll (expected_points already confirmed numeric).
   local resp
   smoke_scroll_deep "$target" "$collection" "$expected_points" || return 1
-  # smoke: random-sample payload probes (round 2) — the head scroll is
-  # deterministic but head-only; T3 proved served corruption can start past
-  # it. Random sampling covers the whole id space probabilistically.
+  # smoke: random-sample probes — the head scroll is head-only; sampling
+  # covers the whole id space probabilistically.
   smoke_sample_probes "$target" "$collection" "$expected_points" "$restored_points" || return 1
-  # smoke: one vector query — a UNIT vector, not all-zero, sized
-  # from the manifest's first configured vector (named or flat). A zero
-  # vector is degenerate under Cosine distance (undefined/NaN similarity),
-  # so this probe could behave inconsistently across Qdrant versions purely
-  # because of the smoke test's OWN choice of input, not anything about the
-  # restored data — a unit vector ([1,0,0,...]) is well-defined under
-  # Cosine, Euclidean, and Dot alike. Skipped entirely (with an INFO line,
-  # never silently) when there is no dense vector config at all — a
-  # sparse-only collection has nothing to query here; the scroll smoke above
-  # already covers payload sanity for it either way.
+  # smoke: one UNIT-vector query (a zero vector is degenerate under Cosine),
+  # sized from the manifest's first vector; skipped loudly when sparse-only.
   local vectors_empty
   vectors_empty=$(jq -r '(.collection_config.config.params.vectors // {}) | (keys | length) == 0' \
     <<<"$manifest" 2>/dev/null) || vectors_empty="unknown"
@@ -3307,6 +3147,7 @@ recover_snap_shards_task() {
     _printf "recover_snap_shards: QDRANT_RESTORE_HOSTS must be set\n" >&2
     exit 1
   fi
+  check_pershard_entry_gates "recover_snap_shards"
   warn_ignored_legacy_env "restore"
   setup_s3_storage
   discover_peers "${restore_hosts[0]}" || exit 1

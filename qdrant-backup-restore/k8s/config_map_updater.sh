@@ -5,39 +5,15 @@ set -euo pipefail
 populate_config_map_with_script() {
     local template_path="$1"
     local script_path="$2"
-    # Declaration and assignment split deliberately (ShellCheck SC2155): a combined
-    # `local script_content=$(cat "$script_path")` can mask cat's exit status under
-    # `set -euo pipefail` — empirically confirmed (an unreadable source silently produced
-    # an empty payload instead of aborting). Split, the failing command substitution
-    # correctly triggers errexit.
+    # Declaration split from assignment (SC2155): combined, a failing cat
+    # would be masked under set -euo pipefail.
     local script_content
     script_content=$(cat "$script_path")
 
-    # Byte-exact round-trip (F4) — computed HERE, from the pristine post-read content, before
-    # any --git-ref substitution below touches script_content: substitution changes the
-    # string's length (e.g. "unknown" -> a 40-char sha), which would corrupt this byte-length
-    # arithmetic if done afterward. Trailing newlines never appear mid-file, so it is safe to
-    # compute the amount now and apply it at the very end, after substitution.
-    #
-    # `$(cat …)` above strips EVERY trailing newline from script_content — bash
-    # command-substitution behavior, unrelated to cat — regardless of how many the source file
-    # actually ends in. The natural sync check
-    # (`diff <(yq eval '.data[key]' configmap.yaml) source_script`, k8s/README's "Updating the
-    # ConfigMap") uses `yq eval` to extract the stored value for comparison, and `yq eval`
-    # itself unconditionally appends exactly one more trailing newline whenever it PRINTS a
-    # scalar — verified empirically across stored values with 0, 1, and 2 trailing newlines
-    # (yq's WRITER stores whatever it is given faithfully, confirmed independently by decoding
-    # with a second, independent YAML parser; it is only `yq eval`'s PRINT path that always
-    # shows stored+1). So for that sync check to come back clean, the STORED value must carry
-    # exactly one FEWER trailing newline than the source file actually has — never a flat "+1"
-    # regardless of count (that produced the pre-existing one-line drift this replaces: correct
-    # only for a 2-trailing-newline source, wrong for the common 1-trailing-newline case) and
-    # never a flat "+0" (wrong whenever the source ends in more than one newline). Reconstruct
-    # the source's real trailing-newline count via a byte-length difference (exact regardless
-    # of count, unlike parsing) and store count-1, floored at 0. A source with ZERO trailing
-    # newlines is the one case this cannot make byte-exact via this check — `yq eval` always
-    # shows at least one — and is left as a documented, inherent limitation of that extraction
-    # tool rather than something to work around here.
+    # Byte-exact round-trip: store the source's trailing-newline count MINUS
+    # ONE (floored at 0) — `yq eval` prints stored+1, so the standard
+    # `diff <(yq eval ...) source` sync check then comes back clean. Computed
+    # here, before --git-ref substitution changes the string length.
     local full_len stripped_len trailing_nl newlines_to_add=0 nl_i
     full_len=$(wc -c < "$script_path")
     stripped_len=$(printf '%s' "$script_content" | wc -c)
@@ -49,15 +25,9 @@ populate_config_map_with_script() {
     local script_name=""
     script_name="${script_path##*/}"
     local custom_script_name="${3:-$script_name}"
-    # Optional --git-ref (see usage()/run()): bake the given sha into the
-    # CONFIGMAP COPY's GIT_REF default only — script_path on disk is never
-    # written to. GIT_REF still yields to an actual GIT_REF env var at
-    # runtime if one is ever set (that part of the expression is untouched);
-    # this only replaces what it falls back to when unset. Literal
-    # (non-glob) match: neither string contains a shell glob metacharacter.
-    # No-op (with a warning) if the expected declaration text isn't found
-    # verbatim, so a future rename of the variable fails loudly instead of
-    # silently baking nothing in.
+    # --git-ref bakes the sha into the CONFIGMAP COPY's GIT_REF default only
+    # (disk untouched; a runtime GIT_REF env still wins). Hard-fails below if
+    # the expected declaration is missing.
     if [ -n "${GIT_REF_OVERRIDE:-}" ]; then
         local default_decl='GIT_REF="${GIT_REF:-unknown}"'
         local baked_decl='GIT_REF="${GIT_REF:-'"$GIT_REF_OVERRIDE"'}"'
@@ -66,8 +36,10 @@ populate_config_map_with_script() {
                 script_content="${script_content/"$default_decl"/"$baked_decl"}"
                 ;;
             *)
-                printf 'WARNING: --git-ref given but %s does not contain %s — ConfigMap copy left unmodified for GIT_REF\n' \
+                # explicit --git-ref must never silently ship provenance-less
+                printf 'ERROR: --git-ref given but %s does not contain %s — refusing to ship a provenance-less ConfigMap\n' \
                     "$script_path" "$default_decl" >&2
+                exit 1
                 ;;
         esac
     fi
@@ -75,14 +47,8 @@ populate_config_map_with_script() {
     for ((nl_i = 0; nl_i < newlines_to_add; nl_i++)); do
         script_content+=$'\n'
     done
-    # Hand the content to yq via a file, never via the environment: Linux caps a
-    # single env var / argv string at 128 KiB (MAX_ARG_STRLEN), and the script
-    # outgrew it — `strenv(script_content)` made yq's exec fail with "Argument
-    # list too long" (rc 126) on Linux CI while passing on macOS (1 MiB cap, no
-    # per-string limit). load_str is yq's documented answer for exactly this
-    # (mikefarah/yq#2299) and is byte-exact: a file without a trailing newline
-    # stores as `|-`, with one as `|` — verified empirically, so the round-trip
-    # arithmetic above is unaffected.
+    # Content goes to yq via FILE (load_str), never env: Linux caps one env
+    # string at 128 KiB and the script outgrew it. load_str is byte-exact.
     local content_file
     content_file=$(mktemp) || exit 1
     printf '%s' "$script_content" > "$content_file"
@@ -103,10 +69,7 @@ check_dependencies() {
     done
 
     if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        # Plain printf, not _printf: this is a standalone script (unlike
-        # qdrant_backup_recovery.sh) and never defines that helper — the call
-        # used to fail with "command not found" (rc 127) instead of showing
-        # this message at all.
+        # Plain printf: this standalone script has no _printf helper.
         printf 'Missing required dependencies: %s. Please install them and try again.\n' "${missing_deps[*]}" >&2
         exit 1
     fi
@@ -170,10 +133,8 @@ run() {
                 exit 0
                 ;;
             -*)
-                # Reject unknown dash-options instead of silently absorbing them
-                # as a positional (a typo'd flag, e.g. --gitref, would otherwise
-                # become custom_script_name and write the ConfigMap under a key
-                # no manifest mounts — a broken deploy from a typo, no error).
+                # Reject unknown dash-options — a typo'd flag must never
+                # become the ConfigMap key.
                 printf -- 'unknown option: %s\n' "$1"
                 usage
                 exit 1

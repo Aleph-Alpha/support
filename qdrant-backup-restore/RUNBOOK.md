@@ -159,10 +159,9 @@ This becomes the **quarterly canary** thereafter — do not treat it as a one-ti
 
 ### Step 4 — CronJob cutover
 
-Only after Steps 1–3 have passed. This repo's `k8s/backup-cronjob.yaml` already carries the env
-and Job-policy changes staged (S3 credentials, `MC_CONFIG_DIR`, `backoffLimit: 0`,
-`activeDeadlineSeconds`, `restartPolicy: Never`) — the cutover itself is the one-line command
-flip:
+Only after Steps 1–3 have passed. This repo's `k8s/backup-cronjob.yaml` carries the per-shard
+ENV staged (S3 credentials, `MC_CONFIG_DIR`) but deliberately keeps the LEGACY Job policy —
+the cutover is the command flip PLUS the three Job-policy values, applied together:
 
 ```diff
               args:
@@ -170,6 +169,13 @@ flip:
 -                - "cd scripts && ./qdrant_backup_recovery.sh create_snap"
 +                - "cd scripts && ./qdrant_backup_recovery.sh create_snap_shards"
 ```
+
+and in the same edit set `backoffLimit: 0`, `restartPolicy: Never`, and
+`activeDeadlineSeconds: 7200`. Why together: per-shard exits nonzero on any partial failure
+while still pruning the collections that succeeded, so a retrying Job (`backoffLimit > 0` or
+`OnFailure`) can create+prune several sets back-to-back within ONE firing and collapse
+retention history to near-duplicates minutes apart; conversely those values must never apply
+while the legacy command still runs (legacy relies on retries and has no runtime ceiling).
 
 **Pre-flight gate — before touching anything, confirm the deployed secret is ready:**
 
@@ -184,8 +190,8 @@ deployment.** This file carries repo placeholders — `QDRANT_SOURCE_HOSTS:
 URL), and the secret name `qdrant-credentials` — and `apply` replaces the entire `env:` list, so
 a site that customized its headless-service name or S3 endpoint would have those values
 **reverted to placeholders**, and the first per-shard firing would fail at `mc alias set`. **Port the
-command flip above, together with the env and Job-policy additions already staged in this
-file, into your site's own deployed manifest or values overlay, then apply *that*.**
+command flip + Job-policy trio above, together with the env additions staged in this file,
+into your site's own deployed manifest or values overlay, then apply *that*.**
 
 This single swap also activates automatic retention (`create_snap_shards` runs `prune_snap`'s
 retention pass on every successful run) — there is no separate retention deploy step.
@@ -241,16 +247,15 @@ any flag:**
 | Exists, empty, **or** non-empty with resume history matching THIS exact set id | Resumes — creation skipped, only shards not yet recovered are recovered. | None. |
 | Exists, non-empty, no matching history for this set (or config-incompatible) | Aborts. | `QDRANT_RESTORE_FORCE=true` — destructive: deletes and recreates the collection. |
 
-**Launching a restore in Kubernetes — flip BOTH together, or neither.** The shipped
-`k8s/restore-job.yaml`'s `args` is still legacy `recover_snap` while its env is staged for per-shard.
-Running legacy `recover_snap` as shipped will exit immediately at dispatch —
-`GET_PEERS_FROM_CLUSTER_INFO=true` combined with `QDRANT_SOURCE_HOSTS=""` leaves legacy peer
-discovery with no host to query (see the manifest's own comment). To actually run
-`recover_snap_shards`:
+**Launching a restore in Kubernetes.** The per-shard restore ships as its own
+internally-consistent manifest — no field flipping required:
 
-1. Set `args` to run `recover_snap_shards` instead of `recover_snap`.
-2. Confirm `GET_PEERS_FROM_CLUSTER_INFO=true` (already the case in the shipped file).
-3. `kubectl -n <namespace> create -f k8s/restore-job.yaml`
+```bash
+kubectl -n <namespace> create -f k8s/restore-per-shard-job.yaml
+```
+
+(`k8s/restore-job.yaml` remains the fully-legacy `recover_snap` manifest for legacy-era
+snapshots; the two are independent and each runs its own default command as shipped.)
 
 **Restore requirements — per-shard restore has no static-hosts mode.** `recover_snap_shards`
 hard-requires (a) a **cluster-mode** target whose `GET /cluster` peer discovery works on the

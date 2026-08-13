@@ -265,13 +265,9 @@ documented in the main [README.md](../README.md#per-shard-backup--restore); the 
 sequence (day-0 unblock, restore procedure, verification-failure remediation, transition rules)
 is in [RUNBOOK.md](../RUNBOOK.md).
 
-**Cutover status:** `backup-cronjob.yaml` and `restore-job.yaml` ship with the per-shard env vars and
-Job-policy fields already in place (S3 credentials, `MC_CONFIG_DIR`, `backoffLimit: 0`,
-`activeDeadlineSeconds`, `restartPolicy: Never`, and — on the restore side —
-`GET_PEERS_FROM_CLUSTER_INFO=true`), but the `args:` command in both is still the legacy task.
-Flipping `create_snap` → `create_snap_shards` (and, when ready, `recover_snap` →
-`recover_snap_shards`) is a deliberate, gated step — see RUNBOOK.md — not something that
-happens just because the env is staged for it.
+**Cutover status:** `backup-cronjob.yaml` stages per-shard env but keeps legacy args and
+Job policy — the cutover flip applies both together (RUNBOOK.md Step 4). The per-shard
+restore is its own manifest, `restore-per-shard-job.yaml`; `restore-job.yaml` stays legacy.
 
 ### Per-shard environment variables
 

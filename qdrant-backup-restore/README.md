@@ -8,7 +8,8 @@ This directory provides production-grade scripts to back up Qdrant snapshots and
   a newer one via Homebrew for local dev/testing. The `pharia-helper` container image ships
   Bash 5.x.)
 - **curl**
-- **jq** (>= 1.6 — the per-shard manifest/config-mapping jq filters use features not present in older jq;
+- **jq** (>= 1.7 — REQUIRED and gated at per-shard task entry: jq 1.6 parses 64-bit peer ids
+  as IEEE doubles and rounds above 2^53, so every peer lookup fails against real clusters;
   1.7+ is recommended for precise handling of large integers such as peer ids. The
   `pharia-helper` image ships jq 1.8.x.)
 - **mc** (MinIO Client)
@@ -386,16 +387,14 @@ manifest's `backup_set_id` only.
 
 ### Per-shard restore peer discovery
 
-**One target cluster per run:** only the FIRST `QDRANT_RESTORE_HOSTS` entry's cluster is
-restored to; extra entries are ignored with a WARNING naming the count. Run once per
-cluster (legacy `recover_snap`, by contrast, fanned out to every listed host).
+**One target cluster per run:** only the FIRST `QDRANT_RESTORE_HOSTS` entry is restored
+to (extras warned and ignored) — run once per cluster. See RUNBOOK.md, Restore procedure.
 
 `recover_snap_shards` always discovers the **target** cluster's peers via
 `QDRANT_RESTORE_HOSTS`, unconditionally — it does not consult `GET_PEERS_FROM_CLUSTER_INFO` at
 all (that variable only still affects the legacy dispatch path). If you deploy this on
-Kubernetes, `k8s/restore-job.yaml` sets `GET_PEERS_FROM_CLUSTER_INFO=true` for exactly this
-reason; see that file's comment if you also run the legacy `recover_snap` task from the same
-manifest.
+Kubernetes, use `k8s/restore-per-shard-job.yaml` (the self-consistent per-shard restore
+manifest); `k8s/restore-job.yaml` stays fully legacy.
 
 ## Common Workflows
 
