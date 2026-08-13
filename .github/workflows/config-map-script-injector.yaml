@@ -16,7 +16,7 @@ jobs:
       - name: Update ConfigMap
         run: |
           cd qdrant-backup-restore
-          ./k8s/config_map_updater.sh k8s/configmap-script.yaml qdrant_backup_recovery.sh
+          ./k8s/config_map_updater.sh k8s/configmap-script.yaml qdrant_backup_recovery.sh --git-ref "${{ github.sha }}"
 
       - name: Commit And Push changes
         run: |

@@ -6,7 +6,11 @@ metadata:
     app: qdrant-backup
 spec:
   # Cron schedule (min hour day month weekday)
-  # Example: "0 0 */7 * 0" → At 00:00 on every 7th day-of-month if it's on Sunday.
+  # "0 0 */7 * 0" restricts BOTH day-of-month and day-of-week — cron ORs them when both are
+  # restricted, so this actually fires at 00:00 on the 1st/8th/15th/22nd/29th AND every Sunday
+  # (~9-10x/month), NOT weekly (the schedule VALUE itself is intentionally
+  # unchanged — changing it is deferred to the cutover decision). For a plain weekly schedule, use
+  # "0 0 * * 0" instead (day-of-month unrestricted, fires only on Sunday).
   schedule: "0 0 */7 * 0"
 
   # Optional: prevent overlapping jobs
@@ -23,19 +27,51 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
-      backoffLimit: 3
+      # backoffLimit MUST stay 0 once this CronJob runs create_snap_shards (per-shard):
+      # create_snap_shards exits nonzero on ANY partial-collection failure but
+      # still runs its automatic retention pass on the collections that DID
+      # succeed. With backoffLimit > 0, the Job controller retries by
+      # spawning fresh pods within the SAME scheduled firing — each retry
+      # creates another backup set and prunes again, so a single flaky
+      # firing can create+prune several sets back-to-back and collapse
+      # QDRANT_BACKUP_RETENTION_SETS worth of history down to near-duplicate
+      # sets from minutes apart instead of separate nights (found in review).
+      # 0 means: one attempt, ever; a failure is reported, not silently
+      # retried into a retention-collapsing loop.
+      backoffLimit: 0
+      # Hard ceiling on how long one firing may run, independent of
+      # CURL_TIMEOUT (below): CURL_TIMEOUT bounds a SINGLE curl call and is
+      # retried up to ~3x per shard on timeout/`accepted`, so a
+      # hung peer can consume a multiple of CURL_TIMEOUT before that shard's
+      # collection is abandoned; activeDeadlineSeconds is the outer backstop
+      # so a genuinely stuck run is killed rather than blocking the next
+      # scheduled firing indefinitely (concurrencyPolicy: Forbid above).
+      activeDeadlineSeconds: 7200
       template:
         metadata:
           labels:
             app: qdrant-backup
         spec:
-          restartPolicy: OnFailure     # Jobs should usually be Never or OnFailure
+          # Never (not OnFailure): OnFailure lets the kubelet respawn the
+          # SAME container in place on failure, which is exactly the kind of
+          # extra attempt backoffLimit: 0 above is meant to rule out for this
+          # job. Matches backup-job.yaml/restore-job.yaml, which already pair
+          # backoffLimit: 0 with restartPolicy: Never for the same reason.
+          restartPolicy: Never
           containers:
             - name: qdrant-backup
               image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
               imagePullPolicy: IfNotPresent
               securityContext:
                 readOnlyRootFilesystem: true
+              # Gated cutover (runbook Day-0 sequence): this still
+              # runs the legacy per-node `create_snap` task. The per-shard
+              # task is `create_snap_shards` (adds manifest + automatic
+              # retention). Flipping the command below to
+              # `create_snap_shards` is the actual cutover step — do NOT
+              # flip it in this commit; it is gated on the rollout gates
+              # in RUNBOOK.md (day-0 legacy prune -> shadow run ->
+              # restore canary -> THEN this flip).
               command:
                 - /bin/bash
               args:
@@ -55,6 +91,46 @@ spec:
                   value: "true"
                 - name: CURL_TIMEOUT
                   value: "3000" # increase if more time is needed for a single backup
+                # S3 credentials: needed once the command above is cut over to
+                # create_snap_shards (manifest upload, `mc stat` verification,
+                # prune_snap). Staging these now is what makes the
+                # cutover a pure command-string change (see the args comment
+                # above) instead of a second env-adding deploy.
+                #
+                # DELIBERATE DEVIATION:
+                # the three refs below are `optional: true`. This env is staged
+                # for per-shard while `args` above still runs LEGACY create_snap, which
+                # never needed these keys — a deployed `qdrant-credentials`
+                # secret that does not yet carry them must not
+                # CreateContainerConfigError the still-running legacy backup.
+                # The Step 4 pre-flight secret gate + Step 2 shadow run
+                # (RUNBOOK.md) catch missing creds before cutover to
+                # create_snap_shards, which DOES need them non-optionally at
+                # that point. QDRANT_API_KEY above keeps its required
+                # (non-optional) semantics — it was already required by the
+                # legacy task this CronJob still runs.
+                - name: QDRANT_S3_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: qdrant-credentials # change this to your qdrant kubernetes secret name
+                      key: QDRANT_S3_ACCESS_KEY_ID
+                      optional: true
+                - name: QDRANT_S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: qdrant-credentials # change this to your qdrant kubernetes secret name
+                      key: QDRANT_S3_SECRET_ACCESS_KEY
+                      optional: true
+                - name: QDRANT_S3_BUCKET_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: qdrant-credentials # change this to your qdrant kubernetes secret name
+                      key: QDRANT_S3_BUCKET_NAME
+                      optional: true
+                - name: QDRANT_S3_ENDPOINT_URL
+                  value: "<your-s3-endpoint-url>" # change this to your s3 endpoint url
+                - name: MC_CONFIG_DIR
+                  value: "mc" # relative to cwd (/scripts) — mc's default $HOME/.mc is unwritable under readOnlyRootFilesystem; see the scripts emptyDir below
               resources:
                 requests:
                   cpu: "100m"
@@ -68,6 +144,16 @@ spec:
                 subPath: qdrant_backup_recovery.sh
               - name: scripts
                 mountPath: /scripts
+              # Defense-in-depth alongside the script's own TMPDIR default
+              # (TMPDIR defaults to $PWD == /scripts, already writable via
+              # the "scripts" emptyDir above): readOnlyRootFilesystem means a
+              # bare /tmp write from `mc`, curl, or any tool that doesn't go
+              # through the script's TMPDIR-aware mktemp calls would
+              # otherwise fail hard (empirically confirmed: "mktemp: :
+              # Read-only file system" with no /tmp mount under this
+              # securityContext).
+              - name: tmp
+                mountPath: /tmp
           volumes:
           - name: qdrant-backup-restore-script
             configMap:
@@ -76,3 +162,6 @@ spec:
           - name: scripts
             emptyDir:
               sizeLimit: 100Mi
+          - name: tmp
+            emptyDir:
+              sizeLimit: 50Mi

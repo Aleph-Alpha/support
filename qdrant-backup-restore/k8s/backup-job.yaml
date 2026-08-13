@@ -73,6 +73,13 @@ spec:
             subPath: qdrant_backup_recovery.sh
           - name: scripts
             mountPath: /scripts
+          # Defense-in-depth alongside the script's own TMPDIR default
+          # (TMPDIR defaults to $PWD == /scripts, already writable via the
+          # "scripts" emptyDir below): under readOnlyRootFilesystem, a bare
+          # /tmp write from `mc`, curl, or any tool that doesn't go through
+          # the script's TMPDIR-aware mktemp calls would otherwise fail hard.
+          - name: tmp
+            mountPath: /tmp
       volumes:
       - name: qdrant-backup-restore-script
         configMap:
@@ -81,3 +88,6 @@ spec:
       - name: scripts
         emptyDir:
           sizeLimit: 100Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 50Mi

@@ -52,8 +52,17 @@ spec:
               value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
             - name: QDRANT_RESTORE_HOSTS
               value: "http://qdrant-headless:6333"  # change this to your target qdrant kubernetes headless service name
+            # true for per-shard recover_snap_shards: it discovers the TARGET
+            # cluster's peers via QDRANT_RESTORE_HOSTS (QDRANT_SOURCE_HOSTS
+            # stays "" above). NOTE this var is actually IGNORED
+            # by recover_snap_shards (it always discovers via
+            # QDRANT_RESTORE_HOSTS regardless); it only still matters for
+            # the LEGACY recover_snap command below. If you run legacy
+            # recover_snap from this manifest, set this back to "false" — with
+            # QDRANT_SOURCE_HOSTS="", legacy peer discovery has no host to
+            # query and the job exits immediately at dispatch.
             - name: GET_PEERS_FROM_CLUSTER_INFO
-              value: "false"
+              value: "true"
             - name: QDRANT_SNAPSHOT_DATETIME_FILTER
               value: "" # set this to filter snapshots based on date (glob matching is used) e.g "2026-01-29" = all snapshots in 29th January 2026, "2026-01" = all snapshots in January 2026.
             - name: CURL_TIMEOUT
@@ -75,6 +84,13 @@ spec:
             subPath: qdrant_backup_recovery.sh
           - name: scripts
             mountPath: /scripts
+          # Defense-in-depth alongside the script's own TMPDIR default
+          # (TMPDIR defaults to $PWD == /scripts, already writable via the
+          # "scripts" emptyDir below): under readOnlyRootFilesystem, a bare
+          # /tmp write from `mc`, curl, or any tool that doesn't go through
+          # the script's TMPDIR-aware mktemp calls would otherwise fail hard.
+          - name: tmp
+            mountPath: /tmp
       volumes:
       - name: qdrant-backup-restore-script
         configMap:
@@ -83,3 +99,6 @@ spec:
       - name: scripts
         emptyDir:
           sizeLimit: 100Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 50Mi
