@@ -75,9 +75,21 @@ populate_config_map_with_script() {
     for ((nl_i = 0; nl_i < newlines_to_add; nl_i++)); do
         script_content+=$'\n'
     done
-    export script_content
+    # Hand the content to yq via a file, never via the environment: Linux caps a
+    # single env var / argv string at 128 KiB (MAX_ARG_STRLEN), and the script
+    # outgrew it — `strenv(script_content)` made yq's exec fail with "Argument
+    # list too long" (rc 126) on Linux CI while passing on macOS (1 MiB cap, no
+    # per-string limit). load_str is yq's documented answer for exactly this
+    # (mikefarah/yq#2299) and is byte-exact: a file without a trailing newline
+    # stores as `|-`, with one as `|` — verified empirically, so the round-trip
+    # arithmetic above is unaffected.
+    local content_file
+    content_file=$(mktemp) || exit 1
+    printf '%s' "$script_content" > "$content_file"
+    export content_file
     export custom_script_name
-    yq -i '.data.[(strenv(custom_script_name))] = strenv(script_content)' "$template_path"
+    yq -i '.data.[(strenv(custom_script_name))] = load_str(strenv(content_file))' "$template_path"
+    rm -f "$content_file"
 }
 
 # Dependency checks
