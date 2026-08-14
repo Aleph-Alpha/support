@@ -18,10 +18,24 @@ jobs:
           cd qdrant-backup-restore
           ./k8s/config_map_updater.sh k8s/configmap-script.yaml qdrant_backup_recovery.sh --git-ref "${{ github.sha }}"
 
-      - name: Commit And Push changes
+      - name: Commit changes via GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add qdrant-backup-restore/k8s/configmap-script.yaml
-          git commit -m "Update ConfigMap with latest script changes" || exit 0
-          git push
+          FILE="qdrant-backup-restore/k8s/configmap-script.yaml"
+          if git diff --quiet -- "$FILE"; then
+            echo "ConfigMap already up to date, nothing to commit"
+            exit 0
+          fi
+          # committer/author intentionally omitted: GitHub signs a bot's API
+          # commit (Verified badge) only when the request carries no custom
+          # author/committer info. Content goes via @file — the payload
+          # exceeds the 128 KiB per-argument cap.
+          base64 -w0 < "$FILE" | tr -d '\n' > "$RUNNER_TEMP/content.b64"
+          gh api --method PUT "/repos/$REPO/contents/$FILE" \
+            -f message="Update ConfigMap with latest script changes" \
+            -f branch="$BRANCH" \
+            -f sha="$(git rev-parse "HEAD:$FILE")" \
+            -F content=@"$RUNNER_TEMP/content.b64"
