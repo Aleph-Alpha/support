@@ -269,6 +269,16 @@ clusterPharia:
         login: true
         superuser: false
         replication: false
+      - name: "sherlock"
+        connectionLimit: -1
+        ensure: present
+        inherit: true
+        # `password` and `username` key should exist in secret. username key should be the name of the user (sherlock)
+        passwordSecret:
+          name: "qs-postgresql-cluster-access-sherlock"
+        login: true
+        superuser: false
+        replication: false
   backups:
     # -- You need to configure backups manually, so backups are disabled by default.
     # For detailed configuration options, see: https://github.com/cloudnative-pg/charts/tree/main/charts/cluster
