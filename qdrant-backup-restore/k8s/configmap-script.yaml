@@ -1772,7 +1772,7 @@ data:
       discover_peers "${source_hosts[0]:-}" || exit 1
       # pod-unique suffix (k8s sets HOSTNAME to the pod name); pid fallback for ad-hoc shells
       BACKUP_SET_ID="$(date -u '+%Y-%m-%dT%H-%M-%SZ')-${HOSTNAME:-p$$}"
-      GIT_REF="${GIT_REF:-unknown}"
+      GIT_REF="${GIT_REF:-7de7150ef32d87385648868f01fe61c70dcd0dc3}"
       if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
         if ! ( get_collections ); then
           _printf "create_snap_shards: cannot fetch collections from %s — aborting before any backup work\n" \
