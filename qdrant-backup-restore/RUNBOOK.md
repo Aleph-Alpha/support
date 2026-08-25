@@ -334,7 +334,7 @@ What the upload transport costs and requires:
   emptyDir `sizeLimit` — exceeding the limit is enforced by kubelet eviction — so size the limit
   generously rather than tightly.
 - **≈2× transfer for those shards only** (S3 → pod → Qdrant instead of S3 → Qdrant). Measured on
-  ba-pre-prod: `<measured on pre-prod>`. `CURL_TIMEOUT` bounds the upload call exactly as it bounds
+  ba-pre-prod: ~330 KB shards uploaded and recovered in ~3 s each on ba-pre-prod (2026-08-25); the transfer is bounded by pod→Qdrant bandwidth in-cluster, so expect roughly the URL-path per-shard time plus the `mc cp` download — budget ≈2× the URL-path figure for these collections only. `CURL_TIMEOUT` bounds the upload call exactly as it bounds
   a URL-recover call.
 - **Qdrant-side disk is unchanged**: the uploaded body is staged in Qdrant's temp directory like a
   URL download (see "Restore capacity planning" above).

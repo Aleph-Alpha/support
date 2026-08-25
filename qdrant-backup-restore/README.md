@@ -104,7 +104,7 @@ if `BACKUP_COLLECTION_ALIASES_ON_S3` is `true` include the S3 credentials. When 
 | `QDRANT_SNAPSHOT_DATETIME_FILTER` | **Legacy tasks** (`get_snap`, `get_snap_s3`, `recover_snap`): glob pattern matched against the **entire snapshot name** (so a collection name can also be used as the filter), format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot! **Per-shard `recover_snap_shards`:** different semantics — see [per-shard datetime-filter semantics](#per-shard-datetime-filter-semantics-recover_snap_shards) below; this is the same env var, read differently by the two task families. | `` |
 | `QDRANT_HTTP_PORT` | This changes the default Qdrant HTTP port | `6333` |
 | `MC_CONFIG_DIR` | This overrides the default storage location for mc s3 client configurations. | `$HOME` |
-| `TMPDIR` | Scratch directory for temp files (the per-shard tasks default it to the working directory — the only writable path under the shipped `readOnlyRootFilesystem` manifests). `recover_snap_shards` stages a whole shard here for collections whose name exceeds 91 characters (upload transport, see below); `k8s/restore-per-shard-job.yaml` points it at a 20Gi `tmp` emptyDir for that reason. | `$PWD` |
+| `TMPDIR` | Scratch directory for temp files (the per-shard tasks default it to the working directory so `mktemp` works under `readOnlyRootFilesystem`; the shipped restore Job sets it to the `/tmp` emptyDir). `recover_snap_shards` stages a whole shard here for collections whose name exceeds 91 characters (upload transport, see below); `k8s/restore-per-shard-job.yaml` points it at a 20Gi `tmp` emptyDir for that reason. | `$PWD` |
 
 #### Per-Shard Variables (`create_snap_shards`, `prune_snap`, `recover_snap_shards`)
 
