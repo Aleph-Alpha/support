@@ -1041,6 +1041,26 @@ data:
       return 3
     }
 
+    # $1: collection name → rc 0 if a per-shard RESTORE of it can succeed, rc 6 if not.
+    # Qdrant's URL-recovery downloader (lib/storage/.../snapshots/download.rs, v1.15.1)
+    # names its temp file "<url-basename>-XXXXXX.downloadXXXXXX", and the url basename
+    # is Qdrant's own shard-snapshot name "<collection>-shard-<N>-<ts>.snapshot" — so the
+    # collection name appears TWICE and names over ~90 chars exceed the 255-byte NAME_MAX
+    # (observed on ba-pre-prod: a 96-char name → 260-byte temp path → "File name too
+    # long (os error 36)"). A backup that can never be restored must not be taken.
+    # Worst case: 2*len(name) + len("-shard-NNN-YYYY-MM-DD-HH-MM-SS.snapshot") (40)
+    # + len("-XXXXXX.downloadXXXXXX") (22) + prefix "-shard-NNN-" (11) <= 255.
+    readonly RESTORE_NAME_MAX_LEN=91
+    check_restore_name_length() {
+      local name="$1" len=${#1}
+      if [ "$len" -gt "$RESTORE_NAME_MAX_LEN" ]; then
+        _printf "precondition failed: collection name is %s chars (max %s) — Qdrant's URL-recovery temp filename would exceed NAME_MAX, so a restore is impossible; shorten/rename the collection (see RUNBOOK)\n" \
+          "$len" "$RESTORE_NAME_MAX_LEN"
+        return 6
+      fi
+      return 0
+    }
+
     # $1: collection-info JSON file   $2: cluster JSON file
     # rc 0 ok | 3 custom sharding OR unreadable collection info | 4 transfers/resharding in flight OR unreadable cluster info | 5 no Active replica
     check_preconditions() {
@@ -1598,6 +1618,10 @@ data:
         _printf "[%s] SKIP %s: cannot fetch cluster info\n" "$host" "$collection"
         return 1
       fi
+      if ! check_restore_name_length "$collection"; then
+        _printf "SKIP %s: collection name too long to be restorable\n" "$collection"
+        return 1
+      fi
       if ! check_preconditions "$info_file" "$cluster_file"; then
         _printf "SKIP %s: preconditions not met\n" "$collection"
         return 1
@@ -1746,7 +1770,7 @@ data:
       discover_peers "${source_hosts[0]:-}" || exit 1
       # pod-unique suffix (k8s sets HOSTNAME to the pod name); pid fallback for ad-hoc shells
       BACKUP_SET_ID="$(date -u '+%Y-%m-%dT%H-%M-%SZ')-${HOSTNAME:-p$$}"
-      GIT_REF="${GIT_REF:-338bc644fcceb334ec8ef405e42245d497f5051a}"
+      GIT_REF="${GIT_REF:-unknown}"
       if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
         if ! ( get_collections ); then
           _printf "create_snap_shards: cannot fetch collections from %s — aborting before any backup work\n" \

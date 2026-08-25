@@ -299,6 +299,11 @@ Per-shard backup of every collection, then automatic retention on success:
    transfers or resharding may be in flight, and sharding must be `auto` (custom sharding is out
    of scope). A violation skips **only that collection**, loudly, and the run continues with the
    rest.
+   The collection name must also be at most **91 characters**: Qdrant's URL-based restore names its
+   download temp file `<snapshot-name>-XXXXXX.downloadXXXXXX`, and its own snapshot name already
+   embeds the collection name, so longer names exceed the 255-byte filename limit at restore time
+   (`File name too long`). Such collections are SKIPPED at backup time with a loud reason rather than
+   producing an unrestorable backup (found on a real 96-char Assistant-generated collection name).
 2. Per shard, creates a snapshot on one Active-replica peer (round-robin across the peers that
    hold one, spreading snapshot I/O), waits for completion, and confirms the resulting S3 object
    with `mc stat`. A timeout or an `accepted` (not-yet-final) response is never treated as

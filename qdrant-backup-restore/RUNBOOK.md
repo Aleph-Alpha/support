@@ -299,6 +299,19 @@ restore-target node** before starting a restore.
 Full per-shard env var reference (all defaults, including the backup/prune-side vars): see
 [README.md](README.md#script-environment-variables).
 
+### Collection names longer than 91 characters are skipped (unrestorable)
+
+Qdrant's URL-based shard recovery writes the download to a temp file named
+`<snapshot-name>-XXXXXX.downloadXXXXXX`, and the snapshot name Qdrant generates already contains
+the collection name — so the collection name appears twice and, above 91 characters, the path
+exceeds the 255-byte filesystem limit (`File IO error: File name too long (os error 36)`). Found on
+ba-pre-prod with a 96-character Assistant-generated collection
+(`<App>_<Collection>_<Index>-<id>` names routinely reach 80-100 chars). The backup task therefore
+refuses such collections up front (`SKIP <c>: collection name too long to be restorable`) instead of
+writing a backup that can never be restored. Remedies: rename/shorten the collection at the
+application layer, or restore via Qdrant's upload endpoint (different temp naming) — an upload-based
+fallback for long names is a tracked follow-up; the limit itself is upstream (Qdrant).
+
 ### Set selection semantics
 
 - **No filter:** the latest complete backup set. If the pre-flight finds one of its objects
