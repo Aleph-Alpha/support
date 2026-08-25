@@ -125,7 +125,11 @@ provider**, not just MinIO — some S3-compatibles reject Qdrant's multipart upl
 provider at real object sizes. Also confirm the provider keeps **ETags stable for unmodified
 objects at rest** — the restore pre-flight's integrity comparison depends on it, and any
 bucket migration that rewrites objects (an `rclone sync`, a storage-class transition)
-invalidates every schema-2 set's pre-flight; take a fresh backup after one.
+invalidates every schema-2 set's pre-flight; take a fresh backup after one. Confirmed
+empirically on STACKIT: an `mc cp` of a shard object back into place (even byte-identical)
+yields a plain-MD5 ETag where Qdrant's original was a multipart ETag (`…-N`), so that set's
+pre-flight fails and the restore falls back to the next older complete set — never hand-copy
+shard objects; if you must, re-run the backup afterwards so the manifest is re-recorded.
 
 ### Step 3 — restore canary
 
@@ -530,19 +534,26 @@ Look one step earlier in the log for which of the two alias failure modes you hi
 ### Time-to-green expectations
 
 `QDRANT_VERIFY_GREEN_TIMEOUT_SECONDS` (default 1800s / 30 min) is the budget for both the
-green-status wait and the replica-set retry. Measured on a local 3-node cluster: a 6-shard,
-RF-3 collection with 300 points reached green in **~13 s**. **This does not scale
-linearly down to real data — size the timeout to your actual collection, not the lab number.**
-qdrant#5857 documents dead shards and cleanup errors at 37 GB; if you are restoring
-production-scale collections, raise this well above the default and watch the first real
-restore closely rather than trusting the default blindly.
+green-status wait and the replica-set retry. Measured numbers (ba-pre-prod, Qdrant 1.15.1,
+STACKIT S3, 3-node cluster): a 6-shard RF-3 collection with 5 000 points restores and verifies
+in ~30 s; a **1 000 000-point, 3-shard RF-2 collection with ~2 GiB shards** (1.85 / 2.13 /
+1.96 GiB) took **12 m 33 s** end to end — 2.6–4.0 min per shard for presigned download, unpack
+and load, then green wait, count, replica sets, payload probes and search. Extrapolate per
+shard, not per collection: a 40 GB / 12-shard production collection (~3.3 GiB shards) is
+~8 min per shard sequentially, i.e. plan on the order of 1.5–2 h for the full restore and set
+`QDRANT_VERIFY_GREEN_TIMEOUT_SECONDS` accordingly. qdrant#5857 documents dead shards and
+cleanup errors at 37 GB; watch the first production-scale restore closely rather than trusting
+any default blindly.
 
 ### Presigned-URL expiry
 
 A per-shard object can be several GB at production scale, and `get_s3_url_for_key` presigns
 each shard's URL *individually* at the point it is recovered (not once for the whole run) —
 this significantly mitigates the risk, but a slow or throttled S3 backend can still push a
-single shard's transfer past the expiry window. **Symptom:** a shard recover failing with an
+single shard's transfer past the expiry window. Measured on ba-pre-prod against STACKIT S3:
+a 2.13 GiB shard recovered in 4 min, i.e. the default `3600s` window carried a >7× margin at
+~2 GiB and covers a ~3.3 GiB production shard with room to spare — raise it only if your S3
+path is materially slower than ~10 MB/s effective download. **Symptom:** a shard recover failing with an
 error after a long transfer, with the presigned URL itself redacted from the log (by design —
 it is a bearer credential). If you see this pattern, raise `QDRANT_S3_LINK_EXPIRY_DURATION`
 (default `3600s`) before retrying, not just the verification timeout — the recover call itself
