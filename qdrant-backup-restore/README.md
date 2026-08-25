@@ -104,6 +104,7 @@ if `BACKUP_COLLECTION_ALIASES_ON_S3` is `true` include the S3 credentials. When 
 | `QDRANT_SNAPSHOT_DATETIME_FILTER` | **Legacy tasks** (`get_snap`, `get_snap_s3`, `recover_snap`): glob pattern matched against the **entire snapshot name** (so a collection name can also be used as the filter), format YYYY-mm-dd, e,g "2026-01-29-11-44", default value is empty so it will fetch every snapshot! **Per-shard `recover_snap_shards`:** different semantics — see [per-shard datetime-filter semantics](#per-shard-datetime-filter-semantics-recover_snap_shards) below; this is the same env var, read differently by the two task families. | `` |
 | `QDRANT_HTTP_PORT` | This changes the default Qdrant HTTP port | `6333` |
 | `MC_CONFIG_DIR` | This overrides the default storage location for mc s3 client configurations. | `$HOME` |
+| `TMPDIR` | Scratch directory for temp files (the per-shard tasks default it to the working directory — the only writable path under the shipped `readOnlyRootFilesystem` manifests). `recover_snap_shards` stages a whole shard here for collections whose name exceeds 91 characters (upload transport, see below); `k8s/restore-per-shard-job.yaml` points it at a 20Gi `tmp` emptyDir for that reason. | `$PWD` |
 
 #### Per-Shard Variables (`create_snap_shards`, `prune_snap`, `recover_snap_shards`)
 
@@ -299,11 +300,13 @@ Per-shard backup of every collection, then automatic retention on success:
    transfers or resharding may be in flight, and sharding must be `auto` (custom sharding is out
    of scope). A violation skips **only that collection**, loudly, and the run continues with the
    rest.
-   The collection name must also be at most **91 characters**: Qdrant's URL-based restore names its
-   download temp file `<snapshot-name>-XXXXXX.downloadXXXXXX`, and its own snapshot name already
-   embeds the collection name, so longer names exceed the 255-byte filename limit at restore time
-   (`File name too long`). Such collections are SKIPPED at backup time with a loud reason rather than
-   producing an unrestorable backup (found on a real 96-char Assistant-generated collection name).
+   Collection names longer than **91 characters** are backed up too, with a WARNING: Qdrant's
+   URL-based restore names its download temp file `<snapshot-name>-XXXXXX.downloadXXXXXX`, and its
+   own snapshot name already embeds the collection name, so longer names exceed the 255-byte filename
+   limit at restore time (`File name too long`, found on a real 96-char Assistant-generated name).
+   Their restore therefore streams each shard through the restore Job pod to Qdrant's upload endpoint
+   instead of handing Qdrant a presigned URL — see RUNBOOK "Collection names longer than 91
+   characters restore through the upload endpoint" for the disk requirement and cost.
 2. Per shard, creates a snapshot on one Active-replica peer (round-robin across the peers that
    hold one, spreading snapshot I/O), waits for completion, and confirms the resulting S3 object
    with `mc stat`. A timeout or an `accepted` (not-yet-final) response is never treated as

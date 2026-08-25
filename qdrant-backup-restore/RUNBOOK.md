@@ -298,23 +298,52 @@ restore-target node** before starting a restore.
 | `QDRANT_SKIP_VERSION_CHECK` | `true` to bypass the same-minor/next-minor version gate. |
 | `QDRANT_VERIFY_TOLERANCE_PCT` | Integer 0–100. Non-integer or out-of-range values fail the restore closed, not permissively. |
 | `QDRANT_VERIFY_GREEN_TIMEOUT_SECONDS` / `QDRANT_VERIFY_POLL_INTERVAL_SECONDS` | Poll budget for the green-status and replica-set waits. See "Time-to-green expectations" below for sizing. |
-| `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned-URL lifetime, **per shard** (each shard is presigned separately at recover time, so the budget is per shard, not per run) — passed verbatim to `mc share download --expire`, so the unit suffix is required (default `3600s`). Raise it for multi-GB shards on slow S3 — see "Presigned-URL expiry" below. |
+| `QDRANT_S3_LINK_EXPIRY_DURATION` | Presigned-URL lifetime, **per shard** (each shard is presigned separately at recover time, so the budget is per shard, not per run) — passed verbatim to `mc share download --expire`, so the unit suffix is required (default `3600s`). Raise it for multi-GB shards on slow S3 — see "Presigned-URL expiry" below. Not used for collections named >91 chars (no presign on the upload transport). |
+| `TMPDIR` | Where the Job stages a shard for the upload transport (collections named >91 chars — see below). `k8s/restore-per-shard-job.yaml` sets `/tmp` (the 20Gi `tmp` emptyDir); free space must cover the largest such shard + 64 MiB or that shard fails pre-flight, loudly, before downloading. |
 
 Full per-shard env var reference (all defaults, including the backup/prune-side vars): see
 [README.md](README.md#script-environment-variables).
 
-### Collection names longer than 91 characters are skipped (unrestorable)
+### Collection names longer than 91 characters restore through the upload endpoint
 
 Qdrant's URL-based shard recovery writes the download to a temp file named
 `<snapshot-name>-XXXXXX.downloadXXXXXX`, and the snapshot name Qdrant generates already contains
 the collection name — so the collection name appears twice and, above 91 characters, the path
 exceeds the 255-byte filesystem limit (`File IO error: File name too long (os error 36)`). Found on
 ba-pre-prod with a 96-character Assistant-generated collection
-(`<App>_<Collection>_<Index>-<id>` names routinely reach 80-100 chars). The backup task therefore
-refuses such collections up front (`SKIP <c>: collection name too long to be restorable`) instead of
-writing a backup that can never be restored. Remedies: rename/shorten the collection at the
-application layer, or restore via Qdrant's upload endpoint (different temp naming) — an upload-based
-fallback for long names is a tracked follow-up; the limit itself is upstream (Qdrant).
+(`<App>_<Collection>_<Index>-<id>` names routinely reach 80-100 chars).
+
+Such collections are **no longer skipped**. The backup logs
+`WARNING: <c>: collection name is N chars (> 91) — backup proceeds; restore will use the upload path`
+and writes the set exactly as for any other collection. The restore routes **every shard of such a
+collection through Qdrant's multipart upload endpoint**
+(`POST /collections/{c}/shards/{sid}/snapshots/upload?wait=true&priority=snapshot[&checksum=…]`),
+which stages the body under a random temp name inside Qdrant and then runs the same recovery as the
+URL path — one `recovering via UPLOAD` log line per shard. Collections at or below 91 characters keep
+using presigned URLs. Nothing else differs between the two transports: resume, history, verification
+and alias handling are identical.
+
+What the upload transport costs and requires:
+
+- **Disk on the restore Job pod.** Each such shard is downloaded to `TMPDIR` (the Job's `tmp`
+  emptyDir — `k8s/restore-per-shard-job.yaml` sets `TMPDIR=/tmp`) before being uploaded, one shard
+  at a time, and removed afterwards. The emptyDir `sizeLimit` (shipped: `20Gi`) must be ≥ the largest
+  shard of any long-named collection (~3.3 GiB at customer scale). The script pre-flights free space
+  against the manifest's shard size (+64 MiB headroom) and fails the shard loudly **before**
+  downloading when it is short. Note the pre-flight sees the node filesystem's free space, not the
+  emptyDir `sizeLimit` — exceeding the limit is enforced by kubelet eviction — so size the limit
+  generously rather than tightly.
+- **≈2× transfer for those shards only** (S3 → pod → Qdrant instead of S3 → Qdrant). Measured on
+  ba-pre-prod: `<measured on pre-prod>`. `CURL_TIMEOUT` bounds the upload call exactly as it bounds
+  a URL-recover call.
+- **Qdrant-side disk is unchanged**: the uploaded body is staged in Qdrant's temp directory like a
+  URL download (see "Restore capacity planning" above).
+- A staged download whose byte count differs from the manifest's recorded size is rejected before
+  upload (truncation guard). A manifest checksum, when present, travels as the `checksum` query
+  parameter and is verified by Qdrant before recovery; when absent, the same
+  `recovering WITHOUT integrity verification` line as on the URL path is logged.
+- The limit itself is upstream (Qdrant's URL-recovery temp-file naming); an upstream issue is to be
+  filed so the URL path can eventually serve long names too.
 
 ### Set selection semantics
 

@@ -70,9 +70,14 @@ spec:
             - name: QDRANT_RESTORE_FORCE
               value: "false"
             - name: CURL_TIMEOUT
-              value: "3000" # increase if more time is needed for a single shard recover
+              value: "3000" # per curl call: one shard's recover — or, for >91-char collection names, one shard's multipart upload through this pod
             - name: MC_CONFIG_DIR
               value: "mc" # sets the configuration location for mc S3 client
+            # mktemp must land on the tmp emptyDir below, not the 100Mi scripts
+            # volume: collections named >91 chars are restored through this pod
+            # (S3 download, then multipart upload), so a whole shard is staged here
+            - name: TMPDIR
+              value: "/tmp"
           resources:
             requests:
               cpu: "100m"
@@ -99,4 +104,6 @@ spec:
           sizeLimit: 100Mi
       - name: tmp
         emptyDir:
-          sizeLimit: 50Mi
+          # must hold the largest shard of any >91-char collection (staged here
+          # for the upload transport) — ~3.3 GiB at customer scale
+          sizeLimit: 20Gi

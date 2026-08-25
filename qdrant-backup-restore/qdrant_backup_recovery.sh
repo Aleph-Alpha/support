@@ -1032,20 +1032,22 @@ select_shard_peers() {
   return 3
 }
 
-# $1: collection name → rc 0 if a per-shard RESTORE of it can succeed, rc 6 if not.
+# $1: collection name → rc 0 if a per-shard RESTORE can use URL recovery, rc 6 if
+# the name is too long for it — restore then streams the shard through the job pod
+# to Qdrant's upload endpoint (recover_one_shard_via_upload); never a refusal.
 # Qdrant's URL-recovery downloader (lib/storage/.../snapshots/download.rs, v1.15.1)
 # names its temp file "<url-basename>-XXXXXX.downloadXXXXXX", and the url basename
 # is Qdrant's own shard-snapshot name "<collection>-shard-<N>-<ts>.snapshot" — so the
 # collection name appears TWICE and names over ~90 chars exceed the 255-byte NAME_MAX
 # (observed on ba-pre-prod: a 96-char name → 260-byte temp path → "File name too
-# long (os error 36)"). A backup that can never be restored must not be taken.
+# long (os error 36)"). The upload endpoint stages under a RANDOM temp name instead.
 # Worst case: 2*len(name) + len("-shard-NNN-YYYY-MM-DD-HH-MM-SS.snapshot") (40)
 # + len("-XXXXXX.downloadXXXXXX") (22) + prefix "-shard-NNN-" (11) <= 255.
 readonly RESTORE_NAME_MAX_LEN=91
 check_restore_name_length() {
   local name="$1" len=${#1}
   if [ "$len" -gt "$RESTORE_NAME_MAX_LEN" ]; then
-    _printf "precondition failed: collection name is %s chars (max %s) — Qdrant's URL-recovery temp filename would exceed NAME_MAX, so a restore is impossible; shorten/rename the collection (see RUNBOOK)\n" \
+    _printf "collection name is %s chars (max %s) — Qdrant's URL-recovery temp filename would exceed NAME_MAX; restore uses the upload transport for this collection\n" \
       "$len" "$RESTORE_NAME_MAX_LEN"
     return 6
   fi
@@ -1610,8 +1612,8 @@ backup_one_collection() {
     return 1
   fi
   if ! check_restore_name_length "$collection"; then
-    _printf "SKIP %s: collection name too long to be restorable\n" "$collection"
-    return 1
+    _printf "WARNING: %s: collection name is %s chars (> %s) — backup proceeds; restore will use the upload path\n" \
+      "$collection" "${#collection}" "$RESTORE_NAME_MAX_LEN"
   fi
   if ! check_preconditions "$info_file" "$cluster_file"; then
     _printf "SKIP %s: preconditions not met\n" "$collection"
@@ -2393,6 +2395,90 @@ recover_one_shard() {
   return 0
 }
 
+# Recover one shard through Qdrant's multipart UPLOAD endpoint — the transport
+# for collection names > RESTORE_NAME_MAX_LEN, whose URL-recovery temp filename
+# would exceed NAME_MAX (see check_restore_name_length). The upload endpoint
+# (src/actix/api/snapshot_api.rs, v1.15.1: multipart field `snapshot`,
+# SnapshotUploadingParam {wait, priority, checksum}) stores the body as a
+# RANDOM NamedTempFile in Qdrant's temp dir — no collection or snapshot name
+# in the path — then runs the same recover_shard_snapshot_impl as the URL
+# path; a given checksum is verified BEFORE recovery. Price: the shard is
+# staged on THIS pod's disk (TMPDIR — the restore Job's tmp emptyDir) and
+# crosses the network twice. No explicit multipart Content-Type: curl
+# computes the boundary (an explicit header is the documented cause of failed
+# uploads — qdrant/qdrant discussion #4257).
+# $1 peer  $2 collection  $3 sid  $4 manifest s3_key  $5 checksum ("" = none)
+# $6 manifest size in bytes. rc 0 only on a CONFIRMED "ok"; every failure is
+# rc 1, loud, and leaves nothing staged.
+recover_one_shard_via_upload() {
+  local peer="$1" collection="$2" sid="$3" s3_key="$4" checksum="$5" want_size="$6"
+  local free_kb free_bytes need_bytes tmp got_size url resp rc=0 status resp_log
+  # The manifest size is the only thing the staged download can be checked
+  # against — no size, no verifiable staging: fail closed before any transfer.
+  if ! [[ "$want_size" =~ ^[0-9]+$ ]]; then
+    _printf "restore failed for %s shard %s: manifest carries no usable size (got '%s') — the upload transport cannot pre-flight disk or verify the staged download\n" \
+      "$collection" "$sid" "$want_size" >&2
+    return 1
+  fi
+  # Disk pre-flight BEFORE downloading; 64 MiB headroom covers mc's staging.
+  # Multiplication in bash, not awk: awk may print large products in %g form.
+  need_bytes=$((want_size + 64 * 1024 * 1024))
+  free_kb=$(df -Pk "$TMPDIR" 2>/dev/null | awk 'NR==2{print $4}') || free_kb=""
+  if ! [[ "$free_kb" =~ ^[0-9]+$ ]]; then
+    _printf "restore failed for %s shard %s: cannot read free space of TMPDIR %s (df output unusable)\n" \
+      "$collection" "$sid" "$TMPDIR" >&2
+    return 1
+  fi
+  free_bytes=$((free_kb * 1024))
+  if [ "$free_bytes" -lt "$need_bytes" ]; then
+    _printf "restore failed for %s shard %s: TMPDIR %s has %s bytes free but staging the shard needs %s bytes (%s + 64 MiB headroom) — raise the restore Job tmp emptyDir sizeLimit (k8s/restore-per-shard-job.yaml)\n" \
+      "$collection" "$sid" "$TMPDIR" "$free_bytes" "$need_bytes" "$want_size" >&2
+    return 1
+  fi
+  _printf "[%s] %s shard %s: long collection name (%s chars > %s) — recovering via UPLOAD (URL-recovery temp filename would exceed NAME_MAX); streaming %s bytes through the job pod\n" \
+    "$peer" "$collection" "$sid" "${#collection}" "$RESTORE_NAME_MAX_LEN" "$want_size"
+  # Same inert-integrity-gate announcement as recover_one_shard.
+  if [ -z "$checksum" ]; then
+    _printf "[%s] %s shard %s: manifest carries no checksum — recovering WITHOUT integrity verification (v1.15.x never returns one)\n" "$peer" "$collection" "$sid"
+  fi
+  tmp=$(mktemp -p "${TMPDIR:-.}") || {
+    _printf "restore failed for %s shard %s: mktemp failed in %s\n" "$collection" "$sid" "$TMPDIR" >&2
+    return 1
+  }
+  # Explicit rm on every path from here on: a RETURN trap set in this function
+  # persists in the caller's scope and re-fires at ITS return with $tmp unset.
+  if ! mc --quiet cp "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/$s3_key" "$tmp"; then
+    rm -f "$tmp"
+    _printf "restore failed for %s shard %s: cannot download %s into %s for upload\n" \
+      "$collection" "$sid" "$s3_key" "$TMPDIR" >&2
+    return 1
+  fi
+  got_size=$(wc -c < "$tmp" | tr -d ' ')
+  if [ "$got_size" != "$want_size" ]; then
+    rm -f "$tmp"
+    _printf "restore failed for %s shard %s: staged download is %s bytes, manifest says %s — truncated or altered, not uploading\n" \
+      "$collection" "$sid" "$got_size" "$want_size" >&2
+    return 1
+  fi
+  # An empty checksum is rejected by Qdrant if sent literally — omit the
+  # parameter instead (same rule as recover_one_shard's body).
+  url="$peer/collections/$collection/shards/$sid/snapshots/upload?wait=true&priority=snapshot"
+  if [ -n "$checksum" ]; then url="$url&checksum=$checksum"; fi
+  resp=$(_curl_rc POST "$url" --header "api-key: $QDRANT_API_KEY" --form "snapshot=@$tmp") || rc=$?
+  rm -f "$tmp"
+  if [ "$rc" -eq 0 ]; then
+    status=$(qdrant_status_ok <<<"$resp") || rc=$?
+  else
+    status="curl-rc-$rc"
+  fi
+  if [ "$rc" -ne 0 ]; then
+    resp_log=$(redact_response <<<"$resp")
+    _printf "restore failed for %s shard %s (status=%s): %s\n" "$collection" "$sid" "$status" "$resp_log"
+    return 1
+  fi
+  return 0
+}
+
 # $1 schema_version  $2 expected_etag  $3 expected_size  $4 observed_etag
 # $5 observed_size ($4/$5 empty when the object is missing / its stat failed).
 # stdout: one verdict token. rc 0 = proceed (match | v1-skip), rc 1 = failure:
@@ -2946,9 +3032,20 @@ restore_one_collection() {
       return 1
     fi
     peer=$(peer_url "$pid") || return 1
-    get_s3_url_for_key "$key" || return 1
-    if ! recover_one_shard "$peer" "$collection" "$sid" "$s3_presigned_url" "$sum"; then
-      return 1   # accepted/timeout is NOT success and is never recorded
+    # Names over RESTORE_NAME_MAX_LEN cannot be URL-recovered (Qdrant's temp
+    # filename would exceed NAME_MAX): stream the shard through this pod to
+    # the upload endpoint instead — no presign. Everything else in this loop
+    # (resume, history, mirroring, verification) is transport-agnostic.
+    if [ "${#collection}" -gt "$RESTORE_NAME_MAX_LEN" ]; then
+      want_size=$(jq -r '.size // ""' <<<"$entry" 2>/dev/null) || want_size=""
+      if ! recover_one_shard_via_upload "$peer" "$collection" "$sid" "$key" "$sum" "$want_size"; then
+        return 1   # accepted/timeout is NOT success and is never recorded
+      fi
+    else
+      get_s3_url_for_key "$key" || return 1
+      if ! recover_one_shard "$peer" "$collection" "$sid" "$s3_presigned_url" "$sum"; then
+        return 1   # accepted/timeout is NOT success and is never recorded
+      fi
     fi
     printf '%s,%s,%s,%s,ok\n' "$target" "$collection" "$set_id" "$sid" \
       >> "$QDRANT_SHARD_RECOVERY_HISTORY_FILE"
