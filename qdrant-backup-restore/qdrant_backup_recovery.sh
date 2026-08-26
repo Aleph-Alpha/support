@@ -2231,7 +2231,7 @@ fetch_restore_state() {
 # (collection,set_id) but NEVER per target — a target-scoped re-upload would
 # erase other targets' merged lines. grep -F only (names may carry metachars).
 mirror_restore_state() {
-  local target="$1" collection="$2" set_id="$3" scoped=""
+  local collection="$1" set_id="$2" scoped=""
   trap 'rm -f ${scoped:+"$scoped"}' RETURN
   scoped=$(mktemp -p "${TMPDIR:-.}")
   grep -F ",$collection,$set_id," "$QDRANT_SHARD_RECOVERY_HISTORY_FILE" > "$scoped" || true
@@ -2241,9 +2241,10 @@ mirror_restore_state() {
 }
 
 # Purge THIS target's durable resume lines for a collection across every set
-# (FORCE and absent-collection callers: a collection about to be (re)created
-# has no recovered shards). Any failure is rc 1 — a purge that cannot
-# guarantee a clean slate must not let the caller proceed. $3 labels the log.
+# (one caller, the create path: a collection about to be (re)created — absent
+# or FORCE-deleted — has no recovered shards). Any failure is rc 1 — a purge
+# that cannot guarantee a clean slate must not let the caller proceed. $3
+# labels the log ("FORCE" / "absent-collection").
 purge_durable_restore_state() {
   local target="$1" collection="$2" reason="$3"
   local state_list
@@ -2307,7 +2308,7 @@ purge_durable_restore_state() {
   return 0
 }
 
-# Local-file counterpart of purge_durable_restore_state (same two callers).
+# Local-file counterpart of purge_durable_restore_state (same single caller).
 # Never fails: a missing history file means nothing to purge.
 purge_local_resume_history() {
   local target="$1" collection="$2"
@@ -2525,24 +2526,24 @@ check_object_integrity() {
   return 0
 }
 
-# stdin: resume-history lines (target,collection,set_id,shard,ok).
-# $1 target  $2 collection  $3 set_id  $4 force ("true"/"false")  $5..: shard
-# ids. stdout: the ids still PENDING in this run, one per line, input order.
-# Only pending shards get the object pre-flight (rot on an already-restored
-# shard must not block resume); under force=true EVERY shard is pending.
-# Exact-line grep -qxF (names may carry metacharacters).
+# Reads $QDRANT_SHARD_RECOVERY_HISTORY_FILE (target,collection,set_id,shard,ok
+# lines) directly, like every other resume-history consumer; the caller has
+# touched it. $1 target  $2 collection  $3 set_id  $4 force ("true"/"false")
+# $5..: shard ids. stdout: the ids still PENDING in this run, one per line,
+# input order. Only pending shards get the object pre-flight (rot on an
+# already-restored shard must not block resume); under force=true EVERY shard
+# is pending. Exact-line grep -qxF (names may carry metacharacters).
 select_pending_shards() {
   local target="$1" collection="$2" set_id="$3" force="$4"
   shift 4
-  local history sid
-  history=$(cat)
+  local sid
   if ! bool_env_ok "$force"; then
     _printf "select_pending_shards: force must be 'true' or 'false', got '%s'\n" "$force" >&2
     return 1
   fi
   for sid in "$@"; do
     if [ "$force" != "true" ] \
-        && grep -qxF "$target,$collection,$set_id,$sid,ok" <<<"$history"; then
+        && grep -qxF "$target,$collection,$set_id,$sid,ok" "$QDRANT_SHARD_RECOVERY_HISTORY_FILE"; then
       continue
     fi
     printf '%s\n' "$sid"
@@ -2665,8 +2666,7 @@ preflight_backup_set() {
 
   local pending
   local pending_arr=()
-  pending=$(select_pending_shards "$target" "$collection" "$set_id" "$QDRANT_RESTORE_FORCE" "${sids[@]}" \
-    < "$QDRANT_SHARD_RECOVERY_HISTORY_FILE") || {
+  pending=$(select_pending_shards "$target" "$collection" "$set_id" "$QDRANT_RESTORE_FORCE" "${sids[@]}") || {
     _printf "pre-flight: pending-shard selection failed for %s set %s\n" "$collection" "$set_id" >&2
     return 1
   }
@@ -2892,6 +2892,9 @@ restore_one_collection() {
   # collection state gate (three cases). rc 2 = transport failure, never
   # treated as absent; rc 1 = any non-2xx, treated as "proceed toward create"
   # (a real auth/server problem resurfaces as a loud create-PUT failure).
+  # live_rc stays the raw probe rc; the gate's verdict is needs_create, and
+  # purge_reason labels the single resume-state purge below.
+  local needs_create=false purge_reason="absent-collection"
   live_rc=0
   live=$(_curl_rc GET "$target/collections/$collection" --header "api-key: $QDRANT_API_KEY") || live_rc=$?
   if [ "$live_rc" -eq 2 ]; then
@@ -2899,7 +2902,9 @@ restore_one_collection() {
       "$collection" "$target" >&2
     return 1
   fi
-  if [ "$live_rc" -eq 0 ]; then
+  if [ "$live_rc" -ne 0 ]; then
+    needs_create=true
+  else
     # points_count fail-closed: absent/non-numeric -> "unknown" -> always
     # case 3 (abort/FORCE), never case 2.
     points=$(jq -r '.result.points_count // "unknown"' <<<"$live" 2>/dev/null) || points="unknown"
@@ -2925,14 +2930,7 @@ restore_one_collection() {
         _printf "restore aborted for %s: FORCE delete failed\n" "$collection" >&2
         return 1
       }
-      # FORCE never overwrites in place: purge local+durable resume state so
-      # a fresh restore never inherits another point-in-time's progress.
-      purge_local_resume_history "$target" "$collection"
-      purge_durable_restore_state "$target" "$collection" "FORCE" || {
-        _printf "restore aborted for %s: FORCE could not verify/purge durable resume state\n" "$collection" >&2
-        return 1
-      }
-      live_rc=1
+      needs_create=true; purge_reason="FORCE"
     else
       _printf "restore aborted for %s: target exists (points=%s, compat_rc=%s) and QDRANT_RESTORE_FORCE!=true\n" \
         "$collection" "$points" "$compat_rc" >&2
@@ -2940,14 +2938,15 @@ restore_one_collection() {
     fi
   fi
 
-  if [ "$live_rc" -ne 0 ]; then
-    # An absent/about-to-be-created collection has no recovered shards:
-    # purge local+durable resume state here too, or stale pre-gate imports
-    # would silently skip real recovery (idempotent after a FORCE purge).
+  if [ "$needs_create" = "true" ]; then
+    # A collection about to be created — absent, or just FORCE-deleted — has
+    # no recovered shards: purge local+durable resume state once, here, or
+    # stale pre-gate imports would silently skip real recovery and a FORCE
+    # restore would inherit another point-in-time's progress.
     purge_local_resume_history "$target" "$collection"
-    purge_durable_restore_state "$target" "$collection" "absent-collection" || {
-      _printf "restore aborted for %s: could not verify/purge durable resume state for absent collection\n" \
-        "$collection" >&2
+    purge_durable_restore_state "$target" "$collection" "$purge_reason" || {
+      _printf "restore aborted for %s: %s could not verify/purge durable resume state\n" \
+        "$collection" "$purge_reason" >&2
       return 1
     }
     local body
@@ -3049,12 +3048,12 @@ restore_one_collection() {
     fi
     printf '%s,%s,%s,%s,ok\n' "$target" "$collection" "$set_id" "$sid" \
       >> "$QDRANT_SHARD_RECOVERY_HISTORY_FILE"
-    mirror_restore_state "$target" "$collection" "$set_id"
+    mirror_restore_state "$collection" "$set_id"
   done <<<"$shard_entries"
 
   # aliases from the MANIFEST; the *_colla_count globals match the frozen
   # legacy helper's contract (it increments them directly).
-  local alias aliases_list alias_owner_resp owner
+  local alias_name aliases_list alias_owner_resp owner
   recovered_colla_count=0; failed_recovered_colla_count=0
   touch "$QDRANT_ALIAS_RECOVERY_HISTORY_FILE"
   aliases_list=$(jq -r '.aliases[]?' <<<"$manifest" 2>/dev/null) || aliases_list=""
@@ -3065,21 +3064,21 @@ restore_one_collection() {
       "$target" >&2
     alias_owner_resp=""
   fi
-  while IFS= read -r alias; do
-    if [ -z "$alias" ]; then continue; fi
+  while IFS= read -r alias_name; do
+    if [ -z "$alias_name" ]; then continue; fi
     owner=""
     if [ -n "$alias_owner_resp" ]; then
-      owner=$(jq -r --arg a "$alias" \
+      owner=$(jq -r --arg a "$alias_name" \
         '(.result.aliases // [])[] | select(.alias_name == $a) | .collection_name' \
         <<<"$alias_owner_resp" 2>/dev/null) || owner=""
     fi
     if [ -n "$owner" ] && [ "$owner" != "$collection" ] && [ "$QDRANT_RESTORE_FORCE" != "true" ]; then
       _printf "REFUSING to repoint live alias %s from %s to %s (set QDRANT_RESTORE_FORCE=true to override)\n" \
-        "$alias" "$owner" "$collection" >&2
+        "$alias_name" "$owner" "$collection" >&2
       failed_recovered_colla_count=$((failed_recovered_colla_count + 1))
       continue
     fi
-    recover_collection_alias "$collection" "$alias" "$target"
+    recover_collection_alias "$collection" "$alias_name" "$target"
   done <<<"$aliases_list"
   # Aliases are part of the restored contract: checked here, enforced at the
   # end so data verification is never masked by an alias problem.
