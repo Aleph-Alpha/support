@@ -5,8 +5,8 @@ metadata:
   labels:
     app: qdrant-backup
 spec:
-  # Cron schedule (min hour day month weekday)
-  # Example: "0 0 */7 * 0" → At 00:00 on every 7th day-of-month if it's on Sunday.
+  # NOTE: cron ORs restricted day-of-month AND day-of-week, so this fires
+  # ~9-10x/month, not weekly ("0 0 * * 0" would be plain weekly); value kept.
   schedule: "0 0 */7 * 0"
 
   # Optional: prevent overlapping jobs
@@ -23,19 +23,22 @@ spec:
   failedJobsHistoryLimit: 3
   jobTemplate:
     spec:
+      # legacy values — at per-shard cutover set backoffLimit 0 / restartPolicy Never / activeDeadlineSeconds 7200 (RUNBOOK Step 4)
       backoffLimit: 3
       template:
         metadata:
           labels:
             app: qdrant-backup
         spec:
-          restartPolicy: OnFailure     # Jobs should usually be Never or OnFailure
+          restartPolicy: OnFailure
           containers:
             - name: qdrant-backup
               image: ghcr.io/aleph-alpha/shared-images/pharia-helper:latest
               imagePullPolicy: IfNotPresent
               securityContext:
                 readOnlyRootFilesystem: true
+              # still LEGACY create_snap — the flip to create_snap_shards is the
+              # gated cutover step (RUNBOOK Day-0 sequence)
               command:
                 - /bin/bash
               args:
@@ -55,6 +58,31 @@ spec:
                   value: "true"
                 - name: CURL_TIMEOUT
                   value: "3000" # increase if more time is needed for a single backup
+                # S3 creds staged for the per-shard cutover; optional: true so a
+                # secret without them cannot break the still-legacy backup (the
+                # RUNBOOK Step-4 gate verifies them before the flip)
+                - name: QDRANT_S3_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: qdrant-credentials # change this to your qdrant kubernetes secret name
+                      key: QDRANT_S3_ACCESS_KEY_ID
+                      optional: true
+                - name: QDRANT_S3_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: qdrant-credentials # change this to your qdrant kubernetes secret name
+                      key: QDRANT_S3_SECRET_ACCESS_KEY
+                      optional: true
+                - name: QDRANT_S3_BUCKET_NAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: qdrant-credentials # change this to your qdrant kubernetes secret name
+                      key: QDRANT_S3_BUCKET_NAME
+                      optional: true
+                - name: QDRANT_S3_ENDPOINT_URL
+                  value: "<your-s3-endpoint-url>" # change this to your s3 endpoint url
+                - name: MC_CONFIG_DIR
+                  value: "mc" # relative to cwd (/scripts) — mc's default $HOME/.mc is unwritable under readOnlyRootFilesystem; see the scripts emptyDir below
               resources:
                 requests:
                   cpu: "100m"
@@ -68,6 +96,9 @@ spec:
                 subPath: qdrant_backup_recovery.sh
               - name: scripts
                 mountPath: /scripts
+              # under readOnlyRootFilesystem, tools writing bare /tmp need this mount
+              - name: tmp
+                mountPath: /tmp
           volumes:
           - name: qdrant-backup-restore-script
             configMap:
@@ -76,3 +107,6 @@ spec:
           - name: scripts
             emptyDir:
               sizeLimit: 100Mi
+          - name: tmp
+            emptyDir:
+              sizeLimit: 50Mi

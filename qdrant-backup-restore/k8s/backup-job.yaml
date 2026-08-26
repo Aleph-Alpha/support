@@ -29,22 +29,22 @@ spec:
             - name: QDRANT_S3_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_S3_ACCESS_KEY_ID
             - name: QDRANT_S3_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_S3_SECRET_ACCESS_KEY
             - name: QDRANT_S3_BUCKET_NAME
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_S3_BUCKET_NAME
             - name: QDRANT_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_API_KEY
             - name: QDRANT_S3_ENDPOINT_URL
               value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
@@ -73,6 +73,13 @@ spec:
             subPath: qdrant_backup_recovery.sh
           - name: scripts
             mountPath: /scripts
+          # Defense-in-depth alongside the script's own TMPDIR default
+          # (TMPDIR defaults to $PWD == /scripts, already writable via the
+          # "scripts" emptyDir below): under readOnlyRootFilesystem, a bare
+          # /tmp write from `mc`, curl, or any tool that doesn't go through
+          # the script's TMPDIR-aware mktemp calls would otherwise fail hard.
+          - name: tmp
+            mountPath: /tmp
       volumes:
       - name: qdrant-backup-restore-script
         configMap:
@@ -81,3 +88,6 @@ spec:
       - name: scripts
         emptyDir:
           sizeLimit: 100Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 50Mi

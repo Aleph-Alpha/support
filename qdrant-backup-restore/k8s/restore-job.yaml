@@ -29,22 +29,22 @@ spec:
             - name: QDRANT_S3_ACCESS_KEY_ID
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_S3_ACCESS_KEY_ID
             - name: QDRANT_S3_SECRET_ACCESS_KEY
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_S3_SECRET_ACCESS_KEY
             - name: QDRANT_S3_BUCKET_NAME
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio # change this to your qdrant kubernetes secret name
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_S3_BUCKET_NAME
             - name: QDRANT_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: qdrant-credentials-minio
+                  name: qdrant-credentials # change this to your qdrant kubernetes secret name
                   key: QDRANT_API_KEY
             - name: QDRANT_SOURCE_HOSTS
               value: "" # leave empty if source host is not available
@@ -52,6 +52,8 @@ spec:
               value: "http://minio.default.svc.cluster.local:9000" # change this to your s3 endpoint url
             - name: QDRANT_RESTORE_HOSTS
               value: "http://qdrant-headless:6333"  # change this to your target qdrant kubernetes headless service name
+            # must stay false for legacy recover_snap (per-shard restores ship
+            # as restore-per-shard-job.yaml)
             - name: GET_PEERS_FROM_CLUSTER_INFO
               value: "false"
             - name: QDRANT_SNAPSHOT_DATETIME_FILTER
@@ -75,6 +77,9 @@ spec:
             subPath: qdrant_backup_recovery.sh
           - name: scripts
             mountPath: /scripts
+          # under readOnlyRootFilesystem, tools writing bare /tmp need this mount
+          - name: tmp
+            mountPath: /tmp
       volumes:
       - name: qdrant-backup-restore-script
         configMap:
@@ -83,3 +88,6 @@ spec:
       - name: scripts
         emptyDir:
           sizeLimit: 100Mi
+      - name: tmp
+        emptyDir:
+          sizeLimit: 50Mi
