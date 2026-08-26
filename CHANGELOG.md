@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.6.0](https://github.com/Aleph-Alpha/support/compare/v1.5.0...v1.6.0) (2026-08-26)
+
+
+### Features
+
+* auto-fetch-collections-from-s3 ([#109](https://github.com/Aleph-Alpha/support/issues/109)) ([06f8d9e](https://github.com/Aleph-Alpha/support/commit/06f8d9eb433a8f434daecd337a18557ee7c69f07))
+* **ba-pre-prod:** sherlock-holmes postgres role ([#116](https://github.com/Aleph-Alpha/support/issues/116)) ([b4fe95f](https://github.com/Aleph-Alpha/support/commit/b4fe95f19397ba61e9bc042919efeeb935853893))
+* backup qdrant collection aliases to s3 ([#106](https://github.com/Aleph-Alpha/support/issues/106)) ([33897d7](https://github.com/Aleph-Alpha/support/commit/33897d787e204d8f955c43c71ce6e8985eb17b81))
+* **qdrant-backup-restore:** per-shard backups with verified restores ([#115](https://github.com/Aleph-Alpha/support/issues/115)) ([12fc717](https://github.com/Aleph-Alpha/support/commit/12fc717ceef4f29cd30a016039ae3bb52105de4c))
+
+
+### Bug Fixes
+
+* **cosign-scan/oras-scan:** Referrers-based classification, Trivy cache reuse, report cleanups ([#114](https://github.com/Aleph-Alpha/support/issues/114)) ([9f486c5](https://github.com/Aleph-Alpha/support/commit/9f486c5de6a71334bc76d67279c7d2ff52d7e125))
+* **triage:** cache Referrers-API support per registry to skip slow oras discover ([#112](https://github.com/Aleph-Alpha/support/issues/112)) ([7a50e8c](https://github.com/Aleph-Alpha/support/commit/7a50e8c88ccc99df7e531d6bd3f1391a91e19a17))
+* **triage:** fetch tag-based attestation via oras; support cosign 3.x output ([#113](https://github.com/Aleph-Alpha/support/issues/113)) ([a20c590](https://github.com/Aleph-Alpha/support/commit/a20c590a27b43b1325ec88ddbd8641bbe9e01b7d))
+
 ## [1.4.0](https://github.com/Aleph-Alpha/support/compare/v1.3.0...v1.4.0) (2026-02-18)
 
 
