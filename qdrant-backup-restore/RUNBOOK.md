@@ -119,7 +119,7 @@ Qdrant itself reported `ok` usually means Qdrant never actually loaded the S3 sn
 bucket. The layout check is the detector; verify the mounted `snapshots_storage: s3` config
 on every node before retrying.
 
-**IDST checklist:** validate multipart snapshot upload against the **customer's actual S3
+**Checklist:** validate multipart snapshot upload against the **customer's actual S3
 provider**, not just MinIO — some S3-compatibles reject Qdrant's multipart uploads outright
 (qdrant#4701 class); this shadow run is the first time Qdrant's own S3 client meets that
 provider at real object sizes. Also confirm the provider keeps **ETags stable for unmodified
