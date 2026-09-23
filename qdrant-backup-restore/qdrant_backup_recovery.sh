@@ -1265,8 +1265,8 @@ compare_collection_config() {
 }
 
 # $1 write_consistency_factor  $2 replication_factor  $3 target peer count
-# rc 0 (warn when peers < RF) | rc 8 when wcf > peers (collection create would
-# yield unwritable collection).
+# rc 0 (warn when peers < wcf or peers < RF — Qdrant places min(RF, peers)
+# replicas and needs min(wcf, replicas) acks) | rc 8 on non-numeric input.
 check_capacity_gate() {
   local wcf="$1" rf="$2" peers="$3"
   if ! [[ "$wcf" =~ ^[0-9]+$ && "$rf" =~ ^[0-9]+$ && "$peers" =~ ^[0-9]+$ ]]; then
@@ -1274,8 +1274,7 @@ check_capacity_gate() {
     return 8
   fi
   if [ "$wcf" -gt "$peers" ]; then
-    _printf "capacity gate failed: write_consistency_factor=%s > target peers=%s\n" "$wcf" "$peers"
-    return 8
+    _printf "WARNING: write_consistency_factor=%s > target peers=%s — Qdrant needs min(wcf, replicas) acks\n" "$wcf" "$peers"
   fi
   if [ "$peers" -lt "$rf" ]; then
     _printf "WARNING: target has %s peers < replication_factor %s — Qdrant places min(RF, peers) replicas\n" \
