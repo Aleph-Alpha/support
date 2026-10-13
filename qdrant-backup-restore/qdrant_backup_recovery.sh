@@ -2196,10 +2196,12 @@ redact_response() {
 
 # Pull the S3-mirrored resume history for (collection,set) if it exists.
 # Never aborts; a disabled resume must be visible, so cp failures are probed.
+# cp's stderr is dropped — a missing csv is the normal first restore; the
+# probe below classifies every cp failure (and logs mc's error if it fails).
 fetch_restore_state() {
   local collection="$1" set_id="$2"
   if mc cp "$QDRANT_S3_ALIAS/$QDRANT_S3_BUCKET_NAME/restore_state/$collection/$set_id.csv" \
-      "$QDRANT_SHARD_RECOVERY_HISTORY_FILE.remote"; then
+      "$QDRANT_SHARD_RECOVERY_HISTORY_FILE.remote" 2>/dev/null; then
     touch "$QDRANT_SHARD_RECOVERY_HISTORY_FILE"
     cat "$QDRANT_SHARD_RECOVERY_HISTORY_FILE.remote" >> "$QDRANT_SHARD_RECOVERY_HISTORY_FILE"
     sort -u "$QDRANT_SHARD_RECOVERY_HISTORY_FILE" -o "$QDRANT_SHARD_RECOVERY_HISTORY_FILE"
@@ -2421,9 +2423,10 @@ recover_one_shard_via_upload() {
     return 1
   fi
   # Disk pre-flight BEFORE downloading; 64 MiB headroom covers mc's staging.
-  # Multiplication in bash, not awk: awk may print large products in %g form.
+  # Parsed with `read`, not awk (not every runtime image ships awk): `df -P`
+  # prints a header, then one line whose 4th field is the free 1K-blocks.
   need_bytes=$((want_size + 64 * 1024 * 1024))
-  free_kb=$(df -Pk "$TMPDIR" 2>/dev/null | awk 'NR==2{print $4}') || free_kb=""
+  free_kb=$(df -Pk "$TMPDIR" 2>/dev/null | { read -r _ && read -r _ _ _ avail _ && printf '%s' "$avail"; }) || free_kb=""
   if ! [[ "$free_kb" =~ ^[0-9]+$ ]]; then
     _printf "restore failed for %s shard %s: cannot read free space of TMPDIR %s (df output unusable)\n" \
       "$collection" "$sid" "$TMPDIR" >&2
