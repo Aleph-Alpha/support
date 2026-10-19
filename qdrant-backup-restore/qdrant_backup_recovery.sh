@@ -2915,10 +2915,16 @@ restore_one_collection() {
     points=$(jq -r '.result.points_count // "unknown"' <<<"$live" 2>/dev/null) || points="unknown"
     if ! [[ "$points" =~ ^[0-9]+$ ]]; then points="unknown"; fi
     local compat_rc=0
-    # Unparseable input degrades to rc 6 via pipefail/compare_collection_config
-    # — never a crash; the `|| compat_rc=$?` is belt-and-suspenders.
-    jq -n --argjson l "$live" --argjson m "$manifest" '{live: $l, manifest: $m}' \
-      | compare_collection_config || compat_rc=$?
+    if [ "$live_rc" -ne 0 ]; then
+      # $live is an error body, not a config: comparing it only logs a bogus
+      # "config mismatch" (or jq usage text for a non-JSON body).
+      compat_rc=6
+    else
+      # Unparseable input degrades to rc 6 via pipefail/compare_collection_config
+      # — never a crash; the `|| compat_rc=$?` is belt-and-suspenders.
+      jq -n --argjson l "$live" --argjson m "$manifest" '{live: $l, manifest: $m}' \
+        | compare_collection_config || compat_rc=$?
+    fi
     # Case 2: compatible AND (empty OR set-scoped resumable).
     if [[ "$points" =~ ^[0-9]+$ ]] && { [ "$points" = "0" ] || [ "$resumable" = "true" ]; } \
         && [ "$compat_rc" -eq 0 ]; then

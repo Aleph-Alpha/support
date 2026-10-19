@@ -288,14 +288,18 @@ S3 with no observed local staging). Plan free disk **≥ the largest shard archi
 restore-target node** before starting a restore.
 
 **Put Qdrant's temp directory on the storage volume of every restore target:**
-`QDRANT__STORAGE__TEMP_PATH=/qdrant/storage/restore-tmp` (then restart Qdrant). The qdrant Helm
-chart mounts `/qdrant/snapshots` as an emptyDir, a different filesystem from the storage PVC.
+`QDRANT__STORAGE__TEMP_PATH=/qdrant/storage/restore-tmp` (then restart Qdrant). In the qdrant
+Helm chart that is `config.storage.temp_path`; in PhariaAI,
+`document-index.qdrant.config.storage.temp_path`. The qdrant Helm chart mounts
+`/qdrant/snapshots` as an emptyDir, a different filesystem from the storage PVC.
 Qdrant's recovery then copies every restored file across filesystems and writes its
 preallocated (sparse) files out in full, so restored collections take many times their real
 size. Reproduced on v1.15.1 with ext4: 72 MB of data filled 2.7 GB and failed with
 `failed to move directory … Io error`; with `TEMP_PATH` on the storage volume the same restore
-used 72 MB. Check with `df -h /qdrant/storage /qdrant/snapshots`: two different devices means
-the setting is needed.
+used 72 MB. Set it even when `df -h /qdrant/storage /qdrant/snapshots` shows the same device:
+the same volume mounted at both paths (e.g. a `subPath`) is still two mount points, and the
+move still copies (measured: 1.8 GB instead of 36 MB for one collection). Qdrant 1.17+
+recovers into the storage directory by default and does not need it.
 
 ### Environment variables
 
@@ -400,8 +404,9 @@ manifest, and purge all resume-history entries for `(target, collection)` — bo
 and the S3-mirrored durable copy.** A clean-slate restore. FORCE never overwrites in place and
 never "skips the check" quietly.
 
-A target collection that **exists but can't be read** (HTTP 500, typically
-`Failed to restore local replica` after a failed shard recovery) is never treated as absent:
+A target collection that **exists but can't be read** (HTTP 500: `Failed to restore local
+replica` right after a failed shard recovery, `Dirty shard - shard is not fully initialized`
+once Qdrant has restarted) is never treated as absent:
 without FORCE the restore stops for that collection and says so; with FORCE it is deleted and
 recreated.
 
