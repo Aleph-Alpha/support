@@ -1442,7 +1442,8 @@ check_replica_sets() {
 }
 
 # Like legacy _curl but error bodies are captured and transport errors are
-# rc 2 (may have completed server-side — never blindly retry). New paths only.
+# rc 2 (may have completed server-side — never blindly retry). HTTP 404 is
+# rc 3 so callers can tell "absent" from "present but erroring". New paths only.
 _curl_rc() {
   local method="$1"; shift
   local url="$1"; shift
@@ -1461,6 +1462,7 @@ _curl_rc() {
   http_code=$(tail -n1 <<<"${response}")
   sed '$d' <<<"${response}"
   if [[ "${http_code}" =~ ^2[0-9]{2}$ ]]; then return 0; fi
+  if [ "${http_code}" = "404" ]; then return 3; fi
   return 1
 }
 
@@ -2892,8 +2894,9 @@ restore_one_collection() {
   }
 
   # collection state gate (three cases). rc 2 = transport failure, never
-  # treated as absent; rc 1 = any non-2xx, treated as "proceed toward create"
-  # (a real auth/server problem resurfaces as a loud create-PUT failure).
+  # treated as absent; rc 3 = HTTP 404, absent -> create; rc 1 = any other
+  # non-2xx: the collection exists but Qdrant cannot read it (a failed shard
+  # recovery leaves "Failed to restore local replica" -> HTTP 500) -> case 3.
   # live_rc stays the raw probe rc; the gate's verdict is needs_create, and
   # purge_reason labels the single resume-state purge below.
   local needs_create=false purge_reason="absent-collection"
@@ -2904,7 +2907,7 @@ restore_one_collection() {
       "$collection" "$target" >&2
     return 1
   fi
-  if [ "$live_rc" -ne 0 ]; then
+  if [ "$live_rc" -eq 3 ]; then
     needs_create=true
   else
     # points_count fail-closed: absent/non-numeric -> "unknown" -> always
@@ -2933,6 +2936,10 @@ restore_one_collection() {
         return 1
       }
       needs_create=true; purge_reason="FORCE"
+    elif [ "$live_rc" -ne 0 ]; then
+      _printf "restore aborted for %s: target exists but Qdrant cannot read it (%s) — usually a failed earlier shard recovery; set QDRANT_RESTORE_FORCE=true to delete and recreate it\n" \
+        "$collection" "$(redact_response <<<"$live" | head -c 300)" >&2
+      return 1
     else
       _printf "restore aborted for %s: target exists (points=%s, compat_rc=%s) and QDRANT_RESTORE_FORCE!=true\n" \
         "$collection" "$points" "$compat_rc" >&2
