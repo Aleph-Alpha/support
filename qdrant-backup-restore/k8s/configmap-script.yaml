@@ -1773,7 +1773,7 @@ data:
       discover_peers "${source_hosts[0]:-}" || exit 1
       # pod-unique suffix (k8s sets HOSTNAME to the pod name); pid fallback for ad-hoc shells
       BACKUP_SET_ID="$(date -u '+%Y-%m-%dT%H-%M-%SZ')-${HOSTNAME:-p$$}"
-      GIT_REF="${GIT_REF:-1df0ff948164b0579a008658e8e514f4bb1cce0e}"
+      GIT_REF="${GIT_REF:-40fd49707634b8fbb3d0132bb746d7b3a5785322}"
       if [[ ! -s "$QDRANT_COLLECTIONS_FILE" ]]; then
         if ! ( get_collections ); then
           _printf "create_snap_shards: cannot fetch collections from %s — aborting before any backup work\n" \
@@ -2924,10 +2924,16 @@ data:
         points=$(jq -r '.result.points_count // "unknown"' <<<"$live" 2>/dev/null) || points="unknown"
         if ! [[ "$points" =~ ^[0-9]+$ ]]; then points="unknown"; fi
         local compat_rc=0
-        # Unparseable input degrades to rc 6 via pipefail/compare_collection_config
-        # — never a crash; the `|| compat_rc=$?` is belt-and-suspenders.
-        jq -n --argjson l "$live" --argjson m "$manifest" '{live: $l, manifest: $m}' \
-          | compare_collection_config || compat_rc=$?
+        if [ "$live_rc" -ne 0 ]; then
+          # $live is an error body, not a config: comparing it only logs a bogus
+          # "config mismatch" (or jq usage text for a non-JSON body).
+          compat_rc=6
+        else
+          # Unparseable input degrades to rc 6 via pipefail/compare_collection_config
+          # — never a crash; the `|| compat_rc=$?` is belt-and-suspenders.
+          jq -n --argjson l "$live" --argjson m "$manifest" '{live: $l, manifest: $m}' \
+            | compare_collection_config || compat_rc=$?
+        fi
         # Case 2: compatible AND (empty OR set-scoped resumable).
         if [[ "$points" =~ ^[0-9]+$ ]] && { [ "$points" = "0" ] || [ "$resumable" = "true" ]; } \
             && [ "$compat_rc" -eq 0 ]; then
